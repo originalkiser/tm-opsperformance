@@ -59,7 +59,7 @@ function MetricTable({ title, data, locations }) {
     <div className="flex items-center gap-1">
       <div className="flex-1 bg-gray-100 rounded-full h-1.5 min-w-[40px]">
         <div
-          className="bg-blue-500 h-1.5 rounded-full"
+          className="bg-tm-teal h-1.5 rounded-full"
           style={{ width: max > 0 ? `${Math.min(100, value / max * 100)}%` : '0%' }}
         />
       </div>
@@ -75,16 +75,16 @@ function MetricTable({ title, data, locations }) {
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-xs">
           <thead>
-            <tr className="bg-blue-700 text-white">
+            <tr className="bg-tm-blue text-white">
               {['Location', 'Total Washes', 'Member Washes', 'Memberships Sold', 'Opportunities', 'Google Reviews', 'P-Mix', 'Conversion'].map(h => (
-                <th key={h} className="px-3 py-2 border border-blue-600 text-left font-semibold">{h}</th>
+                <th key={h} className="px-3 py-2 border border-tm-navy text-left font-brand font-semibold tracking-wide">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.name} className={i % 2 === 0 ? 'bg-blue-50' : 'bg-white'}>
-                <td className="border border-gray-200 px-3 py-2 font-medium">{r.name}</td>
+              <tr key={r.name} className={i % 2 === 0 ? 'bg-[#f0f9f8]' : 'bg-white'}>
+                <td className="border border-gray-200 px-3 py-2 font-medium font-brand">{r.name}</td>
                 <td className="border border-gray-200 px-3 py-2">
                   <Bar value={r.tw} max={maxWashes} />
                 </td>
@@ -96,8 +96,8 @@ function MetricTable({ title, data, locations }) {
                 <td className="border border-gray-200 px-3 py-2 text-center font-semibold text-orange-700">{r.conversion}</td>
               </tr>
             ))}
-            <tr className="bg-blue-100 font-semibold border-t-2 border-blue-300">
-              <td className="border border-gray-300 px-3 py-2">Totals</td>
+            <tr className="bg-tm-sky/25 font-semibold border-t-2 border-tm-teal/50">
+              <td className="border border-gray-300 px-3 py-2 font-brand">Totals</td>
               <td className="border border-gray-300 px-3 py-2 text-center">{totals.tw || ''}</td>
               <td className="border border-gray-300 px-3 py-2 text-center">{totals.mw || ''}</td>
               <td className="border border-gray-300 px-3 py-2 text-center">{totals.ms || ''}</td>
@@ -157,17 +157,17 @@ export default function Insights() {
     : locations
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen" style={{ backgroundColor: '#F5F2EA' }}>
       <NavBar />
       <div className="max-w-screen-2xl mx-auto px-4 py-6">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-          <h1 className="text-xl font-bold text-gray-800">Performance Insights</h1>
+          <h1 className="text-xl font-brand font-bold text-tm-blue tracking-wide">Performance Insights</h1>
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">Filter Location:</label>
+            <label className="text-xs text-gray-500 font-brand">Filter Location:</label>
             <select
               value={filterLocId}
               onChange={e => setFilterLocId(e.target.value)}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-tm-teal"
             >
               <option value="">All Locations</option>
               {locations.map(l => (
@@ -184,7 +184,7 @@ export default function Insights() {
             {/* WTD */}
             <div className="bg-white rounded-xl shadow-md p-5">
               <div className="flex items-center gap-3 mb-4">
-                <span className="bg-blue-700 text-white text-xs font-bold px-2 py-1 rounded">WTD</span>
+                <span className="bg-tm-blue text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">WTD</span>
                 <span className="text-sm text-gray-500">
                   Week to Date — {getWeekStart()} through {today()}
                 </span>
@@ -199,7 +199,7 @@ export default function Insights() {
             {/* MTD */}
             <div className="bg-white rounded-xl shadow-md p-5">
               <div className="flex items-center gap-3 mb-4">
-                <span className="bg-green-700 text-white text-xs font-bold px-2 py-1 rounded">MTD</span>
+                <span className="bg-emerald-700 text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">MTD</span>
                 <span className="text-sm text-gray-500">
                   Month to Date — {getMonthStart()} through {today()}
                 </span>

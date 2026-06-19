@@ -9,8 +9,8 @@ function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-blue-50">
-        <div className="text-blue-700 text-sm font-medium">Loading…</div>
+      <div className="flex h-screen items-center justify-center" style={{ backgroundColor: '#F5F2EA' }}>
+        <div className="text-tm-blue text-sm font-brand font-medium tracking-wide">Loading…</div>
       </div>
     )
   }
@@ -42,7 +42,7 @@ export default function App() {
           />
           <Route
             path="/admin"
-            element={<ProtectedRoute><AdminRoute><Admin /></AdminRoute></ProtectedRoute>}
+            element={<ProtectedRoute><ManagerRoute><Admin /></ManagerRoute></ProtectedRoute>}
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

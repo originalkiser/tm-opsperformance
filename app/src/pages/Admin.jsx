@@ -1,22 +1,36 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { supabaseAdmin } from '../lib/supabaseAdmin'
 import { useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
 
+// Generates a readable temporary password
+function generatePassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  return Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+}
+
 export default function Admin() {
-  const { profile: currentProfile } = useAuth()
+  const { profile: currentProfile, locations: myLocations } = useAuth()
+  const isAdmin = currentProfile?.role === 'admin'
+  const isAreaMgr = currentProfile?.role === 'area_manager'
+
   const [locations, setLocations] = useState([])
   const [users, setUsers]         = useState([])
   const [selectedLocId, setSelectedLocId] = useState('')
   const [employees, setEmployees] = useState([])
   const [newEmpName, setNewEmpName] = useState('')
-  const [tab, setTab]             = useState('users')
+  const [tab, setTab]             = useState(isAdmin ? 'users' : 'users')
   const [loading, setLoading]     = useState(true)
 
-  // Invite user state
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteName,  setInviteName]  = useState('')
-  const [inviteStatus, setInviteStatus] = useState(null)
+  // Add user state
+  const [addEmail, setAddEmail]   = useState('')
+  const [addName, setAddName]     = useState('')
+  const [addStatus, setAddStatus] = useState(null) // null | 'saving' | { tempPw } | 'error'
+  const [addError, setAddError]   = useState('')
+
+  // Reset password state: keyed by userId
+  const [resetResults, setResetResults] = useState({})
 
   useEffect(() => {
     Promise.all([fetchLocations(), fetchUsers()]).then(() => setLoading(false))
@@ -53,35 +67,56 @@ export default function Admin() {
     fetchUsers()
   }
 
-  const sendPasswordReset = async (email) => {
-    if (!email) return
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}${window.location.pathname}#/reset-password`,
-    })
-    alert(error ? `Error: ${error.message}` : `Password reset email sent to ${email}`)
-  }
-
-  // Invite new user via Supabase Edge Function
-  const inviteUser = async (e) => {
+  // --- Add User ---
+  const addUser = async (e) => {
     e.preventDefault()
-    if (!inviteEmail.trim()) return
-    setInviteStatus('sending')
+    if (!supabaseAdmin) { setAddError('Service key not configured.'); return }
+    setAddError('')
+    setAddStatus('saving')
+    const tempPw = generatePassword()
 
-    const { error } = await supabase.functions.invoke('invite-user', {
-      body: { email: inviteEmail.trim(), name: inviteName.trim() },
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email: addEmail.trim(),
+      password: tempPw,
+      email_confirm: true,
+      user_metadata: { name: addName.trim() },
     })
 
     if (error) {
-      setInviteStatus('error')
-      console.error(error)
-    } else {
-      setInviteStatus('sent')
-      setInviteEmail('')
-      setInviteName('')
-      setTimeout(() => setInviteStatus(null), 4000)
+      setAddError(error.message)
+      setAddStatus('error')
+      return
     }
+
+    // Profile is auto-created by trigger; give it a moment then refresh
+    setTimeout(() => fetchUsers(), 1000)
+    setAddStatus({ tempPw })
+    setAddEmail('')
+    setAddName('')
   }
 
+  const resetAddForm = () => { setAddStatus(null); setAddError('') }
+
+  // --- Reset Password ---
+  const resetPassword = async (userId, userEmail) => {
+    if (!supabaseAdmin) return
+    const tempPw = generatePassword()
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { password: tempPw })
+    setResetResults(prev => ({
+      ...prev,
+      [userId]: error ? { error: error.message } : { tempPw, email: userEmail },
+    }))
+  }
+
+  const canResetUser = (u) => {
+    if (isAdmin) return true
+    if (isAreaMgr && u.location_id) {
+      return myLocations.some(l => l.id === u.location_id)
+    }
+    return false
+  }
+
+  // --- Employees ---
   const addEmployee = async () => {
     const name = newEmpName.trim()
     if (!name || !selectedLocId) return
@@ -102,30 +137,41 @@ export default function Admin() {
   }
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-100"><NavBar />
+    <div className="min-h-screen" style={{ backgroundColor: '#F5F2EA' }}><NavBar />
       <div className="flex items-center justify-center h-64 text-gray-400">Loading…</div>
     </div>
   )
 
+  const tabs = isAdmin
+    ? ['users', 'add_user', 'employees', 'locations']
+    : ['users', 'employees']
+
+  const tabLabel = (t) => {
+    if (t === 'add_user') return 'Add User'
+    return t.charAt(0).toUpperCase() + t.slice(1)
+  }
+
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen" style={{ backgroundColor: '#F5F2EA' }}>
       <NavBar />
       <div className="max-w-5xl mx-auto px-4 py-6">
-        <h1 className="text-xl font-bold text-gray-800 mb-6">Admin Panel</h1>
+        <h1 className="text-xl font-brand font-bold text-tm-blue mb-6 tracking-wide">
+          {isAdmin ? 'Admin Panel' : 'Manager Panel'}
+        </h1>
 
         {/* Tabs */}
         <div className="flex gap-1 mb-0">
-          {['users', 'invite', 'employees', 'locations'].map(t => (
+          {tabs.map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded-t-lg text-sm font-semibold capitalize transition-colors ${
+              className={`px-4 py-2 rounded-t-lg text-sm font-brand font-semibold capitalize transition-colors ${
                 tab === t
-                  ? 'bg-white text-blue-700 shadow-sm border-b-2 border-blue-700'
+                  ? 'bg-white text-tm-blue shadow-sm border-b-2 border-tm-blue'
                   : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
               }`}
             >
-              {t === 'invite' ? 'Invite User' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {tabLabel(t)}
             </button>
           ))}
         </div>
@@ -136,61 +182,86 @@ export default function Admin() {
           {tab === 'users' && (
             <div>
               <p className="text-xs text-gray-500 mb-3">
-                Assign roles and primary locations. Area managers get access to additional locations via the Locations tab.
+                {isAdmin
+                  ? 'Assign roles and primary locations. Area managers get access to additional locations via the Locations tab.'
+                  : 'Reset passwords for users at your assigned locations.'}
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-100 text-gray-600 text-xs uppercase tracking-wide">
                       <th className="px-3 py-2 text-left">Name / Email</th>
-                      <th className="px-3 py-2 text-left">Role</th>
-                      <th className="px-3 py-2 text-left">Primary Location</th>
+                      {isAdmin && <th className="px-3 py-2 text-left">Role</th>}
+                      {isAdmin && <th className="px-3 py-2 text-left">Primary Location</th>}
                       <th className="px-3 py-2 text-left">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((u, i) => (
+                    {users.filter(u => canResetUser(u) || isAdmin).map((u, i) => (
                       <tr key={u.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-3 py-2">
                           <div className="font-medium text-gray-700">{u.name || '—'}</div>
                           <div className="text-xs text-gray-400">{u.email || ''}</div>
                         </td>
-                        <td className="px-3 py-2">
-                          <select
-                            value={u.role}
-                            onChange={e => updateUser(u.id, { role: e.target.value })}
-                            className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          >
-                            <option value="store">Store</option>
-                            <option value="area_manager">Area Manager</option>
-                            <option value="admin">Admin</option>
-                          </select>
-                        </td>
-                        <td className="px-3 py-2">
-                          <select
-                            value={u.location_id || ''}
-                            onChange={e => updateUser(u.id, { location_id: e.target.value || null })}
-                            className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          >
-                            <option value="">— None —</option>
-                            {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                          </select>
-                        </td>
-                        <td className="px-3 py-2">
-                          {u.email && (
-                            <button
-                              onClick={() => sendPasswordReset(u.email)}
-                              className="text-xs bg-yellow-100 text-yellow-700 hover:bg-yellow-200 px-2 py-1 rounded transition-colors"
+                        {isAdmin && (
+                          <td className="px-3 py-2">
+                            <select
+                              value={u.role}
+                              onChange={e => updateUser(u.id, { role: e.target.value })}
+                              className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-tm-teal"
                             >
-                              Send Reset Link
-                            </button>
+                              <option value="store">Store</option>
+                              <option value="area_manager">Area Manager</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          </td>
+                        )}
+                        {isAdmin && (
+                          <td className="px-3 py-2">
+                            <select
+                              value={u.location_id || ''}
+                              onChange={e => updateUser(u.id, { location_id: e.target.value || null })}
+                              className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-tm-teal"
+                            >
+                              <option value="">— None —</option>
+                              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                            </select>
+                          </td>
+                        )}
+                        <td className="px-3 py-2">
+                          {canResetUser(u) && (
+                            <div className="flex flex-col gap-1">
+                              <button
+                                onClick={() => resetPassword(u.id, u.email)}
+                                className="text-xs bg-yellow-100 text-yellow-700 hover:bg-yellow-200 px-2 py-1 rounded transition-colors w-fit"
+                              >
+                                Reset Password
+                              </button>
+                              {resetResults[u.id] && (
+                                <div className="text-xs mt-1 p-2 rounded bg-gray-50 border border-gray-200 max-w-xs">
+                                  {resetResults[u.id].error ? (
+                                    <span className="text-red-600">{resetResults[u.id].error}</span>
+                                  ) : (
+                                    <>
+                                      <span className="text-gray-500">New temp password for </span>
+                                      <span className="font-medium text-gray-700">{resetResults[u.id].email}:</span>
+                                      <br />
+                                      <span className="font-mono font-bold text-tm-blue text-sm select-all">
+                                        {resetResults[u.id].tempPw}
+                                      </span>
+                                      <span className="text-gray-400 block text-xs mt-0.5">Share this with the user</span>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </td>
                       </tr>
                     ))}
                     {!users.length && (
-                      <tr><td colSpan={4} className="px-3 py-6 text-center text-gray-400 text-sm">
-                        No users yet — users appear here after first sign-in.
+                      <tr><td colSpan={isAdmin ? 4 : 2} className="px-3 py-6 text-center text-gray-400 text-sm">
+                        No users yet.
                       </td></tr>
                     )}
                   </tbody>
@@ -199,70 +270,67 @@ export default function Admin() {
             </div>
           )}
 
-          {/* ── Invite User ── */}
-          {tab === 'invite' && (
+          {/* ── Add User ── */}
+          {tab === 'add_user' && (
             <div className="max-w-md">
               <p className="text-sm text-gray-600 mb-4">
-                Send an invitation email. The user will receive a link to set their password.
-                <br />
-                <span className="text-xs text-gray-400 mt-1 block">
-                  Requires the <code className="bg-gray-100 px-1 rounded">invite-user</code> Edge Function to be deployed to Supabase.
-                </span>
+                Create a new account. A temporary password will be generated — share it with the user so they can log in and update it.
               </p>
-              <form onSubmit={inviteUser} className="space-y-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Name</label>
-                  <input
-                    type="text"
-                    value={inviteName}
-                    onChange={e => setInviteName(e.target.value)}
-                    placeholder="Full name"
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Email *</label>
-                  <input
-                    type="email"
-                    required
-                    value={inviteEmail}
-                    onChange={e => setInviteEmail(e.target.value)}
-                    placeholder="user@example.com"
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={inviteStatus === 'sending'}
-                  className="bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-50"
-                >
-                  {inviteStatus === 'sending' ? 'Sending…' : 'Send Invite'}
-                </button>
-                {inviteStatus === 'sent' && (
-                  <p className="text-green-600 text-sm">Invitation sent!</p>
-                )}
-                {inviteStatus === 'error' && (
-                  <p className="text-red-600 text-sm">
-                    Failed to send. Make sure the Edge Function is deployed
-                    (<code>supabase functions deploy invite-user</code>).
-                  </p>
-                )}
-              </form>
 
-              <div className="mt-6 pt-4 border-t border-gray-100">
-                <p className="text-xs text-gray-500">
-                  Alternatively, invite directly from the{' '}
-                  <a
-                    href="https://supabase.com/dashboard"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 underline"
+              {addStatus && typeof addStatus === 'object' ? (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                  <p className="text-green-700 font-semibold text-sm mb-1">User created!</p>
+                  <p className="text-gray-600 text-xs mb-2">Share this temporary password with the user:</p>
+                  <div className="font-mono font-bold text-tm-blue text-xl tracking-wider select-all bg-white border border-tm-teal/30 rounded px-3 py-2 inline-block">
+                    {addStatus.tempPw}
+                  </div>
+                  <p className="text-gray-400 text-xs mt-2">The user can change their password after logging in.</p>
+                  <button
+                    onClick={resetAddForm}
+                    className="mt-3 bg-tm-blue text-white px-4 py-2 rounded-md text-sm font-brand font-semibold hover:bg-[#0E1D33]"
                   >
-                    Supabase Dashboard
-                  </a>{' '}
-                  → Authentication → Users → Invite User.
-                </p>
-              </div>
+                    Add Another User
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={addUser} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Name</label>
+                    <input
+                      type="text"
+                      value={addName}
+                      onChange={e => setAddName(e.target.value)}
+                      placeholder="Full name"
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-tm-teal"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Email *</label>
+                    <input
+                      type="email"
+                      required
+                      value={addEmail}
+                      onChange={e => setAddEmail(e.target.value)}
+                      placeholder="user@example.com"
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-tm-teal"
+                    />
+                  </div>
+                  {addError && <p className="text-red-600 text-sm">{addError}</p>}
+                  <button
+                    type="submit"
+                    disabled={addStatus === 'saving'}
+                    className="bg-tm-blue text-white px-4 py-2 rounded-md text-sm font-brand font-semibold hover:bg-[#0E1D33] transition-colors disabled:opacity-50"
+                  >
+                    {addStatus === 'saving' ? 'Creating…' : 'Create User'}
+                  </button>
+                </form>
+              )}
+
+              {!supabaseAdmin && (
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-700">
+                  <strong>Setup needed:</strong> Add <code>VITE_SUPABASE_SERVICE_KEY</code> to your <code>.env</code> file and GitHub Secrets, then redeploy.
+                </div>
+              )}
             </div>
           )}
 
@@ -273,10 +341,12 @@ export default function Admin() {
                 <select
                   value={selectedLocId}
                   onChange={e => setSelectedLocId(e.target.value)}
-                  className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tm-teal"
                 >
                   <option value="">Select a location</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  {(isAdmin ? locations : myLocations).map(l => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
                 </select>
               </div>
 
@@ -289,11 +359,11 @@ export default function Admin() {
                       value={newEmpName}
                       onChange={e => setNewEmpName(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && addEmployee()}
-                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"
+                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tm-teal w-52"
                     />
                     <button
                       onClick={addEmployee}
-                      className="bg-blue-700 text-white px-4 py-1.5 rounded-md text-sm font-medium hover:bg-blue-800 transition-colors"
+                      className="bg-tm-blue text-white px-4 py-1.5 rounded-md text-sm font-brand font-medium hover:bg-[#0E1D33] transition-colors"
                     >
                       Add
                     </button>

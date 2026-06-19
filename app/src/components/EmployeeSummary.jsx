@@ -51,33 +51,33 @@ export default function EmployeeSummary({ locationId, selectedDate }) {
 
   return (
     <div>
-      <h3 className="text-sm font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+      <h3 className="text-sm font-brand font-semibold text-tm-blue mb-2 uppercase tracking-widest">
         Employee Summary
       </h3>
       <div className="overflow-x-auto">
         <table className="border-collapse text-xs">
           <thead>
-            <tr className="bg-blue-700 text-white">
+            <tr className="bg-tm-blue text-white">
               {[
                 ['Employee', 'text-left'],
                 ['Google Reviews', ''],
                 ['Total Washes', ''],
                 ['Member Washes', ''],
-                ['Memberships Sold', ''],
-                ['Opportunities', ''],
+                ['Memberships Sold', 'bg-[#8ECFCB] text-tm-navy'],
+                ['Opportunities', 'bg-[#8ECFCB] text-tm-navy'],
                 ['Net Members', ''],
                 ['Better', ''],
                 ['Best', ''],
-                ['P-Mix', 'bg-red-700'],
-                ['Conversion', 'bg-red-700'],
+                ['P-Mix', 'bg-orange-600'],
+                ['Conversion', 'bg-orange-600'],
               ].map(([h, cls]) => (
-                <th key={h} className={`px-3 py-2 border border-blue-600 font-semibold ${cls}`}>{h}</th>
+                <th key={h} className={`px-3 py-2 border border-tm-navy font-brand font-semibold ${cls}`}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {employees.map((emp, i) => (
-              <tr key={emp.name} className={i % 2 === 0 ? 'bg-blue-50' : 'bg-white'}>
+              <tr key={emp.name} className={i % 2 === 0 ? 'bg-[#f0f9f8]' : 'bg-white'}>
                 <td className="border border-gray-200 px-3 py-1.5 font-medium">{emp.name}</td>
                 <td className="border border-gray-200 px-2 py-1.5 text-center">{emp.gr  || ''}</td>
                 <td className="border border-gray-200 px-2 py-1.5 text-center">{emp.tw  || ''}</td>
@@ -91,8 +91,8 @@ export default function EmployeeSummary({ locationId, selectedDate }) {
                 <td className="border border-gray-200 px-2 py-1.5 text-center bg-orange-50 text-orange-800 font-semibold">{emp.conversion}</td>
               </tr>
             ))}
-            <tr className="bg-blue-100 font-semibold border-t-2 border-blue-300">
-              <td className="border border-gray-300 px-3 py-1.5">Totals</td>
+            <tr className="bg-tm-sky/25 font-semibold border-t-2 border-tm-teal/50">
+              <td className="border border-gray-300 px-3 py-1.5 font-brand">Totals</td>
               <td className="border border-gray-300 px-2 py-1.5 text-center">{totals.gr  || ''}</td>
               <td className="border border-gray-300 px-2 py-1.5 text-center">{totals.tw  || ''}</td>
               <td className="border border-gray-300 px-2 py-1.5 text-center">{totals.mw  || ''}</td>
