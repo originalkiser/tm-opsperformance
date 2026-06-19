@@ -3,13 +3,14 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
+import Insights from './pages/Insights'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-blue-50">
-        <div className="text-blue-700 text-sm font-medium">Loading...</div>
+        <div className="text-blue-700 text-sm font-medium">Loading…</div>
       </div>
     )
   }
@@ -22,25 +23,26 @@ function AdminRoute({ children }) {
   return profile.role === 'admin' ? children : <Navigate to="/" replace />
 }
 
+function ManagerRoute({ children }) {
+  const { profile } = useAuth()
+  if (!profile) return null
+  return ['admin', 'area_manager'].includes(profile.role) ? children : <Navigate to="/" replace />
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <HashRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route
-            path="/"
-            element={<ProtectedRoute><Dashboard /></ProtectedRoute>}
+            path="/insights"
+            element={<ProtectedRoute><ManagerRoute><Insights /></ManagerRoute></ProtectedRoute>}
           />
           <Route
             path="/admin"
-            element={
-              <ProtectedRoute>
-                <AdminRoute>
-                  <Admin />
-                </AdminRoute>
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><AdminRoute><Admin /></AdminRoute></ProtectedRoute>}
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -4,7 +4,7 @@ import NavBar from '../components/NavBar'
 import DateSelector from '../components/DateSelector'
 import LocationSelector from '../components/LocationSelector'
 import DailyLogTable from '../components/DailyLogTable'
-import KioskSummary from '../components/KioskSummary'
+import EmployeeSummary from '../components/EmployeeSummary'
 import MonthlyRollup from '../components/MonthlyRollup'
 
 export default function Dashboard() {
@@ -13,17 +13,14 @@ export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [activeTab, setActiveTab] = useState('daily')
 
-  // Auto-select the only location for store users
   useEffect(() => {
     if (locations.length === 1 && !selectedLocationId) {
       setSelectedLocationId(locations[0].id)
     }
   }, [locations])
 
-  const location = locations.find(l => l.id === selectedLocationId)
-
-  // Store users can only edit their own location; area managers + admins can edit all they can see
-  const canEdit =
+  const location  = locations.find(l => l.id === selectedLocationId)
+  const canEdit   =
     profile?.role === 'admin' ||
     profile?.role === 'area_manager' ||
     profile?.location_id === selectedLocationId
@@ -33,7 +30,7 @@ export default function Dashboard() {
       <NavBar />
 
       <div className="max-w-screen-2xl mx-auto px-4 py-4">
-        {/* Top controls */}
+        {/* Controls */}
         <div className="flex flex-wrap gap-3 items-center mb-4">
           {locations.length > 1 && (
             <LocationSelector
@@ -52,7 +49,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-md overflow-hidden">
-            {/* Location header bar */}
+            {/* Location header */}
             <div className="bg-blue-800 text-white px-4 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <span className="font-bold text-sm">{location?.name}</span>
@@ -62,36 +59,31 @@ export default function Dashboard() {
               </div>
               <span className="text-blue-300 text-xs">
                 {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
-                  weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+                  weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
                 })}
               </span>
             </div>
 
             {/* Tabs */}
             <div className="flex border-b border-gray-200 bg-gray-50">
-              <button
-                onClick={() => setActiveTab('daily')}
-                className={`px-6 py-3 text-sm font-semibold transition-colors border-b-2 ${
-                  activeTab === 'daily'
-                    ? 'border-blue-700 text-blue-700 bg-white'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Daily Log
-              </button>
-              <button
-                onClick={() => setActiveTab('monthly')}
-                className={`px-6 py-3 text-sm font-semibold transition-colors border-b-2 ${
-                  activeTab === 'monthly'
-                    ? 'border-green-700 text-green-700 bg-white'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Monthly Rollup
-              </button>
+              {[
+                { key: 'daily',   label: 'Daily Log',      color: 'blue'  },
+                { key: 'monthly', label: 'Monthly Rollup', color: 'green' },
+              ].map(({ key, label, color }) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className={`px-6 py-3 text-sm font-semibold transition-colors border-b-2 ${
+                    activeTab === key
+                      ? `border-${color}-700 text-${color}-700 bg-white`
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
-            {/* Content */}
             <div className="p-4">
               {activeTab === 'daily' ? (
                 <>
@@ -101,10 +93,9 @@ export default function Dashboard() {
                     canEdit={canEdit}
                   />
                   <div className="mt-8 pt-4 border-t border-gray-100">
-                    <KioskSummary
+                    <EmployeeSummary
                       locationId={selectedLocationId}
                       selectedDate={selectedDate}
-                      canEdit={canEdit}
                     />
                   </div>
                 </>
