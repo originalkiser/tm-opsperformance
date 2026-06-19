@@ -4,6 +4,8 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
 import Insights from './pages/Insights'
+import UpdateBanner from './components/UpdateBanner'
+import { useVersionCheck } from './hooks/useVersionCheck'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -29,9 +31,15 @@ function ManagerRoute({ children }) {
   return ['admin', 'area_manager'].includes(profile.role) ? children : <Navigate to="/" replace />
 }
 
+function VersionWatcher() {
+  const updateAvailable = useVersionCheck()
+  return updateAvailable ? <UpdateBanner /> : null
+}
+
 export default function App() {
   return (
     <AuthProvider>
+      <VersionWatcher />
       <HashRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
