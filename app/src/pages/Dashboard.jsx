@@ -19,14 +19,18 @@ export default function Dashboard() {
     }
   }, [locations])
 
-  const location  = locations.find(l => l.id === selectedLocationId)
-  const canEdit   =
+  const location = locations.find(l => l.id === selectedLocationId)
+  const canEdit  =
     profile?.role === 'admin' ||
     profile?.role === 'area_manager' ||
     profile?.location_id === selectedLocationId
 
+  // The locations object comes from AuthContext which selects '*', so
+  // opportunities_formula is included after migration2.sql is applied.
+  const opportunitiesFormula = location?.opportunities_formula ?? 'detailed'
+
   return (
-    <div className="min-h-screen bg-tm-cream/40" style={{ backgroundColor: '#F5F2EA' }}>
+    <div className="min-h-screen" style={{ backgroundColor: '#F5F2EA' }}>
       <NavBar />
 
       <div className="max-w-screen-2xl mx-auto px-4 py-4">
@@ -44,7 +48,7 @@ export default function Dashboard() {
 
         {!selectedLocationId ? (
           <div className="bg-white rounded-xl shadow p-16 text-center text-gray-400">
-            <p className="text-lg font-medium">Select a location to begin</p>
+            <p className="text-lg font-medium font-brand">Select a location to begin</p>
             <p className="text-sm mt-1">Use the dropdown above to choose your site</p>
           </div>
         ) : (
@@ -54,7 +58,9 @@ export default function Dashboard() {
               <div className="flex items-center gap-3">
                 <span className="font-brand font-bold text-sm tracking-wide">{location?.name}</span>
                 {!canEdit && (
-                  <span className="text-xs bg-tm-blue/70 text-tm-sky px-2 py-0.5 rounded font-brand tracking-wide">View Only</span>
+                  <span className="text-xs bg-tm-blue/70 text-tm-sky px-2 py-0.5 rounded font-brand tracking-wide">
+                    View Only
+                  </span>
                 )}
               </div>
               <span className="text-tm-teal text-xs font-brand">
@@ -84,27 +90,30 @@ export default function Dashboard() {
               ))}
             </div>
 
+            {/* Tab content — CSS show/hide keeps DailyLogTable mounted so
+                pending saves are never lost when switching tabs */}
             <div className="p-4">
-              {activeTab === 'daily' ? (
-                <>
-                  <DailyLogTable
+              <div className={activeTab === 'daily' ? 'block' : 'hidden'}>
+                <DailyLogTable
+                  locationId={selectedLocationId}
+                  selectedDate={selectedDate}
+                  canEdit={canEdit}
+                  opportunitiesFormula={opportunitiesFormula}
+                />
+                <div className="mt-8 pt-4 border-t border-gray-100">
+                  <EmployeeSummary
                     locationId={selectedLocationId}
                     selectedDate={selectedDate}
-                    canEdit={canEdit}
                   />
-                  <div className="mt-8 pt-4 border-t border-gray-100">
-                    <EmployeeSummary
-                      locationId={selectedLocationId}
-                      selectedDate={selectedDate}
-                    />
-                  </div>
-                </>
-              ) : (
+                </div>
+              </div>
+
+              <div className={activeTab === 'monthly' ? 'block' : 'hidden'}>
                 <MonthlyRollup
                   locationId={selectedLocationId}
                   selectedDate={selectedDate}
                 />
-              )}
+              </div>
             </div>
           </div>
         )}
