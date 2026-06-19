@@ -25,7 +25,7 @@ function AdminRoute({ children }) {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/tm-opsperformance">
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route
