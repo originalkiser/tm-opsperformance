@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import TrademarkLogo from '../components/TrademarkLogo'
 
 export default function Login() {
-  const [email, setEmail] = useState('')
+  const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [error, setError]       = useState('')
+  const [loading, setLoading]   = useState(false)
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
@@ -24,12 +23,6 @@ export default function Login() {
     <div className="min-h-screen bg-tm-cream flex items-center justify-center px-4"
          style={{ backgroundImage: 'radial-gradient(circle at 60% 20%, #d4eeed 0%, #EDEADE 60%)' }}>
       <div className="w-full max-w-sm">
-        {/* Logo */}
-        <div className="flex justify-center mb-6">
-          <TrademarkLogo size="lg" />
-        </div>
-
-        {/* Login card */}
         <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
           <h2 className="text-center text-sm font-brand font-semibold text-tm-blue tracking-widest uppercase mb-6">
             Operations Portal
