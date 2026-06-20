@@ -14,6 +14,9 @@ const toInt = (v) => Math.max(0, parseInt(v) || 0)
 const pct = (num, den) =>
   den > 0 ? (num / den * 100).toFixed(1) + '%' : ''
 
+const pctN = (num, den) =>
+  den > 0 ? parseFloat((num / den * 100).toFixed(1)) : null
+
 const agg = (rows) => {
   const tw  = rows.reduce((s, r) => s + toInt(r.total_washes),    0)
   const mw  = rows.reduce((s, r) => s + toInt(r.member_washes),   0)
@@ -25,6 +28,27 @@ const agg = (rows) => {
   return {
     tw, mw, ms, opp, gr,
     p_mix:      pct(btr + bst, ms),
+    conversion: pct(ms, opp),
+    pmixN:      pctN(btr + bst, ms),
+    convN:      pctN(ms, opp),
+  }
+}
+
+const aggEmp = (rows) => {
+  const basic  = rows.reduce((s, r) => s + toInt(r.basic),         0)
+  const good   = rows.reduce((s, r) => s + toInt(r.good),          0)
+  const better = rows.reduce((s, r) => s + toInt(r.better),        0)
+  const best   = rows.reduce((s, r) => s + toInt(r.best),          0)
+  const tw     = rows.reduce((s, r) => s + toInt(r.total_washes),  0)
+  const mw     = rows.reduce((s, r) => s + toInt(r.member_washes), 0)
+  const gr     = rows.reduce((s, r) => s + toInt(r.google_reviews),0)
+  const ms     = basic + good + better + best
+  const opp    = Math.max(0, tw - mw + ms)
+  return {
+    ms, gr, opp,
+    pmixN: pctN(better + best, ms),
+    convN: pctN(ms, opp),
+    p_mix:      pct(better + best, ms),
     conversion: pct(ms, opp),
   }
 }
@@ -43,7 +67,7 @@ const getMonthStart = () => {
 
 const today = () => new Date().toISOString().split('T')[0]
 
-// ── Chevron icon ──────────────────────────────────────────────────────────────
+// ── Shared UI pieces ──────────────────────────────────────────────────────────
 
 function ChevronIcon({ open }) {
   return (
@@ -52,6 +76,24 @@ function ChevronIcon({ open }) {
     </svg>
   )
 }
+
+function SortIcon({ active, dir }) {
+  if (!active) return <span className="ml-1 opacity-25 text-[10px]">↕</span>
+  return <span className="ml-1 text-[10px]">{dir === 'asc' ? '↑' : '↓'}</span>
+}
+
+function useSortState(defaultCol, defaultDir = 'desc') {
+  const [sort, setSort] = useState({ col: defaultCol, dir: defaultDir })
+  const toggle = (col) => setSort(s => ({
+    col,
+    dir: s.col === col && s.dir === 'desc' ? 'asc' : 'desc',
+  }))
+  return [sort, toggle]
+}
+
+const parsePct = (v) => parseFloat(v) || 0
+
+const thCls = 'px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide cursor-pointer select-none hover:bg-tm-navy/80 dark:hover:bg-tm-dark-border/60 transition-colors whitespace-nowrap'
 
 // ── Shop multi-select ─────────────────────────────────────────────────────────
 // selected = null → all shops; selected = [] → none; selected = [ids] → subset
@@ -68,7 +110,7 @@ function ShopMultiSelect({ locations, selected, onChange }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const allSelected = selected === null || selected.length === locations.length
+  const allSelected  = selected === null || selected.length === locations.length
   const noneSelected = selected !== null && selected.length === 0
 
   const label = allSelected
@@ -80,11 +122,7 @@ function ShopMultiSelect({ locations, selected, onChange }) {
         : `${selected.length} of ${locations.length} shops`
 
   const toggleAll = () => {
-    if (allSelected) {
-      onChange([]) // deselect all
-    } else {
-      onChange(null) // select all
-    }
+    allSelected ? onChange([]) : onChange(null)
   }
 
   const toggle = (id) => {
@@ -111,22 +149,13 @@ function ShopMultiSelect({ locations, selected, onChange }) {
 
       {open && (
         <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg min-w-[220px] py-1">
-          {/* All shops toggle */}
           <label className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onChange={toggleAll}
-              className="accent-tm-teal w-3.5 h-3.5"
-            />
+            <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-tm-teal w-3.5 h-3.5" />
             <span className="text-xs font-brand font-semibold text-gray-700 dark:text-tm-dark-text">All Shops</span>
           </label>
           <div className="border-t border-gray-100 dark:border-tm-dark-border my-1" />
           {locations.map(loc => (
-            <label
-              key={loc.id}
-              className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors"
-            >
+            <label key={loc.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors">
               <input
                 type="checkbox"
                 checked={allSelected || (selected !== null && selected.includes(loc.id))}
@@ -142,9 +171,11 @@ function ShopMultiSelect({ locations, selected, onChange }) {
   )
 }
 
-// ── Summary table ─────────────────────────────────────────────────────────────
+// ── Site Performance table ────────────────────────────────────────────────────
 
 function MetricTable({ data, locations }) {
+  const [sort, toggleSort] = useSortState('tw', 'desc')
+
   if (!data.length) return (
     <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
   )
@@ -158,34 +189,51 @@ function MetricTable({ data, locations }) {
       name: locations.find(l => l.id === locId)?.name || locId,
       ...agg(rows),
     }))
-    .sort((a, b) => b.tw - a.tw)
 
-  const maxWashes = Math.max(...rows.map(r => r.tw), 1)
+  const sorted = [...rows].sort((a, b) => {
+    const dir = sort.dir === 'asc' ? 1 : -1
+    if (sort.col === 'name')       return dir * a.name.localeCompare(b.name)
+    if (sort.col === 'p_mix')      return dir * (parsePct(a.p_mix) - parsePct(b.p_mix))
+    if (sort.col === 'conversion') return dir * (parsePct(a.conversion) - parsePct(b.conversion))
+    return dir * ((a[sort.col] ?? 0) - (b[sort.col] ?? 0))
+  })
+
+  const maxWashes = Math.max(...sorted.map(r => r.tw), 1)
 
   const MiniBar = ({ value, max }) => (
     <div className="flex items-center gap-1">
       <div className="flex-1 bg-gray-100 dark:bg-tm-dark-border rounded-full h-1.5 min-w-[40px]">
-        <div
-          className="bg-tm-teal h-1.5 rounded-full"
-          style={{ width: max > 0 ? `${Math.min(100, value / max * 100)}%` : '0%' }}
-        />
+        <div className="bg-tm-teal h-1.5 rounded-full" style={{ width: max > 0 ? `${Math.min(100, value / max * 100)}%` : '0%' }} />
       </div>
       <span className="text-xs w-8 text-right dark:text-tm-dark-text">{value}</span>
     </div>
   )
+
+  const COLS = [
+    { key: 'name',       label: 'Location',          align: 'left'   },
+    { key: 'tw',         label: 'Total Washes',       align: 'left'   },
+    { key: 'mw',         label: 'Member Washes',      align: 'center' },
+    { key: 'ms',         label: 'Memberships Sold',   align: 'center' },
+    { key: 'opp',        label: 'Opportunities',      align: 'center' },
+    { key: 'gr',         label: 'Google Reviews',     align: 'center' },
+    { key: 'p_mix',      label: 'P-Mix',              align: 'center' },
+    { key: 'conversion', label: 'Conversion',         align: 'center' },
+  ]
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-xs">
         <thead>
           <tr className="bg-tm-blue dark:bg-tm-navy text-white">
-            {['Location','Total Washes','Member Washes','Memberships Sold','Opportunities','Google Reviews','P-Mix','Conversion'].map(h => (
-              <th key={h} className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border text-left font-brand font-semibold tracking-wide">{h}</th>
+            {COLS.map(c => (
+              <th key={c.key} className={`${thCls} text-${c.align}`} onClick={() => toggleSort(c.key)}>
+                {c.label}<SortIcon active={sort.col === c.key} dir={sort.dir} />
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
+          {sorted.map((r, i) => (
             <tr key={r.name} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
               <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-medium font-brand dark:text-tm-dark-text">{r.name}</td>
               <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2"><MiniBar value={r.tw} max={maxWashes} /></td>
@@ -209,6 +257,163 @@ function MetricTable({ data, locations }) {
           </tr>
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// ── Team Member Sales table ───────────────────────────────────────────────────
+
+function TMSalesRows({ rows, showSite, sort }) {
+  const sorted = [...rows].sort((a, b) => {
+    const dir = sort.dir === 'asc' ? 1 : -1
+    if (sort.col === 'name') return dir * a.name.localeCompare(b.name)
+    if (sort.col === 'site') return dir * (a.site ?? '').localeCompare(b.site ?? '')
+    if (sort.col === 'p_mix')      return dir * ((a.pmixN ?? -1) - (b.pmixN ?? -1))
+    if (sort.col === 'conversion') return dir * ((a.convN ?? -1) - (b.convN ?? -1))
+    return dir * ((a[sort.col] ?? 0) - (b[sort.col] ?? 0))
+  })
+
+  return (
+    <>
+      {sorted.map((r, i) => (
+        <tr key={r.key} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-medium font-brand dark:text-tm-dark-text">{r.name}</td>
+          {showSite && (
+            <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-gray-500 dark:text-tm-dark-muted font-brand text-xs">{r.site}</td>
+          )}
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{r.ms || ''}</td>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{r.gr || ''}</td>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold text-orange-700 dark:text-orange-300">{r.p_mix}</td>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold text-orange-700 dark:text-orange-300">{r.conversion}</td>
+        </tr>
+      ))}
+    </>
+  )
+}
+
+function TMSalesTotalsRow({ rows, showSite }) {
+  const all = rows.flatMap(r => r._rawRows)
+  const t   = aggEmp(all)
+  return (
+    <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">Totals</td>
+      {showSite && <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2" />}
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{t.ms || ''}</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{t.gr || ''}</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">{t.p_mix}</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">{t.conversion}</td>
+    </tr>
+  )
+}
+
+function TeamMemberTable({ data, locations }) {
+  const [splitByShop, setSplitByShop] = useState(false)
+  const [sort, toggleSort]            = useSortState('ms', 'desc')
+
+  if (!data.length) return (
+    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
+  )
+
+  // Build employee rows grouped by (location_id, employee_name)
+  const empMap = {}
+  data.forEach(r => {
+    const name = r.employee_name?.trim()
+    if (!name) return
+    const key = `${r.location_id}::${name}`
+    if (!empMap[key]) empMap[key] = { key, name, locationId: r.location_id, site: locations.find(l => l.id === r.location_id)?.name ?? '', _rawRows: [] }
+    empMap[key]._rawRows.push(r)
+  })
+
+  const allRows = Object.values(empMap).map(e => ({
+    ...e,
+    ...aggEmp(e._rawRows),
+  }))
+
+  if (!allRows.length) return (
+    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No employee data entered for this period.</div>
+  )
+
+  const TM_COLS_COMBINED = [
+    { key: 'name',       label: 'Employee'      },
+    { key: 'site',       label: 'Site'          },
+    { key: 'ms',         label: 'Memberships'   },
+    { key: 'gr',         label: 'Google Reviews'},
+    { key: 'p_mix',      label: 'P-Mix'         },
+    { key: 'conversion', label: 'Conversion'    },
+  ]
+
+  const TM_COLS_SPLIT = TM_COLS_COMBINED.filter(c => c.key !== 'site')
+
+  const TableHead = ({ cols }) => (
+    <thead>
+      <tr className="bg-tm-blue dark:bg-tm-navy text-white">
+        {cols.map(c => (
+          <th key={c.key} className={`${thCls} text-left`} onClick={() => toggleSort(c.key)}>
+            {c.label}<SortIcon active={sort.col === c.key} dir={sort.dir} />
+          </th>
+        ))}
+      </tr>
+    </thead>
+  )
+
+  return (
+    <div>
+      {/* Toggle */}
+      <div className="flex justify-end mb-3">
+        <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-tm-dark-border shadow-sm">
+          {[
+            { label: 'Combined', val: false },
+            { label: 'By Site',  val: true  },
+          ].map(({ label, val }) => (
+            <button
+              key={label}
+              onClick={() => setSplitByShop(val)}
+              className={`px-3 py-1.5 text-xs font-brand font-semibold transition-colors border-r last:border-r-0 border-gray-200 dark:border-tm-dark-border
+                ${splitByShop === val
+                  ? 'bg-tm-blue dark:bg-tm-navy text-white'
+                  : 'bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue dark:hover:text-white'
+                }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {splitByShop ? (
+        // One table per location
+        <div className="space-y-5">
+          {locations.map(loc => {
+            const locRows = allRows.filter(r => r.locationId === loc.id)
+            if (!locRows.length) return null
+            return (
+              <div key={loc.id}>
+                <p className="text-xs font-brand font-semibold text-tm-blue dark:text-tm-teal mb-1.5 uppercase tracking-wide">{loc.name}</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-xs">
+                    <TableHead cols={TM_COLS_SPLIT} />
+                    <tbody>
+                      <TMSalesRows rows={locRows} showSite={false} sort={sort} />
+                      <TMSalesTotalsRow rows={locRows} showSite={false} />
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        // Single combined table
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
+            <TableHead cols={TM_COLS_COMBINED} />
+            <tbody>
+              <TMSalesRows rows={allRows} showSite sort={sort} />
+              <TMSalesTotalsRow rows={allRows} showSite />
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -285,17 +490,15 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
       const btr = rows.reduce((s, r) => s + toInt(r.better),          0)
       const bst = rows.reduce((s, r) => s + toInt(r.best),            0)
       return {
-        day,
-        tw, mw, ms, gr,
-        conversion: opp > 0  ? parseFloat((ms       / opp * 100).toFixed(1)) : null,
-        pmix:       ms  > 0  ? parseFloat(((btr+bst) / ms  * 100).toFixed(1)) : null,
+        day, tw, mw, ms, gr,
+        conversion: opp > 0 ? parseFloat((ms         / opp * 100).toFixed(1)) : null,
+        pmix:       ms  > 0 ? parseFloat(((btr + bst) / ms  * 100).toFixed(1)) : null,
       }
     })
 
-  const navyColor = dark ? '#D6E4F0' : '#1A3555'
+  const navyColor    = dark ? '#D6E4F0' : '#1A3555'
   const trendLocation = locations.find(l => l.id === trendLocId)
-
-  const selectCls = "border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
+  const selectCls    = "border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
 
   return (
     <div>
@@ -328,8 +531,6 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
-
 // ── Collapsible section wrapper ───────────────────────────────────────────────
 
 function Section({ badge, badgeCls, subtitle, children, defaultOpen = true }) {
@@ -361,12 +562,12 @@ function Section({ badge, badgeCls, subtitle, children, defaultOpen = true }) {
 
 export default function Insights() {
   const { locations } = useAuth()
-  const [dark]                          = useDarkModeCtx()
-  const [wtdLogs, setWtdLogs]           = useState([])
-  const [mtdLogs, setMtdLogs]           = useState([])
-  const [loading, setLoading]           = useState(true)
-  const [selectedShops, setSelectedShops] = useState(null) // null = all
-  const [trendLocId, setTrendLocId]     = useState('')
+  const [dark]        = useDarkModeCtx()
+  const [wtdLogs, setWtdLogs]               = useState([])
+  const [mtdLogs, setMtdLogs]               = useState([])
+  const [loading, setLoading]               = useState(true)
+  const [selectedShops, setSelectedShops]   = useState(null) // null = all
+  const [trendLocId, setTrendLocId]         = useState('')
 
   useEffect(() => {
     if (locations.length) {
@@ -375,7 +576,6 @@ export default function Insights() {
     }
   }, [locations])
 
-  // Keep trendLocId valid when shop filter changes
   useEffect(() => {
     if (!trendLocId) return
     const visible = selectedShops === null
@@ -406,24 +606,18 @@ export default function Insights() {
   const filterLogs = (logs) =>
     selectedShops === null ? logs : logs.filter(r => selectedShops.includes(r.location_id))
 
-  const trendLogs = mtdLogs.filter(r => r.location_id === trendLocId)
-
-  const cardCls = "bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border"
+  const trendLogs  = mtdLogs.filter(r => r.location_id === trendLocId)
+  const cardCls    = "bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border"
 
   return (
     <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
       <div className="max-w-screen-2xl mx-auto px-4 py-6">
 
-        {/* Header + shop filter */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Dashboard</h1>
           {locations.length > 1 && (
-            <ShopMultiSelect
-              locations={locations}
-              selected={selectedShops}
-              onChange={setSelectedShops}
-            />
+            <ShopMultiSelect locations={locations} selected={selectedShops} onChange={setSelectedShops} />
           )}
         </div>
 
@@ -438,15 +632,27 @@ export default function Insights() {
               </div>
             </Section>
 
-            <Section badge="WTD" badgeCls="bg-tm-blue" subtitle={`Week to Date — ${getWeekStart()} through ${today()}`}>
+            <Section badge="WTD" badgeCls="bg-tm-blue" subtitle={`WTD Site Performance — ${getWeekStart()} through ${today()}`}>
               <div className="mt-3">
                 <MetricTable data={filterLogs(wtdLogs)} locations={visibleLocations} />
               </div>
             </Section>
 
-            <Section badge="MTD" badgeCls="bg-emerald-700" subtitle={`Month to Date — ${getMonthStart()} through ${today()}`}>
+            <Section badge="WTD" badgeCls="bg-tm-blue" subtitle={`WTD Team Member Sales — ${getWeekStart()} through ${today()}`}>
+              <div className="mt-3">
+                <TeamMemberTable data={filterLogs(wtdLogs)} locations={visibleLocations} />
+              </div>
+            </Section>
+
+            <Section badge="MTD" badgeCls="bg-emerald-700" subtitle={`MTD Site Performance — ${getMonthStart()} through ${today()}`}>
               <div className="mt-3">
                 <MetricTable data={filterLogs(mtdLogs)} locations={visibleLocations} />
+              </div>
+            </Section>
+
+            <Section badge="MTD" badgeCls="bg-emerald-700" subtitle={`MTD Team Member Sales — ${getMonthStart()} through ${today()}`}>
+              <div className="mt-3">
+                <TeamMemberTable data={filterLogs(mtdLogs)} locations={visibleLocations} />
               </div>
             </Section>
 
