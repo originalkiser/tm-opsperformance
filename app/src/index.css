@@ -4,6 +4,10 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
 /* Remove number input spinners for cleaner table cells */
 input[type='number']::-webkit-outer-spin-button,
 input[type='number']::-webkit-inner-spin-button {

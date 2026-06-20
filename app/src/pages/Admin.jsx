@@ -16,20 +16,18 @@ export default function Admin() {
 
   const [locations,    setLocations]    = useState([])
   const [users,        setUsers]        = useState([])
-  const [managerLocs,  setManagerLocs]  = useState([])  // [{manager_id, location_id}]
+  const [managerLocs,  setManagerLocs]  = useState([])
   const [selectedLocId, setSelectedLocId] = useState('')
   const [employees,    setEmployees]    = useState([])
   const [newEmpName,   setNewEmpName]   = useState('')
   const [tab,          setTab]          = useState('users')
   const [loading,      setLoading]      = useState(true)
 
-  // Add user
   const [addEmail,  setAddEmail]  = useState('')
   const [addName,   setAddName]   = useState('')
   const [addStatus, setAddStatus] = useState(null)
   const [addError,  setAddError]  = useState('')
 
-  // Reset password results per userId
   const [resetResults, setResetResults] = useState({})
 
   useEffect(() => {
@@ -70,7 +68,6 @@ export default function Admin() {
     fetchUsers()
   }
 
-  // ── Location config helpers ──────────────────────────────────
   const updateLocationFormula = async (locId, formula) => {
     await supabase.from('locations').update({ opportunities_formula: formula }).eq('id', locId)
     fetchLocations()
@@ -84,13 +81,10 @@ export default function Admin() {
 
   const removeManagerFromLocation = async (managerId, locId) => {
     await supabase.from('manager_locations')
-      .delete()
-      .eq('manager_id', managerId)
-      .eq('location_id', locId)
+      .delete().eq('manager_id', managerId).eq('location_id', locId)
     fetchManagerLocs()
   }
 
-  // ── Add User ─────────────────────────────────────────────────
   const addUser = async (e) => {
     e.preventDefault()
     if (!supabaseAdmin) { setAddError('Service key not configured.'); return }
@@ -112,7 +106,6 @@ export default function Admin() {
 
   const resetAddForm = () => { setAddStatus(null); setAddError('') }
 
-  // ── Reset Password ────────────────────────────────────────────
   const resetPassword = async (userId, userEmail) => {
     if (!supabaseAdmin) return
     const tempPw = generatePassword()
@@ -129,7 +122,6 @@ export default function Admin() {
     return false
   }
 
-  // ── Employees ─────────────────────────────────────────────────
   const addEmployee = async () => {
     const name = newEmpName.trim()
     if (!name || !selectedLocId) return
@@ -149,13 +141,12 @@ export default function Admin() {
     fetchEmployees()
   }
 
-  // ── Derived data ──────────────────────────────────────────────
   const areaManagers = users.filter(u => u.role === 'area_manager')
 
   if (loading) return (
-    <div className="min-h-screen" style={{ backgroundColor: '#F5F2EA' }}>
+    <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
-      <div className="flex items-center justify-center h-64 text-gray-400">Loading…</div>
+      <div className="flex items-center justify-center h-64 text-gray-400 dark:text-tm-dark-muted">Loading…</div>
     </div>
   )
 
@@ -169,10 +160,10 @@ export default function Admin() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#F5F2EA' }}>
+    <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
       <div className="max-w-6xl mx-auto px-4 py-6">
-        <h1 className="text-xl font-brand font-bold text-tm-blue mb-6 tracking-wide">
+        <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal mb-6 tracking-wide">
           {isAdmin ? 'Admin Panel' : 'Manager Panel'}
         </h1>
 
@@ -184,8 +175,8 @@ export default function Admin() {
               onClick={() => setTab(t)}
               className={`px-4 py-2 rounded-t-lg text-sm font-brand font-semibold capitalize transition-colors ${
                 tab === t
-                  ? 'bg-white text-tm-blue shadow-sm border-b-2 border-tm-blue'
-                  : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                  ? 'bg-white dark:bg-tm-dark-surface text-tm-blue dark:text-tm-teal shadow-sm border-b-2 border-tm-blue dark:border-tm-teal'
+                  : 'bg-gray-200 dark:bg-tm-dark-card text-gray-500 dark:text-tm-dark-muted hover:bg-gray-300 dark:hover:bg-tm-dark-border'
               }`}
             >
               {tabLabel(t)}
@@ -193,12 +184,12 @@ export default function Admin() {
           ))}
         </div>
 
-        <div className="bg-white rounded-b-xl rounded-tr-xl shadow-md p-5">
+        <div className="bg-white dark:bg-tm-dark-surface rounded-b-xl rounded-tr-xl shadow-md p-5 dark:border dark:border-tm-dark-border">
 
           {/* ── Users ── */}
           {tab === 'users' && (
             <div>
-              <p className="text-xs text-gray-500 mb-3">
+              <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-3">
                 {isAdmin
                   ? 'Assign roles and primary locations. Reset passwords as needed.'
                   : 'Reset passwords for users at your assigned locations.'}
@@ -206,7 +197,7 @@ export default function Admin() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-gray-100 text-gray-600 text-xs uppercase tracking-wide font-brand">
+                    <tr className="bg-gray-100 dark:bg-tm-dark-card text-gray-600 dark:text-tm-dark-muted text-xs uppercase tracking-wide font-brand">
                       <th className="px-3 py-2 text-left">Name / Email</th>
                       {isAdmin && <th className="px-3 py-2 text-left">Role</th>}
                       {isAdmin && <th className="px-3 py-2 text-left">Primary Location</th>}
@@ -215,17 +206,17 @@ export default function Admin() {
                   </thead>
                   <tbody>
                     {users.map((u, i) => (
-                      <tr key={u.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <tr key={u.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-row-alt'}>
                         <td className="px-3 py-2">
-                          <div className="font-medium text-gray-700">{u.name || '—'}</div>
-                          <div className="text-xs text-gray-400">{u.email || ''}</div>
+                          <div className="font-medium text-gray-700 dark:text-tm-dark-text">{u.name || '—'}</div>
+                          <div className="text-xs text-gray-400 dark:text-tm-dark-muted">{u.email || ''}</div>
                         </td>
                         {isAdmin && (
                           <td className="px-3 py-2">
                             <select
                               value={u.role}
                               onChange={e => updateUser(u.id, { role: e.target.value })}
-                              className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-tm-teal"
+                              className="border border-gray-300 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal"
                             >
                               <option value="store">Store</option>
                               <option value="area_manager">Area Manager</option>
@@ -238,7 +229,7 @@ export default function Admin() {
                             <select
                               value={u.location_id || ''}
                               onChange={e => updateUser(u.id, { location_id: e.target.value || null })}
-                              className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-tm-teal"
+                              className="border border-gray-300 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal"
                             >
                               <option value="">— None —</option>
                               {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -255,13 +246,13 @@ export default function Admin() {
                                 Reset Password
                               </button>
                               {resetResults[u.id] && (
-                                <div className="text-xs mt-1 p-2 rounded bg-gray-50 border border-gray-200 max-w-xs">
+                                <div className="text-xs mt-1 p-2 rounded bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border max-w-xs">
                                   {resetResults[u.id].error ? (
-                                    <span className="text-red-600">{resetResults[u.id].error}</span>
+                                    <span className="text-red-600 dark:text-red-400">{resetResults[u.id].error}</span>
                                   ) : (
                                     <>
-                                      <span className="text-gray-500">Temp password:</span>
-                                      <span className="font-mono font-bold text-tm-blue text-sm select-all ml-1">
+                                      <span className="text-gray-500 dark:text-tm-dark-muted">Temp password:</span>
+                                      <span className="font-mono font-bold text-tm-blue dark:text-tm-teal text-sm select-all ml-1">
                                         {resetResults[u.id].tempPw}
                                       </span>
                                     </>
@@ -274,7 +265,7 @@ export default function Admin() {
                       </tr>
                     ))}
                     {!users.length && (
-                      <tr><td colSpan={isAdmin ? 4 : 2} className="px-3 py-6 text-center text-gray-400 text-sm">
+                      <tr><td colSpan={isAdmin ? 4 : 2} className="px-3 py-6 text-center text-gray-400 dark:text-tm-dark-muted text-sm">
                         No users yet.
                       </td></tr>
                     )}
@@ -287,18 +278,18 @@ export default function Admin() {
           {/* ── Add User ── */}
           {tab === 'add_user' && (
             <div className="max-w-md">
-              <p className="text-sm text-gray-600 mb-4">
+              <p className="text-sm text-gray-600 dark:text-tm-dark-muted mb-4">
                 Create a new account. A temporary password will be generated — share it with the user so they can log in and update it.
               </p>
 
               {addStatus && typeof addStatus === 'object' ? (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                  <p className="text-green-700 font-semibold text-sm mb-1">User created!</p>
-                  <p className="text-gray-600 text-xs mb-2">Temporary password to share:</p>
-                  <div className="font-mono font-bold text-tm-blue text-xl tracking-wider select-all bg-white border border-tm-teal/30 rounded px-3 py-2 inline-block">
+                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900/40 rounded-lg p-4 mb-4">
+                  <p className="text-green-700 dark:text-green-300 font-semibold text-sm mb-1">User created!</p>
+                  <p className="text-gray-600 dark:text-tm-dark-muted text-xs mb-2">Temporary password to share:</p>
+                  <div className="font-mono font-bold text-tm-blue dark:text-tm-teal text-xl tracking-wider select-all bg-white dark:bg-tm-dark-card border border-tm-teal/30 rounded px-3 py-2 inline-block">
                     {addStatus.tempPw}
                   </div>
-                  <p className="text-gray-400 text-xs mt-2">User can change it after logging in via Settings ⚙</p>
+                  <p className="text-gray-400 dark:text-tm-dark-muted text-xs mt-2">User can change it after logging in via Settings ⚙</p>
                   <button onClick={resetAddForm} className="mt-3 bg-tm-blue text-white px-4 py-2 rounded-md text-sm font-brand font-semibold hover:bg-[#0E1D33]">
                     Add Another User
                   </button>
@@ -306,18 +297,18 @@ export default function Admin() {
               ) : (
                 <form onSubmit={addUser} className="space-y-3">
                   <div>
-                    <label className="block text-xs font-brand font-semibold text-gray-600 mb-1">Name</label>
+                    <label className="block text-xs font-brand font-semibold text-gray-600 dark:text-tm-dark-muted mb-1">Name</label>
                     <input type="text" value={addName} onChange={e => setAddName(e.target.value)}
                       placeholder="Full name"
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-tm-teal" />
+                      className="w-full border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-2 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal" />
                   </div>
                   <div>
-                    <label className="block text-xs font-brand font-semibold text-gray-600 mb-1">Email *</label>
+                    <label className="block text-xs font-brand font-semibold text-gray-600 dark:text-tm-dark-muted mb-1">Email *</label>
                     <input type="email" required value={addEmail} onChange={e => setAddEmail(e.target.value)}
                       placeholder="user@example.com"
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-tm-teal" />
+                      className="w-full border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-2 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal" />
                   </div>
-                  {addError && <p className="text-red-600 text-sm">{addError}</p>}
+                  {addError && <p className="text-red-600 dark:text-red-400 text-sm">{addError}</p>}
                   <button type="submit" disabled={addStatus === 'saving'}
                     className="bg-tm-blue text-white px-4 py-2 rounded-md text-sm font-brand font-semibold hover:bg-[#0E1D33] transition-colors disabled:opacity-50">
                     {addStatus === 'saving' ? 'Creating…' : 'Create User'}
@@ -326,7 +317,7 @@ export default function Admin() {
               )}
 
               {!supabaseAdmin && (
-                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-700">
+                <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-900/40 rounded text-xs text-yellow-700 dark:text-yellow-300">
                   <strong>Setup needed:</strong> Add <code>VITE_SUPABASE_SERVICE_KEY</code> to <code>.env</code> and GitHub Secrets, then redeploy.
                 </div>
               )}
@@ -340,7 +331,7 @@ export default function Admin() {
                 <select
                   value={selectedLocId}
                   onChange={e => setSelectedLocId(e.target.value)}
-                  className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tm-teal"
+                  className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
                 >
                   <option value="">Select a location</option>
                   {(isAdmin ? locations : myLocations).map(l => (
@@ -358,7 +349,7 @@ export default function Admin() {
                       value={newEmpName}
                       onChange={e => setNewEmpName(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && addEmployee()}
-                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tm-teal w-52"
+                      className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal w-52"
                     />
                     <button onClick={addEmployee}
                       className="bg-tm-blue text-white px-4 py-1.5 rounded-md text-sm font-brand font-medium hover:bg-[#0E1D33] transition-colors">
@@ -367,8 +358,8 @@ export default function Admin() {
                   </div>
                   <div className="space-y-1">
                     {employees.map(emp => (
-                      <div key={emp.id} className="flex items-center gap-2 py-1.5 border-b border-gray-100">
-                        <span className={`flex-1 text-sm ${!emp.is_active ? 'line-through text-gray-400' : 'text-gray-700'}`}>
+                      <div key={emp.id} className="flex items-center gap-2 py-1.5 border-b border-gray-100 dark:border-tm-dark-border">
+                        <span className={`flex-1 text-sm ${!emp.is_active ? 'line-through text-gray-400 dark:text-tm-dark-muted' : 'text-gray-700 dark:text-tm-dark-text'}`}>
                           {emp.name}
                         </span>
                         <button onClick={() => toggleEmployee(emp)}
@@ -385,7 +376,9 @@ export default function Admin() {
                         </button>
                       </div>
                     ))}
-                    {!employees.length && <p className="text-sm text-gray-400 py-3">No employees added yet.</p>}
+                    {!employees.length && (
+                      <p className="text-sm text-gray-400 dark:text-tm-dark-muted py-3">No employees added yet.</p>
+                    )}
                   </div>
                 </>
               )}
@@ -410,9 +403,8 @@ export default function Admin() {
   )
 }
 
-// ── Locations tab as sub-component ────────────────────────────
+// ── Locations tab ─────────────────────────────────────────────────────────────
 function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onAddManager, onRemoveManager }) {
-  // Per-location state for the "add AM" select
   const [addMgrSelections, setAddMgrSelections] = useState({})
 
   const getAssignedMgrs = (locId) =>
@@ -429,13 +421,13 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
 
   return (
     <div>
-      <p className="text-xs text-gray-500 mb-4">
+      <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-4">
         Configure each location's opportunities formula and area manager assignments.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="bg-gray-100 text-gray-600 text-xs uppercase tracking-wide font-brand">
+            <tr className="bg-gray-100 dark:bg-tm-dark-card text-gray-600 dark:text-tm-dark-muted text-xs uppercase tracking-wide font-brand">
               <th className="px-3 py-2 text-left">Location</th>
               <th className="px-3 py-2 text-left">Opportunities Formula</th>
               <th className="px-3 py-2 text-left">Area Manager(s)</th>
@@ -449,31 +441,26 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
               const availableMgrs = unassignedMgrs(loc.id)
 
               return (
-                <tr key={loc.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  {/* Location name */}
-                  <td className="border border-gray-200 px-3 py-2 font-brand font-medium text-tm-blue whitespace-nowrap">
+                <tr key={loc.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-row-alt'}>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-brand font-medium text-tm-blue dark:text-tm-teal whitespace-nowrap">
                     {loc.name}
                   </td>
-
-                  {/* Formula select */}
-                  <td className="border border-gray-200 px-3 py-2">
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
                     <select
                       value={loc.opportunities_formula || 'detailed'}
                       onChange={e => onUpdateFormula(loc.id, e.target.value)}
-                      className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-tm-teal w-full max-w-[200px]"
+                      className="border border-gray-300 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal w-full max-w-[200px]"
                     >
                       <option value="simple">Simple — TW − MW</option>
                       <option value="detailed">Detailed — TW − MW + MS</option>
                     </select>
                   </td>
-
-                  {/* Area Managers */}
-                  <td className="border border-gray-200 px-3 py-2">
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
                     <div className="flex flex-wrap gap-1 mb-1">
                       {assignedMgrs.map(am => (
                         <span
                           key={am.id}
-                          className="inline-flex items-center gap-1 bg-tm-blue/10 text-tm-blue text-xs px-2 py-0.5 rounded-full font-brand"
+                          className="inline-flex items-center gap-1 bg-tm-blue/10 dark:bg-tm-blue/30 text-tm-blue dark:text-tm-sky text-xs px-2 py-0.5 rounded-full font-brand"
                         >
                           {am.name || am.email || am.id.slice(0, 8)}
                           <button
@@ -491,7 +478,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                         <select
                           value={addMgrSelections[loc.id] || ''}
                           onChange={e => setAddMgrSelections(p => ({ ...p, [loc.id]: e.target.value }))}
-                          className="border border-gray-300 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-tm-teal"
+                          className="border border-gray-300 dark:border-tm-dark-border rounded px-2 py-0.5 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal"
                         >
                           <option value="">+ Add AM…</option>
                           {availableMgrs.map(am => (
@@ -512,16 +499,14 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                       </div>
                     )}
                   </td>
-
-                  {/* Primary store users */}
-                  <td className="border border-gray-200 px-3 py-2">
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
                     <div className="flex flex-wrap gap-1">
                       {primaryUsers.length ? primaryUsers.map(u => (
-                        <span key={u.id} className="inline-flex items-center bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">
+                        <span key={u.id} className="inline-flex items-center bg-gray-100 dark:bg-tm-dark-card text-gray-600 dark:text-tm-dark-muted text-xs px-2 py-0.5 rounded-full">
                           {u.name || u.email || '—'}
                         </span>
                       )) : (
-                        <span className="text-xs text-gray-300 italic">None assigned</span>
+                        <span className="text-xs text-gray-300 dark:text-tm-dark-muted italic">None assigned</span>
                       )}
                     </div>
                   </td>
@@ -532,10 +517,9 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
         </table>
       </div>
 
-      {/* Legend */}
-      <div className="mt-4 pt-4 border-t border-gray-100 text-xs text-gray-400 space-y-1">
-        <p><strong className="text-gray-500">Simple (TW − MW):</strong> All non-member washes count as opportunities</p>
-        <p><strong className="text-gray-500">Detailed (TW − MW + MS):</strong> Add memberships sold back — true opportunities including sold memberships</p>
+      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-tm-dark-border text-xs text-gray-400 dark:text-tm-dark-muted space-y-1">
+        <p><strong className="text-gray-500 dark:text-tm-dark-text">Simple (TW − MW):</strong> All non-member washes count as opportunities</p>
+        <p><strong className="text-gray-500 dark:text-tm-dark-text">Detailed (TW − MW + MS):</strong> Add memberships sold back — true opportunities including sold memberships</p>
       </div>
     </div>
   )

@@ -6,6 +6,7 @@ import LocationSelector from '../components/LocationSelector'
 import DailyLogTable from '../components/DailyLogTable'
 import EmployeeSummary from '../components/EmployeeSummary'
 import MonthlyRollup from '../components/MonthlyRollup'
+import DailySnapshot from '../components/DailySnapshot'
 
 export default function Dashboard() {
   const { profile, locations } = useAuth()
@@ -26,12 +27,10 @@ export default function Dashboard() {
     profile?.role === 'area_manager' ||
     profile?.location_id === selectedLocationId
 
-  // The locations object comes from AuthContext which selects '*', so
-  // opportunities_formula is included after migration2.sql is applied.
   const opportunitiesFormula = location?.opportunities_formula ?? 'detailed'
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#F5F2EA' }}>
+    <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
 
       <div className="max-w-screen-2xl mx-auto px-4 py-4">
@@ -48,14 +47,14 @@ export default function Dashboard() {
         </div>
 
         {!selectedLocationId ? (
-          <div className="bg-white rounded-xl shadow p-16 text-center text-gray-400">
+          <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow p-16 text-center text-gray-400 dark:text-tm-dark-muted border border-transparent dark:border-tm-dark-border">
             <p className="text-lg font-medium font-brand">Select a location to begin</p>
             <p className="text-sm mt-1">Use the dropdown above to choose your site</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+          <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md overflow-hidden dark:border dark:border-tm-dark-border">
             {/* Location header */}
-            <div className="bg-tm-navy text-white px-4 py-2.5 flex items-center justify-between">
+            <div className="bg-tm-navy dark:bg-tm-dark-nav text-white px-4 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <span className="font-brand font-bold text-sm tracking-wide">{location?.name}</span>
                 {!canEdit && (
@@ -72,18 +71,19 @@ export default function Dashboard() {
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-gray-200 bg-gray-50">
+            <div className="flex border-b border-gray-200 dark:border-tm-dark-border bg-gray-50 dark:bg-tm-dark-bg">
               {[
-                { key: 'daily',   label: 'Daily Log'      },
-                { key: 'monthly', label: 'Monthly Rollup' },
+                { key: 'daily',    label: 'Daily Log'      },
+                { key: 'snapshot', label: 'Snapshot'       },
+                { key: 'monthly',  label: 'Monthly Rollup' },
               ].map(({ key, label }) => (
                 <button
                   key={key}
                   onClick={() => setActiveTab(key)}
                   className={`px-6 py-3 text-sm font-brand font-semibold transition-colors border-b-2 ${
                     activeTab === key
-                      ? 'border-tm-blue text-tm-blue bg-white'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                      ? 'border-tm-blue dark:border-tm-teal text-tm-blue dark:text-tm-teal bg-white dark:bg-tm-dark-surface'
+                      : 'border-transparent text-gray-500 dark:text-tm-dark-muted hover:text-gray-700 dark:hover:text-tm-dark-text'
                   }`}
                 >
                   {label}
@@ -91,8 +91,7 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {/* Tab content — CSS show/hide keeps DailyLogTable mounted so
-                pending saves are never lost when switching tabs */}
+            {/* Tab content — CSS show/hide keeps DailyLogTable mounted */}
             <div className="p-4">
               <div className={activeTab === 'daily' ? 'block' : 'hidden'}>
                 <DailyLogTable
@@ -101,13 +100,23 @@ export default function Dashboard() {
                   canEdit={canEdit}
                   opportunitiesFormula={opportunitiesFormula}
                   onRowsChange={setLiveRows}
+                  profile={profile}
                 />
-                <div className="mt-8 pt-4 border-t border-gray-100">
+                <div className="mt-8 pt-4 border-t border-gray-100 dark:border-tm-dark-border">
                   <EmployeeSummary
                     rows={liveRows}
                     opportunitiesFormula={opportunitiesFormula}
                   />
                 </div>
+              </div>
+
+              <div className={activeTab === 'snapshot' ? 'block' : 'hidden'}>
+                <DailySnapshot
+                  rows={liveRows}
+                  date={selectedDate}
+                  locationName={location?.name}
+                  opportunitiesFormula={opportunitiesFormula}
+                />
               </div>
 
               <div className={activeTab === 'monthly' ? 'block' : 'hidden'}>

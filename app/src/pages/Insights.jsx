@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
+  XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
@@ -45,7 +46,7 @@ const today = () => new Date().toISOString().split('T')[0]
 
 function MetricTable({ data, locations }) {
   if (!data.length) return (
-    <div className="text-sm text-gray-400 py-4">No data for this period.</div>
+    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
   )
 
   const totals = agg(data)
@@ -61,15 +62,15 @@ function MetricTable({ data, locations }) {
 
   const maxWashes = Math.max(...rows.map(r => r.tw), 1)
 
-  const Bar = ({ value, max }) => (
+  const MiniBar = ({ value, max }) => (
     <div className="flex items-center gap-1">
-      <div className="flex-1 bg-gray-100 rounded-full h-1.5 min-w-[40px]">
+      <div className="flex-1 bg-gray-100 dark:bg-tm-dark-border rounded-full h-1.5 min-w-[40px]">
         <div
           className="bg-tm-teal h-1.5 rounded-full"
           style={{ width: max > 0 ? `${Math.min(100, value / max * 100)}%` : '0%' }}
         />
       </div>
-      <span className="text-xs w-8 text-right">{value}</span>
+      <span className="text-xs w-8 text-right dark:text-tm-dark-text">{value}</span>
     </div>
   )
 
@@ -77,34 +78,34 @@ function MetricTable({ data, locations }) {
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-xs">
         <thead>
-          <tr className="bg-tm-blue text-white">
+          <tr className="bg-tm-blue dark:bg-tm-navy text-white">
             {['Location','Total Washes','Member Washes','Memberships Sold','Opportunities','Google Reviews','P-Mix','Conversion'].map(h => (
-              <th key={h} className="px-3 py-2 border border-tm-navy text-left font-brand font-semibold tracking-wide">{h}</th>
+              <th key={h} className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border text-left font-brand font-semibold tracking-wide">{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={r.name} className={i % 2 === 0 ? 'bg-[#f0f9f8]' : 'bg-white'}>
-              <td className="border border-gray-200 px-3 py-2 font-medium font-brand">{r.name}</td>
-              <td className="border border-gray-200 px-3 py-2"><Bar value={r.tw} max={maxWashes} /></td>
-              <td className="border border-gray-200 px-3 py-2 text-center">{r.mw || ''}</td>
-              <td className="border border-gray-200 px-3 py-2 text-center">{r.ms || ''}</td>
-              <td className="border border-gray-200 px-3 py-2 text-center">{r.opp || ''}</td>
-              <td className="border border-gray-200 px-3 py-2 text-center">{r.gr || ''}</td>
-              <td className="border border-gray-200 px-3 py-2 text-center font-semibold text-orange-700">{r.p_mix}</td>
-              <td className="border border-gray-200 px-3 py-2 text-center font-semibold text-orange-700">{r.conversion}</td>
+            <tr key={r.name} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-medium font-brand dark:text-tm-dark-text">{r.name}</td>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2"><MiniBar value={r.tw} max={maxWashes} /></td>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.mw || ''}</td>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.ms || ''}</td>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.opp || ''}</td>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.gr || ''}</td>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold text-orange-700 dark:text-orange-300">{r.p_mix}</td>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold text-orange-700 dark:text-orange-300">{r.conversion}</td>
             </tr>
           ))}
-          <tr className="bg-tm-sky/25 font-semibold border-t-2 border-tm-teal/50">
-            <td className="border border-gray-300 px-3 py-2 font-brand">Totals</td>
-            <td className="border border-gray-300 px-3 py-2 text-center">{totals.tw || ''}</td>
-            <td className="border border-gray-300 px-3 py-2 text-center">{totals.mw || ''}</td>
-            <td className="border border-gray-300 px-3 py-2 text-center">{totals.ms || ''}</td>
-            <td className="border border-gray-300 px-3 py-2 text-center">{totals.opp || ''}</td>
-            <td className="border border-gray-300 px-3 py-2 text-center">{totals.gr || ''}</td>
-            <td className="border border-gray-300 px-3 py-2 text-center bg-orange-100 text-orange-800">{totals.p_mix}</td>
-            <td className="border border-gray-300 px-3 py-2 text-center bg-orange-100 text-orange-800">{totals.conversion}</td>
+          <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">Totals</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totals.tw || ''}</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totals.mw || ''}</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totals.ms || ''}</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totals.opp || ''}</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totals.gr || ''}</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">{totals.p_mix}</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">{totals.conversion}</td>
           </tr>
         </tbody>
       </table>
@@ -114,7 +115,6 @@ function MetricTable({ data, locations }) {
 
 // ── Daily trend charts ────────────────────────────────────────────────────────
 
-const NAVY   = '#1A3555'
 const TEAL   = '#8ECFCB'
 const ORANGE = '#ea580c'
 
@@ -122,29 +122,32 @@ const ChartTooltip = ({ active, payload, label, isPct }) => {
   if (!active || !payload?.length) return null
   const val = payload[0]?.value
   return (
-    <div className="bg-white border border-gray-200 rounded shadow-md px-3 py-2 text-xs font-brand">
-      <p className="text-gray-500 mb-1">Day {label}</p>
-      <p className="font-semibold text-tm-blue">
+    <div className="bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded shadow-md px-3 py-2 text-xs font-brand">
+      <p className="text-gray-500 dark:text-tm-dark-muted mb-1">Day {label}</p>
+      <p className="font-semibold text-tm-blue dark:text-tm-teal">
         {val != null ? (isPct ? `${val}%` : val) : '—'}
       </p>
     </div>
   )
 }
 
-function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar' }) {
+function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', dark }) {
+  const axisColor = dark ? '#7A9BBF' : '#6B7280'
+  const gridColor = dark ? '#1E3A5F' : '#f0f0f0'
+
   const hasData = data.some(d => d[dataKey] != null && d[dataKey] > 0)
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-      <p className="text-xs font-brand font-semibold text-gray-600 uppercase tracking-wide mb-3">{title}</p>
+    <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border shadow-sm p-4">
+      <p className="text-xs font-brand font-semibold text-gray-600 dark:text-tm-dark-muted uppercase tracking-wide mb-3">{title}</p>
       {!hasData ? (
-        <div className="h-32 flex items-center justify-center text-gray-300 text-xs">No data</div>
+        <div className="h-32 flex items-center justify-center text-gray-300 dark:text-tm-dark-muted text-xs">No data</div>
       ) : (
         <ResponsiveContainer width="100%" height={140}>
           {type === 'line' ? (
             <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fontFamily: 'Chakra Petch' }} />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch' }} tickFormatter={v => isPct ? `${v}%` : v} />
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+              <XAxis dataKey="day" tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} />
+              <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} tickFormatter={v => isPct ? `${v}%` : v} />
               <Tooltip content={<ChartTooltip isPct={isPct} />} />
               <Line
                 type="monotone"
@@ -157,9 +160,9 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar' })
             </LineChart>
           ) : (
             <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fontFamily: 'Chakra Petch' }} />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch' }} />
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+              <XAxis dataKey="day" tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} />
+              <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} />
               <Tooltip content={<ChartTooltip isPct={isPct} />} />
               <Bar dataKey={dataKey} fill={color} radius={[2, 2, 0, 0]} />
             </BarChart>
@@ -170,8 +173,7 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar' })
   )
 }
 
-function DailyTrends({ logs }) {
-  // Aggregate logs by calendar day
+function DailyTrends({ logs, dark }) {
   const dayMap = {}
   logs.forEach(r => {
     if (!dayMap[r.log_date]) dayMap[r.log_date] = []
@@ -200,18 +202,21 @@ function DailyTrends({ logs }) {
       }
     })
 
+  // Dark-mode bar color for navy metrics
+  const navyColor = dark ? '#D6E4F0' : '#1A3555'
+
   if (!chartData.length) return (
-    <div className="text-sm text-gray-400 py-4">No data for this period.</div>
+    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
   )
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-      <MiniChart title="Daily Memberships Sold"  data={chartData} dataKey="ms"         color={TEAL}   />
-      <MiniChart title="Daily Conversion %"      data={chartData} dataKey="conversion" color={ORANGE} type="line" isPct />
-      <MiniChart title="Daily Google Reviews"    data={chartData} dataKey="gr"         color={NAVY}   />
-      <MiniChart title="Daily Total Washes"      data={chartData} dataKey="tw"         color={NAVY}   />
-      <MiniChart title="Daily P-Mix %"           data={chartData} dataKey="pmix"       color={ORANGE} type="line" isPct />
-      <MiniChart title="Daily Member Washes"     data={chartData} dataKey="mw"         color={TEAL}   />
+      <MiniChart title="Daily Memberships Sold"  data={chartData} dataKey="ms"         color={TEAL}       dark={dark} />
+      <MiniChart title="Daily Conversion %"      data={chartData} dataKey="conversion" color={ORANGE}     dark={dark} type="line" isPct />
+      <MiniChart title="Daily Google Reviews"    data={chartData} dataKey="gr"         color={navyColor}  dark={dark} />
+      <MiniChart title="Daily Total Washes"      data={chartData} dataKey="tw"         color={navyColor}  dark={dark} />
+      <MiniChart title="Daily P-Mix %"           data={chartData} dataKey="pmix"       color={ORANGE}     dark={dark} type="line" isPct />
+      <MiniChart title="Daily Member Washes"     data={chartData} dataKey="mw"         color={TEAL}       dark={dark} />
     </div>
   )
 }
@@ -220,9 +225,10 @@ function DailyTrends({ logs }) {
 
 export default function Insights() {
   const { locations } = useAuth()
-  const [wtdLogs, setWtdLogs]       = useState([])
-  const [mtdLogs, setMtdLogs]       = useState([])
-  const [loading, setLoading]       = useState(true)
+  const [dark]                        = useDarkModeCtx()
+  const [wtdLogs, setWtdLogs]         = useState([])
+  const [mtdLogs, setMtdLogs]         = useState([])
+  const [loading, setLoading]         = useState(true)
   const [filterLocId, setFilterLocId] = useState('')
   const [trendLocId, setTrendLocId]   = useState('')
 
@@ -255,24 +261,22 @@ export default function Insights() {
     ? locations.filter(l => l.id === filterLocId)
     : locations
 
-  const trendLogs = mtdLogs.filter(r => r.location_id === trendLocId)
+  const trendLogs     = mtdLogs.filter(r => r.location_id === trendLocId)
   const trendLocation = locations.find(l => l.id === trendLocId)
 
+  const selectCls = "border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
+
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#F5F2EA' }}>
+    <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
       <div className="max-w-screen-2xl mx-auto px-4 py-6">
 
         {/* Header + location filter */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-          <h1 className="text-xl font-brand font-bold text-tm-blue tracking-wide">Performance Insights</h1>
+          <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Performance Insights</h1>
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500 font-brand">Filter Location:</label>
-            <select
-              value={filterLocId}
-              onChange={e => setFilterLocId(e.target.value)}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-tm-teal"
-            >
+            <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Filter Location:</label>
+            <select value={filterLocId} onChange={e => setFilterLocId(e.target.value)} className={selectCls}>
               <option value="">All Locations</option>
               {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
@@ -280,50 +284,46 @@ export default function Insights() {
         </div>
 
         {loading ? (
-          <div className="bg-white rounded-xl shadow p-12 text-center text-gray-400">Loading…</div>
+          <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow p-12 text-center text-gray-400 dark:text-tm-dark-muted dark:border dark:border-tm-dark-border">Loading…</div>
         ) : (
           <div className="space-y-8">
 
-            {/* WTD summary */}
-            <div className="bg-white rounded-xl shadow-md p-5">
+            {/* WTD */}
+            <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border">
               <div className="flex items-center gap-3 mb-4">
                 <span className="bg-tm-blue text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">WTD</span>
-                <span className="text-sm text-gray-500">Week to Date — {getWeekStart()} through {today()}</span>
+                <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Week to Date — {getWeekStart()} through {today()}</span>
               </div>
               <MetricTable data={filterLogs(wtdLogs)} locations={visibleLocations.length ? visibleLocations : locations} />
             </div>
 
-            {/* MTD summary */}
-            <div className="bg-white rounded-xl shadow-md p-5">
+            {/* MTD */}
+            <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border">
               <div className="flex items-center gap-3 mb-4">
                 <span className="bg-emerald-700 text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">MTD</span>
-                <span className="text-sm text-gray-500">Month to Date — {getMonthStart()} through {today()}</span>
+                <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Month to Date — {getMonthStart()} through {today()}</span>
               </div>
               <MetricTable data={filterLogs(mtdLogs)} locations={visibleLocations.length ? visibleLocations : locations} />
             </div>
 
             {/* Daily trends */}
-            <div className="bg-white rounded-xl shadow-md p-5">
+            <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
                 <div className="flex items-center gap-3">
                   <span className="bg-orange-600 text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">DAILY</span>
-                  <span className="text-sm text-gray-500">
+                  <span className="text-sm text-gray-500 dark:text-tm-dark-muted">
                     Month-to-date daily trends
                     {trendLocation ? ` — ${trendLocation.name}` : ''}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-gray-500 font-brand">Location:</label>
-                  <select
-                    value={trendLocId}
-                    onChange={e => setTrendLocId(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-tm-teal"
-                  >
+                  <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Location:</label>
+                  <select value={trendLocId} onChange={e => setTrendLocId(e.target.value)} className={selectCls}>
                     {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 </div>
               </div>
-              <DailyTrends logs={trendLogs} />
+              <DailyTrends logs={trendLogs} dark={dark} />
             </div>
 
           </div>

@@ -1,5 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { DarkModeContext } from './contexts/DarkModeContext'
+import { useDarkMode } from './hooks/useDarkMode'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
@@ -11,8 +13,8 @@ function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center" style={{ backgroundColor: '#F5F2EA' }}>
-        <div className="text-tm-blue text-sm font-brand font-medium tracking-wide">Loading…</div>
+      <div className="flex h-screen items-center justify-center bg-tm-cream dark:bg-tm-dark-bg">
+        <div className="text-tm-blue dark:text-tm-dark-text text-sm font-brand font-medium tracking-wide">Loading…</div>
       </div>
     )
   }
@@ -37,24 +39,28 @@ function VersionWatcher() {
 }
 
 export default function App() {
+  const [dark, setDark] = useDarkMode()
+
   return (
-    <AuthProvider>
-      <VersionWatcher />
-      <HashRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route
-            path="/insights"
-            element={<ProtectedRoute><ManagerRoute><Insights /></ManagerRoute></ProtectedRoute>}
-          />
-          <Route
-            path="/admin"
-            element={<ProtectedRoute><ManagerRoute><Admin /></ManagerRoute></ProtectedRoute>}
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </HashRouter>
-    </AuthProvider>
+    <DarkModeContext.Provider value={[dark, setDark]}>
+      <AuthProvider>
+        <VersionWatcher />
+        <HashRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route
+              path="/insights"
+              element={<ProtectedRoute><ManagerRoute><Insights /></ManagerRoute></ProtectedRoute>}
+            />
+            <Route
+              path="/admin"
+              element={<ProtectedRoute><ManagerRoute><Admin /></ManagerRoute></ProtectedRoute>}
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </HashRouter>
+      </AuthProvider>
+    </DarkModeContext.Provider>
   )
 }
