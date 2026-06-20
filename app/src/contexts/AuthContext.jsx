@@ -60,8 +60,15 @@ export function AuthProvider({ children }) {
 
   const signOut = () => supabase.auth.signOut()
 
+  const updateProfileSettings = async (updates) => {
+    if (!user) return
+    const newSettings = { ...(profile?.settings || {}), ...updates }
+    await supabase.from('user_profiles').update({ settings: newSettings }).eq('id', user.id)
+    setProfile(prev => prev ? { ...prev, settings: newSettings } : prev)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, profile, locations, loading, signOut }}>
+    <AuthContext.Provider value={{ user, profile, locations, loading, signOut, updateProfileSettings }}>
       {children}
     </AuthContext.Provider>
   )

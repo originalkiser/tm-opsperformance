@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
 import EmployeeSelect from './EmployeeSelect'
 
 const TIME_SLOTS = [
@@ -198,6 +199,21 @@ export default function DailyLogTable({
     } catch {}
     return [...ALL_KEYS]
   })
+
+  const { updateProfileSettings } = useAuth()
+  const profileSyncedRef = useRef(false)
+
+  // Sync column order from profile settings when profile loads (cross-device)
+  useEffect(() => {
+    if (profileSyncedRef.current || !profile) return
+    profileSyncedRef.current = true
+    const profileOrder = profile?.settings?.[roleKey]
+    if (Array.isArray(profileOrder) && profileOrder.length === ALL_KEYS.length &&
+        ALL_KEYS.every(k => profileOrder.includes(k))) {
+      setColumnOrder(profileOrder)
+      localStorage.setItem(roleKey, JSON.stringify(profileOrder))
+    }
+  }, [profile])
 
   const rowsRef      = useRef(rows)
   rowsRef.current    = rows
@@ -433,6 +449,7 @@ export default function DailyLogTable({
   const persistColumnOrder = (newOrder) => {
     setColumnOrder(newOrder)
     localStorage.setItem(roleKey, JSON.stringify(newOrder))
+    updateProfileSettings({ [roleKey]: newOrder })
   }
 
   const toggleViewMode = () => {
