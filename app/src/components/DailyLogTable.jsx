@@ -41,8 +41,8 @@ const compute = (row, formula = 'detailed') => {
   const memberships_sold = basic + good + better + best
   const opportunities =
     formula === 'simple'
-      ? Math.max(0, tw - mw)                     // Option 1: TW − MW
-      : Math.max(0, tw - mw - memberships_sold)  // Option 2: TW − MW − MS
+      ? Math.max(0, tw - mw)
+      : Math.max(0, tw - mw - memberships_sold)
 
   const p_mix =
     memberships_sold > 0
@@ -56,25 +56,30 @@ const compute = (row, formula = 'detailed') => {
   return { memberships_sold, opportunities, p_mix, conversion }
 }
 
+const rowHasData = (row) =>
+  row.employee_name?.trim() || INPUT_FIELDS.some(f => toInt(row[f]) > 0)
+
+const MAX_HISTORY = 30
+
 export default function DailyLogTable({ locationId, selectedDate, canEdit, opportunitiesFormula = 'detailed', onRowsChange }) {
-  const [rows, setRows]     = useState(TIME_SLOTS.map(s => emptyRow(s.value)))
-  const [employees, setEmps] = useState([])
-  const [saving, setSaving]  = useState(new Set())
+  const [rows, setRows]       = useState(TIME_SLOTS.map(s => emptyRow(s.value)))
+  const [employees, setEmps]  = useState([])
+  const [saving, setSaving]   = useState(new Set())
   const [saveError, setSaveError] = useState(null)
 
   const rowsRef    = useRef(rows)
   rowsRef.current  = rows
   const saveTimers = useRef({})
+  const historyRef = useRef([]) // undo stack: array of row-state snapshots
 
-  // Always-current refs so the unmount cleanup closes over live values
-  const locationIdRef  = useRef(locationId)
-  const dateRef        = useRef(selectedDate)
-  const canEditRef     = useRef(canEdit)
-  const formulaRef     = useRef(opportunitiesFormula)
+  const locationIdRef = useRef(locationId)
+  const dateRef       = useRef(selectedDate)
+  const canEditRef    = useRef(canEdit)
+  const formulaRef    = useRef(opportunitiesFormula)
 
-  useEffect(() => { locationIdRef.current = locationId }, [locationId])
-  useEffect(() => { dateRef.current = selectedDate },     [selectedDate])
-  useEffect(() => { canEditRef.current = canEdit },       [canEdit])
+  useEffect(() => { locationIdRef.current = locationId },        [locationId])
+  useEffect(() => { dateRef.current = selectedDate },            [selectedDate])
+  useEffect(() => { canEditRef.current = canEdit },              [canEdit])
   useEffect(() => { formulaRef.current = opportunitiesFormula }, [opportunitiesFormula])
 
   useEffect(() => { onRowsChange?.(rows) }, [rows])
@@ -82,9 +87,10 @@ export default function DailyLogTable({ locationId, selectedDate, canEdit, oppor
   useEffect(() => {
     fetchData()
     fetchEmployees()
+    // Clear undo history when location/date changes
+    historyRef.current = []
   }, [locationId, selectedDate])
 
-  // On unmount: flush any pending debounced saves immediately
   useEffect(() => {
     return () => {
       const pending = Object.keys(saveTimers.current)
@@ -118,7 +124,6 @@ export default function DailyLogTable({ locationId, selectedDate, canEdit, oppor
       TIME_SLOTS.map(slot => {
         const existing = data?.find(d => d.time_slot === slot.value)
         if (!existing) return emptyRow(slot.value)
-        // Skip phantom rows (no name, all zeros) left over from before the save guard
         const hasData = existing.employee_name ||
           INPUT_FIELDS.some(f => (existing[f] ?? 0) > 0)
         if (!hasData) return emptyRow(slot.value)
@@ -131,36 +136,29 @@ export default function DailyLogTable({ locationId, selectedDate, canEdit, oppor
     )
   }
 
-  const update = (index, field, value) => {
-    setRows(prev => {
-      const next = [...prev]
-      next[index] = { ...next[index], [field]: value }
-      return next
-    })
-    clearTimeout(saveTimers.current[index])
-    saveTimers.current[index] = setTimeout(() => {
-      delete saveTimers.current[index]
-      doSave(index)
-    }, 800)
-  }
-
-  const saveImmediately = (index) => {
-    clearTimeout(saveTimers.current[index])
-    delete saveTimers.current[index]
-    doSave(index)
-  }
+  // ── Save / delete ────────────────────────────────────────────────────────────
 
   const doSave = useCallback(async (index) => {
     if (!canEditRef.current) return
     const row = rowsRef.current[index]
     if (!row) return
-    // Don't write empty rows to the database
-    const hasData = row.employee_name?.trim() || INPUT_FIELDS.some(f => toInt(row[f]) > 0)
-    if (!hasData) return
-    const { memberships_sold, opportunities } = compute(row, formulaRef.current)
 
+    if (!rowHasData(row)) {
+      // Row was cleared — delete from DB if it exists
+      if (row.id) {
+        await supabase.from('daily_logs').delete().eq('id', row.id)
+        setRows(prev => {
+          const next = [...prev]
+          next[index] = { ...next[index], id: undefined }
+          return next
+        })
+      }
+      return
+    }
+
+    const { memberships_sold, opportunities } = compute(row, formulaRef.current)
     setSaving(prev => new Set([...prev, index]))
-    const { error } = await supabase.from('daily_logs').upsert(
+    const { data: saved, error } = await supabase.from('daily_logs').upsert(
       {
         location_id:      locationIdRef.current,
         log_date:         dateRef.current,
@@ -178,22 +176,31 @@ export default function DailyLogTable({ locationId, selectedDate, canEdit, oppor
         opportunities,
       },
       { onConflict: 'location_id,log_date,time_slot' }
-    )
+    ).select('id').single()
+
     if (error) {
       console.error('Save failed:', error)
       setSaveError(`Save failed: ${error.message}`)
       setTimeout(() => setSaveError(null), 5000)
+    } else if (saved?.id && !rowsRef.current[index]?.id) {
+      // Capture the new DB id so future clears can delete the row
+      setRows(prev => {
+        const next = [...prev]
+        next[index] = { ...next[index], id: saved.id }
+        return next
+      })
     }
     setSaving(prev => { const n = new Set(prev); n.delete(index); return n })
-  }, []) // stable — uses refs for all live values
+  }, [])
 
-  // Version used in unmount cleanup (avoids stale closure issue)
   const flushSave = useCallback(async (index) => {
     if (!canEditRef.current) return
     const row = rowsRef.current[index]
     if (!row) return
-    const hasData = row.employee_name?.trim() || INPUT_FIELDS.some(f => toInt(row[f]) > 0)
-    if (!hasData) return
+    if (!rowHasData(row)) {
+      if (row.id) await supabase.from('daily_logs').delete().eq('id', row.id)
+      return
+    }
     const { memberships_sold, opportunities } = compute(row, formulaRef.current)
     await supabase.from('daily_logs').upsert(
       {
@@ -215,6 +222,71 @@ export default function DailyLogTable({ locationId, selectedDate, canEdit, oppor
       { onConflict: 'location_id,log_date,time_slot' }
     )
   }, [])
+
+  // ── Undo ─────────────────────────────────────────────────────────────────────
+
+  const undo = useCallback(() => {
+    if (!historyRef.current.length) return
+    const snapshot = historyRef.current[historyRef.current.length - 1]
+    historyRef.current = historyRef.current.slice(0, -1)
+
+    const current = rowsRef.current
+    const changedIndices = snapshot
+      .map((_, i) => i)
+      .filter(i => JSON.stringify(snapshot[i]) !== JSON.stringify(current[i]))
+
+    // Update ref immediately so doSave in the timeouts reads the right data
+    rowsRef.current = snapshot
+    setRows(snapshot)
+
+    changedIndices.forEach(i => {
+      clearTimeout(saveTimers.current[i])
+      saveTimers.current[i] = setTimeout(() => {
+        delete saveTimers.current[i]
+        doSave(i)
+      }, 100)
+    })
+  }, [doSave])
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [undo])
+
+  // ── Edit handlers ────────────────────────────────────────────────────────────
+
+  const update = (index, field, value) => {
+    // Snapshot before this change (capped at MAX_HISTORY)
+    historyRef.current = [
+      ...historyRef.current.slice(-(MAX_HISTORY - 1)),
+      rowsRef.current.map(r => ({ ...r })),
+    ]
+
+    setRows(prev => {
+      const next = [...prev]
+      next[index] = { ...next[index], [field]: value }
+      return next
+    })
+    clearTimeout(saveTimers.current[index])
+    saveTimers.current[index] = setTimeout(() => {
+      delete saveTimers.current[index]
+      doSave(index)
+    }, 800)
+  }
+
+  const saveImmediately = (index) => {
+    clearTimeout(saveTimers.current[index])
+    delete saveTimers.current[index]
+    doSave(index)
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   const totals      = INPUT_FIELDS.reduce((acc, f) => ({ ...acc, [f]: rows.reduce((s, r) => s + toInt(r[f]), 0) }), {})
   const totComputed = compute(totals, opportunitiesFormula)
@@ -338,6 +410,11 @@ export default function DailyLogTable({ locationId, selectedDate, canEdit, oppor
 
       {saving.size > 0 && (
         <p className="mt-2 text-xs text-tm-teal animate-pulse font-brand">Saving…</p>
+      )}
+      {canEdit && historyRef.current.length > 0 && (
+        <p className="mt-1 text-xs text-gray-400 font-brand select-none">
+          Ctrl+Z to undo · {historyRef.current.length} step{historyRef.current.length !== 1 ? 's' : ''} available
+        </p>
       )}
     </div>
   )
