@@ -310,7 +310,7 @@ function TMSalesRows({ rows, showSite, sort }) {
 
 function TMSalesTotalsRow({ rows, showSite }) {
   const all = rows.flatMap(r => r._rawRows)
-  const t   = aggEmp(all)
+  const t   = aggEmpFromLogs(all)
   return (
     <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
       <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">Totals</td>
