@@ -118,6 +118,10 @@ export default function DailyLogTable({ locationId, selectedDate, canEdit, oppor
       TIME_SLOTS.map(slot => {
         const existing = data?.find(d => d.time_slot === slot.value)
         if (!existing) return emptyRow(slot.value)
+        // Skip phantom rows (no name, all zeros) left over from before the save guard
+        const hasData = existing.employee_name ||
+          INPUT_FIELDS.some(f => (existing[f] ?? 0) > 0)
+        if (!hasData) return emptyRow(slot.value)
         return {
           ...existing,
           ...INPUT_FIELDS.reduce((acc, f) => ({ ...acc, [f]: existing[f] ?? '' }), {}),
