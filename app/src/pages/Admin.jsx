@@ -463,7 +463,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                       className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-tm-teal w-full max-w-[200px]"
                     >
                       <option value="simple">Simple — TW − MW</option>
-                      <option value="detailed">Detailed — TW − MW − MS</option>
+                      <option value="detailed">Detailed — TW − MW + MS</option>
                     </select>
                   </td>
 
@@ -535,7 +535,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
       {/* Legend */}
       <div className="mt-4 pt-4 border-t border-gray-100 text-xs text-gray-400 space-y-1">
         <p><strong className="text-gray-500">Simple (TW − MW):</strong> All non-member washes count as opportunities</p>
-        <p><strong className="text-gray-500">Detailed (TW − MW − MS):</strong> Subtract memberships sold — shows missed conversion opportunities</p>
+        <p><strong className="text-gray-500">Detailed (TW − MW + MS):</strong> Add memberships sold back — true opportunities including sold memberships</p>
       </div>
     </div>
   )

@@ -42,7 +42,7 @@ const compute = (row, formula = 'detailed') => {
   const opportunities =
     formula === 'simple'
       ? Math.max(0, tw - mw)
-      : Math.max(0, tw - mw - memberships_sold)
+      : Math.max(0, tw - mw + memberships_sold)
 
   const p_mix =
     memberships_sold > 0

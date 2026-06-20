@@ -14,7 +14,7 @@ const aggregate = (rows, formula = 'detailed') => {
   const ms  = bsc + gd + btr + bst
   const opp = formula === 'simple'
     ? Math.max(0, tw - mw)
-    : Math.max(0, tw - mw - ms)
+    : Math.max(0, tw - mw + ms)
 
   const p_mix      = ms > 0  ? ((btr + bst) / ms  * 100).toFixed(1) + '%' : ''
   const conversion = opp > 0 ? (ms / opp * 100).toFixed(1) + '%'          : ''
