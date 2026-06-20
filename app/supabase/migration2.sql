@@ -1,6 +1,10 @@
 -- migration2.sql
 -- Run in Supabase SQL Editor. Safe to run multiple times.
 
+-- ── 0. Add employee_name column if missing ────────────────────
+alter table daily_logs
+  add column if not exists employee_name text;
+
 -- ── 1. Opportunities formula per location ─────────────────────
 alter table locations
   add column if not exists opportunities_formula text
