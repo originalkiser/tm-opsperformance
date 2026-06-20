@@ -1,9 +1,25 @@
 -- migration2.sql
 -- Run in Supabase SQL Editor. Safe to run multiple times.
 
--- ── 0. Add employee_name column if missing ────────────────────
+-- ── 0. Add employee_name column and unique constraint if missing ──
 alter table daily_logs
   add column if not exists employee_name text;
+
+-- Required for upsert ON CONFLICT (location_id, log_date, time_slot)
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'daily_logs'::regclass
+      and contype = 'u'
+      and conname = 'daily_logs_location_id_log_date_time_slot_key'
+  ) then
+    alter table daily_logs
+      add constraint daily_logs_location_id_log_date_time_slot_key
+      unique (location_id, log_date, time_slot);
+  end if;
+end;
+$$;
 
 -- ── 1. Opportunities formula per location ─────────────────────
 alter table locations
