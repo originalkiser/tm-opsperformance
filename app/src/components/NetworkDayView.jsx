@@ -258,8 +258,9 @@ function SkeletonCard({ name }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function NetworkDayView() {
-  const { locations } = useAuth()
+export default function NetworkDayView({ locations: locProp }) {
+  const { locations: authLocations } = useAuth()
+  const locations = locProp ?? authLocations
   const [offset, setOffset]     = useState(0)
   const [logs, setLogs]         = useState([])
   const [loading, setLoading]   = useState(true)

@@ -7,7 +7,6 @@ import DailyLogTable from '../components/DailyLogTable'
 import EmployeeSummary from '../components/EmployeeSummary'
 import MonthlyRollup from '../components/MonthlyRollup'
 import DailySnapshot from '../components/DailySnapshot'
-import NetworkDayView from '../components/NetworkDayView'
 
 export default function Dashboard() {
   const { profile, locations } = useAuth()
@@ -29,7 +28,6 @@ export default function Dashboard() {
     profile?.location_id === selectedLocationId
 
   const opportunitiesFormula = location?.opportunities_formula ?? 'detailed'
-  const isManager = ['admin', 'area_manager'].includes(profile?.role)
 
   return (
     <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
@@ -78,7 +76,6 @@ export default function Dashboard() {
                 { key: 'daily',    label: 'Daily Log'      },
                 { key: 'snapshot', label: 'Snapshot'       },
                 { key: 'monthly',  label: 'Monthly Rollup' },
-                ...(isManager ? [{ key: 'network', label: 'Network' }] : []),
               ].map(({ key, label }) => (
                 <button
                   key={key}
@@ -129,9 +126,6 @@ export default function Dashboard() {
                 />
               </div>
 
-              {isManager && activeTab === 'network' && (
-                <NetworkDayView />
-              )}
             </div>
           </div>
         )}

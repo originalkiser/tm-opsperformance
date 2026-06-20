@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid,
@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
+import NetworkDayView from '../components/NetworkDayView'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
@@ -41,6 +42,81 @@ const getMonthStart = () => {
 }
 
 const today = () => new Date().toISOString().split('T')[0]
+
+// ── Shop multi-select ─────────────────────────────────────────────────────────
+
+function ShopMultiSelect({ locations, selected, onChange }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const allSelected = selected.length === 0
+  const label = allSelected
+    ? 'All Shops'
+    : selected.length === 1
+      ? locations.find(l => l.id === selected[0])?.name ?? '1 shop'
+      : `${selected.length} of ${locations.length} shops`
+
+  const toggle = (id) => {
+    if (selected.includes(id)) {
+      const next = selected.filter(s => s !== id)
+      onChange(next) // empty = all
+    } else {
+      onChange([...selected, id])
+    }
+  }
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text hover:border-tm-teal focus:outline-none focus:ring-2 focus:ring-tm-teal transition-colors font-brand"
+      >
+        <span>{label}</span>
+        <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}>
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd"/>
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg min-w-[220px] py-1">
+          {/* All shops toggle */}
+          <label className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={() => onChange([])}
+              className="accent-tm-teal w-3.5 h-3.5"
+            />
+            <span className="text-xs font-brand font-semibold text-gray-700 dark:text-tm-dark-text">All Shops</span>
+          </label>
+          <div className="border-t border-gray-100 dark:border-tm-dark-border my-1" />
+          {locations.map(loc => (
+            <label
+              key={loc.id}
+              className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors"
+            >
+              <input
+                type="checkbox"
+                checked={allSelected || selected.includes(loc.id)}
+                onChange={() => toggle(loc.id)}
+                className="accent-tm-teal w-3.5 h-3.5"
+              />
+              <span className="text-xs font-brand text-gray-700 dark:text-tm-dark-text truncate">{loc.name}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Summary table ─────────────────────────────────────────────────────────────
 
@@ -134,8 +210,8 @@ const ChartTooltip = ({ active, payload, label, isPct }) => {
 function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', dark }) {
   const axisColor = dark ? '#7A9BBF' : '#6B7280'
   const gridColor = dark ? '#1E3A5F' : '#f0f0f0'
-
   const hasData = data.some(d => d[dataKey] != null && d[dataKey] > 0)
+
   return (
     <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border shadow-sm p-4">
       <p className="text-xs font-brand font-semibold text-gray-600 dark:text-tm-dark-muted uppercase tracking-wide mb-3">{title}</p>
@@ -149,14 +225,7 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', d
               <XAxis dataKey="day" tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} />
               <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} tickFormatter={v => isPct ? `${v}%` : v} />
               <Tooltip content={<ChartTooltip isPct={isPct} />} />
-              <Line
-                type="monotone"
-                dataKey={dataKey}
-                stroke={color}
-                strokeWidth={2}
-                dot={{ r: 3, fill: color }}
-                connectNulls={false}
-              />
+              <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} dot={{ r: 3, fill: color }} connectNulls={false} />
             </LineChart>
           ) : (
             <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
@@ -173,7 +242,7 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', d
   )
 }
 
-function DailyTrends({ logs, dark }) {
+function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
   const dayMap = {}
   logs.forEach(r => {
     if (!dayMap[r.log_date]) dayMap[r.log_date] = []
@@ -193,30 +262,48 @@ function DailyTrends({ logs, dark }) {
       const bst = rows.reduce((s, r) => s + toInt(r.best),            0)
       return {
         day,
-        tw,
-        mw,
-        ms,
-        gr,
+        tw, mw, ms, gr,
         conversion: opp > 0  ? parseFloat((ms       / opp * 100).toFixed(1)) : null,
         pmix:       ms  > 0  ? parseFloat(((btr+bst) / ms  * 100).toFixed(1)) : null,
       }
     })
 
-  // Dark-mode bar color for navy metrics
   const navyColor = dark ? '#D6E4F0' : '#1A3555'
+  const trendLocation = locations.find(l => l.id === trendLocId)
 
-  if (!chartData.length) return (
-    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
-  )
+  const selectCls = "border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-      <MiniChart title="Daily Memberships Sold"  data={chartData} dataKey="ms"         color={TEAL}       dark={dark} />
-      <MiniChart title="Daily Conversion %"      data={chartData} dataKey="conversion" color={ORANGE}     dark={dark} type="line" isPct />
-      <MiniChart title="Daily Google Reviews"    data={chartData} dataKey="gr"         color={navyColor}  dark={dark} />
-      <MiniChart title="Daily Total Washes"      data={chartData} dataKey="tw"         color={navyColor}  dark={dark} />
-      <MiniChart title="Daily P-Mix %"           data={chartData} dataKey="pmix"       color={ORANGE}     dark={dark} type="line" isPct />
-      <MiniChart title="Daily Member Washes"     data={chartData} dataKey="mw"         color={TEAL}       dark={dark} />
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <div className="flex items-center gap-3">
+          <span className="bg-orange-600 text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">DAILY</span>
+          <span className="text-sm text-gray-500 dark:text-tm-dark-muted">
+            Month-to-date daily trends
+            {trendLocation ? ` — ${trendLocation.name}` : ''}
+          </span>
+        </div>
+        {locations.length > 1 && (
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Location:</label>
+            <select value={trendLocId} onChange={e => onTrendLocChange(e.target.value)} className={selectCls}>
+              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+      {!chartData.length ? (
+        <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <MiniChart title="Daily Memberships Sold"  data={chartData} dataKey="ms"         color={TEAL}      dark={dark} />
+          <MiniChart title="Daily Conversion %"      data={chartData} dataKey="conversion" color={ORANGE}    dark={dark} type="line" isPct />
+          <MiniChart title="Daily Google Reviews"    data={chartData} dataKey="gr"         color={navyColor} dark={dark} />
+          <MiniChart title="Daily Total Washes"      data={chartData} dataKey="tw"         color={navyColor} dark={dark} />
+          <MiniChart title="Daily P-Mix %"           data={chartData} dataKey="pmix"       color={ORANGE}    dark={dark} type="line" isPct />
+          <MiniChart title="Daily Member Washes"     data={chartData} dataKey="mw"         color={TEAL}      dark={dark} />
+        </div>
+      )}
     </div>
   )
 }
@@ -225,12 +312,12 @@ function DailyTrends({ logs, dark }) {
 
 export default function Insights() {
   const { locations } = useAuth()
-  const [dark]                        = useDarkModeCtx()
-  const [wtdLogs, setWtdLogs]         = useState([])
-  const [mtdLogs, setMtdLogs]         = useState([])
-  const [loading, setLoading]         = useState(true)
-  const [filterLocId, setFilterLocId] = useState('')
-  const [trendLocId, setTrendLocId]   = useState('')
+  const [dark]                          = useDarkModeCtx()
+  const [wtdLogs, setWtdLogs]           = useState([])
+  const [mtdLogs, setMtdLogs]           = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [selectedShops, setSelectedShops] = useState([]) // empty = all
+  const [trendLocId, setTrendLocId]     = useState('')
 
   useEffect(() => {
     if (locations.length) {
@@ -239,91 +326,97 @@ export default function Insights() {
     }
   }, [locations])
 
+  // Keep trendLocId valid when shop filter changes
+  useEffect(() => {
+    if (!trendLocId) return
+    const visible = selectedShops.length ? locations.filter(l => selectedShops.includes(l.id)) : locations
+    if (!visible.find(l => l.id === trendLocId)) {
+      setTrendLocId(visible[0]?.id ?? '')
+    }
+  }, [selectedShops])
+
   const fetchAll = async () => {
     setLoading(true)
     const locIds = locations.map(l => l.id)
     const td = today()
-
     const [wtd, mtd] = await Promise.all([
       supabase.from('daily_logs').select('*').in('location_id', locIds).gte('log_date', getWeekStart()).lte('log_date', td),
       supabase.from('daily_logs').select('*').in('location_id', locIds).gte('log_date', getMonthStart()).lte('log_date', td),
     ])
-
     setWtdLogs(wtd.data || [])
     setMtdLogs(mtd.data || [])
     setLoading(false)
   }
 
-  const filterLogs = (logs) =>
-    filterLocId ? logs.filter(r => r.location_id === filterLocId) : logs
-
-  const visibleLocations = filterLocId
-    ? locations.filter(l => l.id === filterLocId)
+  const visibleLocations = selectedShops.length
+    ? locations.filter(l => selectedShops.includes(l.id))
     : locations
 
-  const trendLogs     = mtdLogs.filter(r => r.location_id === trendLocId)
-  const trendLocation = locations.find(l => l.id === trendLocId)
+  const filterLogs = (logs) =>
+    selectedShops.length ? logs.filter(r => selectedShops.includes(r.location_id)) : logs
 
-  const selectCls = "border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
+  const trendLogs = mtdLogs.filter(r => r.location_id === trendLocId)
+
+  const cardCls = "bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border"
 
   return (
     <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
       <div className="max-w-screen-2xl mx-auto px-4 py-6">
 
-        {/* Header + location filter */}
+        {/* Header + shop filter */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-          <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Performance Insights</h1>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Filter Location:</label>
-            <select value={filterLocId} onChange={e => setFilterLocId(e.target.value)} className={selectCls}>
-              <option value="">All Locations</option>
-              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          </div>
+          <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Dashboard</h1>
+          {locations.length > 1 && (
+            <ShopMultiSelect
+              locations={locations}
+              selected={selectedShops}
+              onChange={setSelectedShops}
+            />
+          )}
         </div>
 
         {loading ? (
-          <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow p-12 text-center text-gray-400 dark:text-tm-dark-muted dark:border dark:border-tm-dark-border">Loading…</div>
+          <div className={`${cardCls} p-12 text-center text-gray-400 dark:text-tm-dark-muted`}>Loading…</div>
         ) : (
           <div className="space-y-8">
 
+            {/* Network — today's snapshot across shops */}
+            <div className={cardCls}>
+              <div className="flex items-center gap-3 mb-5">
+                <span className="bg-tm-blue text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">NETWORK</span>
+                <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Live day view across shops</span>
+              </div>
+              <NetworkDayView locations={visibleLocations} />
+            </div>
+
             {/* WTD */}
-            <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border">
+            <div className={cardCls}>
               <div className="flex items-center gap-3 mb-4">
                 <span className="bg-tm-blue text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">WTD</span>
                 <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Week to Date — {getWeekStart()} through {today()}</span>
               </div>
-              <MetricTable data={filterLogs(wtdLogs)} locations={visibleLocations.length ? visibleLocations : locations} />
+              <MetricTable data={filterLogs(wtdLogs)} locations={visibleLocations} />
             </div>
 
             {/* MTD */}
-            <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border">
+            <div className={cardCls}>
               <div className="flex items-center gap-3 mb-4">
                 <span className="bg-emerald-700 text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">MTD</span>
                 <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Month to Date — {getMonthStart()} through {today()}</span>
               </div>
-              <MetricTable data={filterLogs(mtdLogs)} locations={visibleLocations.length ? visibleLocations : locations} />
+              <MetricTable data={filterLogs(mtdLogs)} locations={visibleLocations} />
             </div>
 
             {/* Daily trends */}
-            <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border">
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-                <div className="flex items-center gap-3">
-                  <span className="bg-orange-600 text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">DAILY</span>
-                  <span className="text-sm text-gray-500 dark:text-tm-dark-muted">
-                    Month-to-date daily trends
-                    {trendLocation ? ` — ${trendLocation.name}` : ''}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Location:</label>
-                  <select value={trendLocId} onChange={e => setTrendLocId(e.target.value)} className={selectCls}>
-                    {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
-                </div>
-              </div>
-              <DailyTrends logs={trendLogs} dark={dark} />
+            <div className={cardCls}>
+              <DailyTrends
+                logs={trendLogs}
+                dark={dark}
+                locations={visibleLocations}
+                trendLocId={trendLocId}
+                onTrendLocChange={setTrendLocId}
+              />
             </div>
 
           </div>

@@ -50,7 +50,7 @@ export default function NavBar() {
             <span className="font-brand font-bold text-sm tracking-wide hidden sm:block">TM Operations</span>
           </Link>
 
-          {/* Insights — managers only */}
+          {/* Dashboard — managers only */}
           {isManager && (
             <Link
               to="/insights"
@@ -59,7 +59,7 @@ export default function NavBar() {
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                 <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3zm5-4a1 1 0 011-1h2a1 1 0 011 1v7a1 1 0 01-1 1H8a1 1 0 01-1-1V7zm5-5a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V2z"/>
               </svg>
-              Insights
+              Dashboard
             </Link>
           )}
 
@@ -73,6 +73,13 @@ export default function NavBar() {
             </svg>
             Shop Entry
           </button>
+        </div>
+
+        {/* ── Right: User info + actions ── */}
+        <div className="flex items-center gap-2">
+          {profile?.name && (
+            <span className="text-tm-sky text-xs hidden md:block font-brand">{profile.name}</span>
+          )}
 
           {/* Admin/Manager panel — managers only */}
           {isManager && (
@@ -82,13 +89,6 @@ export default function NavBar() {
             >
               {profile?.role === 'admin' ? 'Admin' : 'Manager'}
             </Link>
-          )}
-        </div>
-
-        {/* ── Right: User info + actions ── */}
-        <div className="flex items-center gap-2">
-          {profile?.name && (
-            <span className="text-tm-sky text-xs hidden md:block font-brand">{profile.name}</span>
           )}
 
           {/* Dark mode toggle */}
