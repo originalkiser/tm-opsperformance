@@ -43,7 +43,18 @@ const getMonthStart = () => {
 
 const today = () => new Date().toISOString().split('T')[0]
 
+// ── Chevron icon ──────────────────────────────────────────────────────────────
+
+function ChevronIcon({ open }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform duration-200 ${open ? '' : '-rotate-90'}`}>
+      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd"/>
+    </svg>
+  )
+}
+
 // ── Shop multi-select ─────────────────────────────────────────────────────────
+// selected = null → all shops; selected = [] → none; selected = [ids] → subset
 
 function ShopMultiSelect({ locations, selected, onChange }) {
   const [open, setOpen] = useState(false)
@@ -57,19 +68,32 @@ function ShopMultiSelect({ locations, selected, onChange }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const allSelected = selected.length === 0
+  const allSelected = selected === null || selected.length === locations.length
+  const noneSelected = selected !== null && selected.length === 0
+
   const label = allSelected
     ? 'All Shops'
-    : selected.length === 1
-      ? locations.find(l => l.id === selected[0])?.name ?? '1 shop'
-      : `${selected.length} of ${locations.length} shops`
+    : noneSelected
+      ? 'No Shops'
+      : selected.length === 1
+        ? locations.find(l => l.id === selected[0])?.name ?? '1 shop'
+        : `${selected.length} of ${locations.length} shops`
+
+  const toggleAll = () => {
+    if (allSelected) {
+      onChange([]) // deselect all
+    } else {
+      onChange(null) // select all
+    }
+  }
 
   const toggle = (id) => {
-    if (selected.includes(id)) {
-      const next = selected.filter(s => s !== id)
-      onChange(next) // empty = all
+    const current = selected === null ? locations.map(l => l.id) : selected
+    if (current.includes(id)) {
+      onChange(current.filter(s => s !== id))
     } else {
-      onChange([...selected, id])
+      const next = [...current, id]
+      onChange(next.length === locations.length ? null : next)
     }
   }
 
@@ -92,7 +116,7 @@ function ShopMultiSelect({ locations, selected, onChange }) {
             <input
               type="checkbox"
               checked={allSelected}
-              onChange={() => onChange([])}
+              onChange={toggleAll}
               className="accent-tm-teal w-3.5 h-3.5"
             />
             <span className="text-xs font-brand font-semibold text-gray-700 dark:text-tm-dark-text">All Shops</span>
@@ -105,7 +129,7 @@ function ShopMultiSelect({ locations, selected, onChange }) {
             >
               <input
                 type="checkbox"
-                checked={allSelected || selected.includes(loc.id)}
+                checked={allSelected || (selected !== null && selected.includes(loc.id))}
                 onChange={() => toggle(loc.id)}
                 className="accent-tm-teal w-3.5 h-3.5"
               />
@@ -275,23 +299,19 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <div className="flex items-center gap-3">
-          <span className="bg-orange-600 text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">DAILY</span>
+      {locations.length > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <span className="text-sm text-gray-500 dark:text-tm-dark-muted">
-            Month-to-date daily trends
-            {trendLocation ? ` — ${trendLocation.name}` : ''}
+            {trendLocation ? trendLocation.name : ''}
           </span>
-        </div>
-        {locations.length > 1 && (
           <div className="flex items-center gap-2">
             <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Location:</label>
             <select value={trendLocId} onChange={e => onTrendLocChange(e.target.value)} className={selectCls}>
               {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </div>
-        )}
-      </div>
+        </div>
+      )}
       {!chartData.length ? (
         <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
       ) : (
@@ -310,13 +330,42 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+// ── Collapsible section wrapper ───────────────────────────────────────────────
+
+function Section({ badge, badgeCls, subtitle, children, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-tm-dark-card transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <span className={`text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest ${badgeCls}`}>{badge}</span>
+          <span className="text-sm text-gray-500 dark:text-tm-dark-muted">{subtitle}</span>
+        </div>
+        <span className="text-gray-400 dark:text-tm-dark-muted">
+          <ChevronIcon open={open} />
+        </span>
+      </button>
+      {open && (
+        <div className="px-5 pb-5 pt-1 border-t border-gray-100 dark:border-tm-dark-border">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function Insights() {
   const { locations } = useAuth()
   const [dark]                          = useDarkModeCtx()
   const [wtdLogs, setWtdLogs]           = useState([])
   const [mtdLogs, setMtdLogs]           = useState([])
   const [loading, setLoading]           = useState(true)
-  const [selectedShops, setSelectedShops] = useState([]) // empty = all
+  const [selectedShops, setSelectedShops] = useState(null) // null = all
   const [trendLocId, setTrendLocId]     = useState('')
 
   useEffect(() => {
@@ -329,7 +378,9 @@ export default function Insights() {
   // Keep trendLocId valid when shop filter changes
   useEffect(() => {
     if (!trendLocId) return
-    const visible = selectedShops.length ? locations.filter(l => selectedShops.includes(l.id)) : locations
+    const visible = selectedShops === null
+      ? locations
+      : locations.filter(l => selectedShops.includes(l.id))
     if (!visible.find(l => l.id === trendLocId)) {
       setTrendLocId(visible[0]?.id ?? '')
     }
@@ -348,12 +399,12 @@ export default function Insights() {
     setLoading(false)
   }
 
-  const visibleLocations = selectedShops.length
-    ? locations.filter(l => selectedShops.includes(l.id))
-    : locations
+  const visibleLocations = selectedShops === null
+    ? locations
+    : locations.filter(l => selectedShops.includes(l.id))
 
   const filterLogs = (logs) =>
-    selectedShops.length ? logs.filter(r => selectedShops.includes(r.location_id)) : logs
+    selectedShops === null ? logs : logs.filter(r => selectedShops.includes(r.location_id))
 
   const trendLogs = mtdLogs.filter(r => r.location_id === trendLocId)
 
@@ -379,45 +430,37 @@ export default function Insights() {
         {loading ? (
           <div className={`${cardCls} p-12 text-center text-gray-400 dark:text-tm-dark-muted`}>Loading…</div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-4">
 
-            {/* Network — today's snapshot across shops */}
-            <div className={cardCls}>
-              <div className="flex items-center gap-3 mb-5">
-                <span className="bg-tm-blue text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">NETWORK</span>
-                <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Live day view across shops</span>
+            <Section badge="NETWORK" badgeCls="bg-tm-blue" subtitle="Live day view across shops">
+              <div className="mt-3">
+                <NetworkDayView locations={visibleLocations} />
               </div>
-              <NetworkDayView locations={visibleLocations} />
-            </div>
+            </Section>
 
-            {/* WTD */}
-            <div className={cardCls}>
-              <div className="flex items-center gap-3 mb-4">
-                <span className="bg-tm-blue text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">WTD</span>
-                <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Week to Date — {getWeekStart()} through {today()}</span>
+            <Section badge="WTD" badgeCls="bg-tm-blue" subtitle={`Week to Date — ${getWeekStart()} through ${today()}`}>
+              <div className="mt-3">
+                <MetricTable data={filterLogs(wtdLogs)} locations={visibleLocations} />
               </div>
-              <MetricTable data={filterLogs(wtdLogs)} locations={visibleLocations} />
-            </div>
+            </Section>
 
-            {/* MTD */}
-            <div className={cardCls}>
-              <div className="flex items-center gap-3 mb-4">
-                <span className="bg-emerald-700 text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">MTD</span>
-                <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Month to Date — {getMonthStart()} through {today()}</span>
+            <Section badge="MTD" badgeCls="bg-emerald-700" subtitle={`Month to Date — ${getMonthStart()} through ${today()}`}>
+              <div className="mt-3">
+                <MetricTable data={filterLogs(mtdLogs)} locations={visibleLocations} />
               </div>
-              <MetricTable data={filterLogs(mtdLogs)} locations={visibleLocations} />
-            </div>
+            </Section>
 
-            {/* Daily trends */}
-            <div className={cardCls}>
-              <DailyTrends
-                logs={trendLogs}
-                dark={dark}
-                locations={visibleLocations}
-                trendLocId={trendLocId}
-                onTrendLocChange={setTrendLocId}
-              />
-            </div>
+            <Section badge="DAILY" badgeCls="bg-orange-600" subtitle="Month-to-date daily trends">
+              <div className="mt-3">
+                <DailyTrends
+                  logs={trendLogs}
+                  dark={dark}
+                  locations={visibleLocations}
+                  trendLocId={trendLocId}
+                  onTrendLocChange={setTrendLocId}
+                />
+              </div>
+            </Section>
 
           </div>
         )}
