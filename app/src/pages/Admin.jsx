@@ -73,6 +73,11 @@ export default function Admin() {
     fetchLocations()
   }
 
+  const updateLocationMarket = async (locId, market) => {
+    await supabase.from('locations').update({ market: market || null }).eq('id', locId)
+    fetchLocations()
+  }
+
   const addManagerToLocation = async (managerId, locId) => {
     if (!managerId || !locId) return
     await supabase.from('manager_locations').upsert({ manager_id: managerId, location_id: locId })
@@ -393,6 +398,7 @@ export default function Admin() {
               areaManagers={areaManagers}
               managerLocs={managerLocs}
               onUpdateFormula={updateLocationFormula}
+              onUpdateMarket={updateLocationMarket}
               onAddManager={addManagerToLocation}
               onRemoveManager={removeManagerFromLocation}
             />
@@ -404,8 +410,16 @@ export default function Admin() {
 }
 
 // ── Locations tab ─────────────────────────────────────────────────────────────
-function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onAddManager, onRemoveManager }) {
+function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager }) {
   const [addMgrSelections, setAddMgrSelections] = useState({})
+  const [marketInputs, setMarketInputs]         = useState({})
+
+  const existingMarkets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
+
+  const handleMarketBlur = (locId) => {
+    const val = (marketInputs[locId] ?? locations.find(l => l.id === locId)?.market ?? '').trim()
+    onUpdateMarket(locId, val)
+  }
 
   const getAssignedMgrs = (locId) =>
     managerLocs
@@ -426,9 +440,13 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
+          <datalist id="market-list">
+            {existingMarkets.map(m => <option key={m} value={m} />)}
+          </datalist>
           <thead>
             <tr className="bg-gray-100 dark:bg-tm-dark-card text-gray-600 dark:text-tm-dark-muted text-xs uppercase tracking-wide font-brand">
               <th className="px-3 py-2 text-left">Location</th>
+              <th className="px-3 py-2 text-left">Market</th>
               <th className="px-3 py-2 text-left">Opportunities Formula</th>
               <th className="px-3 py-2 text-left">Area Manager(s)</th>
               <th className="px-3 py-2 text-left">Store User(s)</th>
@@ -444,6 +462,17 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                 <tr key={loc.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-row-alt'}>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-brand font-medium text-tm-blue dark:text-tm-teal whitespace-nowrap">
                     {loc.name}
+                  </td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
+                    <input
+                      type="text"
+                      list="market-list"
+                      value={marketInputs[loc.id] ?? (loc.market || '')}
+                      onChange={e => setMarketInputs(p => ({ ...p, [loc.id]: e.target.value }))}
+                      onBlur={() => handleMarketBlur(loc.id)}
+                      placeholder="e.g. North Atlanta"
+                      className="border border-gray-300 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal w-full max-w-[200px]"
+                    />
                   </td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
                     <select

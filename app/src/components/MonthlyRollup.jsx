@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { shopTotals, employeeDeltas } from '../utils/logMath'
 
 const toInt = (v) => parseInt(v) || 0
 const pct   = (num, den) => den > 0 ? (num / den * 100).toFixed(1) + '%' : ''
 
-export default function MonthlyRollup({ locationId, selectedDate }) {
-  const [logs, setLogs]         = useState([])
+export default function MonthlyRollup({ locationId, selectedDate, opportunitiesFormula = 'detailed' }) {
+  const [logs, setLogs]           = useState([])
   const [employees, setEmployees] = useState([])
-  const [loading, setLoading]   = useState(true)
+  const [loading, setLoading]     = useState(true)
 
   const d           = new Date(selectedDate + 'T00:00:00')
   const year        = d.getFullYear()
@@ -40,14 +41,13 @@ export default function MonthlyRollup({ locationId, selectedDate }) {
   }
 
   const dayStr     = (day) => `${year}-${pad(month)}-${pad(day)}`
-  const empLogs    = (emp)       => logs.filter(l => l.employee_name === emp)
-  const dayLogs    = (day)       => logs.filter(l => l.log_date === dayStr(day))
-  const dayEmpLogs = (day, emp)  => logs.filter(l => l.log_date === dayStr(day) && l.employee_name === emp)
-  const sum        = (rows, field) => rows.reduce((s, r) => s + toInt(r[field]), 0)
+  const empLogs    = (emp)      => logs.filter(l => l.employee_name === emp)
+  const dayLogs    = (day)      => logs.filter(l => l.log_date === dayStr(day))
+  const dayEmpLogs = (day, emp) => logs.filter(l => l.log_date === dayStr(day) && l.employee_name === emp)
 
   const NUMERIC = [
     'total_washes','member_washes','google_reviews','net_members',
-    'basic','good','better','best','memberships_sold','opportunities',
+    'basic','good','better','best',
   ]
   const activeEmployees = employees.filter(emp =>
     empLogs(emp).some(r => NUMERIC.some(f => toInt(r[f]) > 0))
@@ -55,6 +55,31 @@ export default function MonthlyRollup({ locationId, selectedDate }) {
 
   const activeDays = Array.from({ length: daysInMonth }, (_, i) => i + 1)
     .filter(day => logs.some(l => l.log_date === dayStr(day)))
+
+  // ── Delta helpers ─────────────────────────────────────────────────────────────
+
+  // Returns delta-based day total for (day, emp), or null if no rows
+  const getEmpDayTotal = (day, emp) => {
+    const rows = dayEmpLogs(day, emp)
+    return rows.length ? employeeDeltas(rows).dayTotal : null
+  }
+
+  // Returns the most recently updated row for the shop on a given day
+  const getDayShopRow = (day) => shopTotals(dayLogs(day))
+
+  // Get a specific raw/computed field from a delta total
+  const deltaVal = (t, field) => {
+    if (!t) return 0
+    if (field === 'memberships_sold') return toInt(t.basic) + toInt(t.good) + toInt(t.better) + toInt(t.best)
+    return toInt(t[field])
+  }
+
+  // Get a specific raw/computed field from a shop row
+  const shopVal = (r, field) => {
+    if (!r) return 0
+    if (field === 'memberships_sold') return toInt(r.basic) + toInt(r.good) + toInt(r.better) + toInt(r.best)
+    return toInt(r[field])
+  }
 
   if (loading) return (
     <div className="py-12 text-center text-gray-400 dark:text-tm-dark-muted text-sm font-brand">
@@ -67,7 +92,7 @@ export default function MonthlyRollup({ locationId, selectedDate }) {
     </div>
   )
 
-  // ── Shared components ────────────────────────────────────────────────────────
+  // ── Shared components ─────────────────────────────────────────────────────────
 
   const TableHeader = ({ extraCols = [] }) => (
     <thead>
@@ -108,10 +133,14 @@ export default function MonthlyRollup({ locationId, selectedDate }) {
     </div>
   )
 
-  // ── Count table ──────────────────────────────────────────────────────────────
+  // ── Count table ───────────────────────────────────────────────────────────────
 
   const CountTable = ({ title, accentClass, field }) => {
-    const grandTotal = sum(logs, field)
+    const empCellVal  = (day, emp) => deltaVal(getEmpDayTotal(day, emp), field)
+    const shopCellVal = (day)      => shopVal(getDayShopRow(day), field)
+    const empColTotal = (emp)      => activeDays.reduce((s, d) => s + empCellVal(d, emp), 0)
+    const grandTotal               = activeDays.reduce((s, d) => s + shopCellVal(d), 0)
+
     return (
       <div>
         <SectionTitle label={title} accent={accentClass} />
@@ -119,28 +148,25 @@ export default function MonthlyRollup({ locationId, selectedDate }) {
           <table className="border-collapse text-[11px] w-full">
             <TableHeader />
             <tbody>
-              {activeDays.map((day, i) => {
-                const dayTotal = sum(dayLogs(day), field)
-                return (
-                  <tr key={day} className={rowBg(i)}>
-                    <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{day}</td>
-                    {activeEmployees.map(emp => {
-                      const val = sum(dayEmpLogs(day, emp), field)
-                      return (
-                        <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-brand dark:text-tm-dark-text">
-                          {val > 0 ? val : ''}
-                        </td>
-                      )
-                    })}
-                    <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold font-brand dark:text-tm-dark-text">
-                      {dayTotal > 0 ? dayTotal : ''}
-                    </td>
-                  </tr>
-                )
-              })}
+              {activeDays.map((day, i) => (
+                <tr key={day} className={rowBg(i)}>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{day}</td>
+                  {activeEmployees.map(emp => {
+                    const val = empCellVal(day, emp)
+                    return (
+                      <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-brand dark:text-tm-dark-text">
+                        {val > 0 ? val : ''}
+                      </td>
+                    )
+                  })}
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold font-brand dark:text-tm-dark-text">
+                    {shopCellVal(day) > 0 ? shopCellVal(day) : ''}
+                  </td>
+                </tr>
+              ))}
               <TotalRow
                 cells={[
-                  ...activeEmployees.map(emp => sum(empLogs(emp), field) || ''),
+                  ...activeEmployees.map(emp => empColTotal(emp) || ''),
                   grandTotal || '',
                 ]}
               />
@@ -151,97 +177,161 @@ export default function MonthlyRollup({ locationId, selectedDate }) {
     )
   }
 
-  // ── Conversion % table ───────────────────────────────────────────────────────
+  // ── Conversion % table ────────────────────────────────────────────────────────
 
-  const ConversionTable = () => (
-    <div>
-      <SectionTitle label="CONVERSION %" accent="bg-orange-600" />
-      <div className="overflow-x-auto">
-        <table className="border-collapse text-[11px] w-full">
-          <TableHeader extraCols={[{ label: 'Total', cls: 'bg-orange-600' }]} />
-          <tbody>
-            {activeDays.map((day, i) => {
-              const dayMS  = sum(dayLogs(day), 'memberships_sold')
-              const dayOpp = sum(dayLogs(day), 'opportunities')
-              return (
+  const ConversionTable = () => {
+    const empDayConv = (day, emp) => {
+      const t = getEmpDayTotal(day, emp)
+      if (!t) return ''
+      const ms  = t.basic + t.good + t.better + t.best
+      const opp = opportunitiesFormula === 'simple'
+        ? Math.max(0, t.total_washes - t.member_washes)
+        : Math.max(0, t.total_washes - t.member_washes + ms)
+      return pct(ms, opp)
+    }
+
+    const shopDayConv = (day) => {
+      const r = getDayShopRow(day)
+      if (!r) return ''
+      const ms  = toInt(r.basic) + toInt(r.good) + toInt(r.better) + toInt(r.best)
+      const opp = opportunitiesFormula === 'simple'
+        ? Math.max(0, toInt(r.total_washes) - toInt(r.member_washes))
+        : Math.max(0, toInt(r.total_washes) - toInt(r.member_washes) + ms)
+      return pct(ms, opp)
+    }
+
+    const empColConv = (emp) => {
+      let totMS = 0, totOpp = 0
+      activeDays.forEach(day => {
+        const t = getEmpDayTotal(day, emp)
+        if (!t) return
+        const ms  = t.basic + t.good + t.better + t.best
+        const opp = opportunitiesFormula === 'simple'
+          ? Math.max(0, t.total_washes - t.member_washes)
+          : Math.max(0, t.total_washes - t.member_washes + ms)
+        totMS  += ms
+        totOpp += opp
+      })
+      return pct(totMS, totOpp)
+    }
+
+    let grMS = 0, grOpp = 0
+    activeDays.forEach(day => {
+      const r = getDayShopRow(day)
+      if (!r) return
+      const ms  = toInt(r.basic) + toInt(r.good) + toInt(r.better) + toInt(r.best)
+      const opp = opportunitiesFormula === 'simple'
+        ? Math.max(0, toInt(r.total_washes) - toInt(r.member_washes))
+        : Math.max(0, toInt(r.total_washes) - toInt(r.member_washes) + ms)
+      grMS  += ms
+      grOpp += opp
+    })
+
+    return (
+      <div>
+        <SectionTitle label="CONVERSION %" accent="bg-orange-600" />
+        <div className="overflow-x-auto">
+          <table className="border-collapse text-[11px] w-full">
+            <TableHeader extraCols={[{ label: 'Total', cls: 'bg-orange-600' }]} />
+            <tbody>
+              {activeDays.map((day, i) => (
                 <tr key={day} className={rowBg(i)}>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{day}</td>
-                  {activeEmployees.map(emp => {
-                    const rows = dayEmpLogs(day, emp)
-                    return (
-                      <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
-                        {pct(sum(rows, 'memberships_sold'), sum(rows, 'opportunities'))}
-                      </td>
-                    )
-                  })}
+                  {activeEmployees.map(emp => (
+                    <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
+                      {empDayConv(day, emp)}
+                    </td>
+                  ))}
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 font-semibold font-brand">
-                    {pct(dayMS, dayOpp)}
+                    {shopDayConv(day)}
                   </td>
                 </tr>
-              )
-            })}
-            <TotalRow
-              cells={activeEmployees.map(emp =>
-                pct(sum(empLogs(emp), 'memberships_sold'), sum(empLogs(emp), 'opportunities'))
-              )}
-              extraCells={[{
-                val: pct(sum(logs, 'memberships_sold'), sum(logs, 'opportunities')),
-                cls: 'bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300',
-              }]}
-            />
-          </tbody>
-        </table>
+              ))}
+              <TotalRow
+                cells={activeEmployees.map(emp => empColConv(emp))}
+                extraCells={[{
+                  val: pct(grMS, grOpp),
+                  cls: 'bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300',
+                }]}
+              />
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   // ── P-Mix % table ─────────────────────────────────────────────────────────────
 
-  const PMixTable = () => (
-    <div>
-      <SectionTitle label="P-MIX %" accent="bg-orange-600" />
-      <div className="overflow-x-auto">
-        <table className="border-collapse text-[11px] w-full">
-          <TableHeader extraCols={[{ label: 'Total', cls: 'bg-orange-600' }]} />
-          <tbody>
-            {activeDays.map((day, i) => {
-              const dl      = dayLogs(day)
-              const dayMS   = sum(dl, 'memberships_sold')
-              const dayPrem = sum(dl, 'better') + sum(dl, 'best')
-              return (
+  const PMixTable = () => {
+    const empDayPmix = (day, emp) => {
+      const t = getEmpDayTotal(day, emp)
+      if (!t) return ''
+      const ms   = t.basic + t.good + t.better + t.best
+      const prem = t.better + t.best
+      return pct(prem, ms)
+    }
+
+    const shopDayPmix = (day) => {
+      const r = getDayShopRow(day)
+      if (!r) return ''
+      const ms   = toInt(r.basic) + toInt(r.good) + toInt(r.better) + toInt(r.best)
+      const prem = toInt(r.better) + toInt(r.best)
+      return pct(prem, ms)
+    }
+
+    const empColPmix = (emp) => {
+      let totMS = 0, totPrem = 0
+      activeDays.forEach(day => {
+        const t = getEmpDayTotal(day, emp)
+        if (!t) return
+        totMS   += t.basic + t.good + t.better + t.best
+        totPrem += t.better + t.best
+      })
+      return pct(totPrem, totMS)
+    }
+
+    let grMS = 0, grPrem = 0
+    activeDays.forEach(day => {
+      const r = getDayShopRow(day)
+      if (!r) return
+      grMS   += toInt(r.basic) + toInt(r.good) + toInt(r.better) + toInt(r.best)
+      grPrem += toInt(r.better) + toInt(r.best)
+    })
+
+    return (
+      <div>
+        <SectionTitle label="P-MIX %" accent="bg-orange-600" />
+        <div className="overflow-x-auto">
+          <table className="border-collapse text-[11px] w-full">
+            <TableHeader extraCols={[{ label: 'Total', cls: 'bg-orange-600' }]} />
+            <tbody>
+              {activeDays.map((day, i) => (
                 <tr key={day} className={rowBg(i)}>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{day}</td>
-                  {activeEmployees.map(emp => {
-                    const rows = dayEmpLogs(day, emp)
-                    const ms   = sum(rows, 'memberships_sold')
-                    const prem = sum(rows, 'better') + sum(rows, 'best')
-                    return (
-                      <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
-                        {pct(prem, ms)}
-                      </td>
-                    )
-                  })}
+                  {activeEmployees.map(emp => (
+                    <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
+                      {empDayPmix(day, emp)}
+                    </td>
+                  ))}
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 font-semibold font-brand">
-                    {pct(dayPrem, dayMS)}
+                    {shopDayPmix(day)}
                   </td>
                 </tr>
-              )
-            })}
-            <TotalRow
-              cells={activeEmployees.map(emp => {
-                const rows = empLogs(emp)
-                return pct(sum(rows, 'better') + sum(rows, 'best'), sum(rows, 'memberships_sold'))
-              })}
-              extraCells={[{
-                val: pct(sum(logs, 'better') + sum(logs, 'best'), sum(logs, 'memberships_sold')),
-                cls: 'bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300',
-              }]}
-            />
-          </tbody>
-        </table>
+              ))}
+              <TotalRow
+                cells={activeEmployees.map(emp => empColPmix(emp))}
+                extraCells={[{
+                  val: pct(grPrem, grMS),
+                  cls: 'bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300',
+                }]}
+              />
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   // ── Layout ────────────────────────────────────────────────────────────────────
 
@@ -253,10 +343,10 @@ export default function MonthlyRollup({ locationId, selectedDate }) {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-        <CountTable title="TOTAL WASHES"      accentClass="bg-tm-blue"   field="total_washes"    />
-        <CountTable title="MEMBER WASHES"     accentClass="bg-tm-blue"   field="member_washes"   />
-        <CountTable title="MEMBERSHIP SALES"  accentClass="bg-[#1A3555]" field="memberships_sold"/>
-        <CountTable title="PREMIUM SALES"     accentClass="bg-[#1A3555]" field="best"            />
+        <CountTable title="TOTAL WASHES"     accentClass="bg-tm-blue"   field="total_washes"     />
+        <CountTable title="MEMBER WASHES"    accentClass="bg-tm-blue"   field="member_washes"    />
+        <CountTable title="MEMBERSHIP SALES" accentClass="bg-[#1A3555]" field="memberships_sold" />
+        <CountTable title="PREMIUM SALES"    accentClass="bg-[#1A3555]" field="best"             />
         <ConversionTable />
         <PMixTable />
       </div>

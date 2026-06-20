@@ -1,3 +1,5 @@
+import { shopTotals, employeeDeltas } from '../utils/logMath'
+
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 const pct   = (num, den) => den > 0 ? (num / den * 100).toFixed(1) + '%' : '—'
 
@@ -11,49 +13,45 @@ function MedalIcon({ rank }) {
 export default function DailySnapshot({ rows = [], date, locationName, opportunitiesFormula = 'detailed' }) {
   const namedRows = rows.filter(r => r.employee_name?.trim())
 
-  // Aggregate per employee
-  const empMap = {}
+  // ── Employee totals via delta logic ──────────────────────────────────────────
+  const grouped = {}
   namedRows.forEach(r => {
     const name = r.employee_name.trim()
-    if (!empMap[name]) {
-      empMap[name] = { name, tw: 0, mw: 0, basic: 0, good: 0, better: 0, best: 0, gr: 0 }
-    }
-    const e = empMap[name]
-    e.tw     += toInt(r.total_washes)
-    e.mw     += toInt(r.member_washes)
-    e.basic  += toInt(r.basic)
-    e.good   += toInt(r.good)
-    e.better += toInt(r.better)
-    e.best   += toInt(r.best)
-    e.gr     += toInt(r.google_reviews)
+    if (!grouped[name]) grouped[name] = []
+    grouped[name].push(r)
   })
 
-  const empStats = Object.values(empMap).map(e => {
-    const ms  = e.basic + e.good + e.better + e.best
+  const empStats = Object.entries(grouped).map(([name, empRows]) => {
+    const { dayTotal } = employeeDeltas(empRows)
+    const ms  = dayTotal.basic + dayTotal.good + dayTotal.better + dayTotal.best
     const opp = opportunitiesFormula === 'simple'
-      ? Math.max(0, e.tw - e.mw)
-      : Math.max(0, e.tw - e.mw + ms)
+      ? Math.max(0, dayTotal.total_washes - dayTotal.member_washes)
+      : Math.max(0, dayTotal.total_washes - dayTotal.member_washes + ms)
     return {
-      ...e,
+      name,
       ms,
       opp,
+      gr:         dayTotal.google_reviews,
       conversion: pct(ms, opp),
-      pmix:       pct(e.better + e.best, ms),
+      pmix:       pct(dayTotal.better + dayTotal.best, ms),
     }
   }).sort((a, b) => b.ms - a.ms)
 
-  // Overall totals
-  const allRows = rows
-  const totTW   = allRows.reduce((s, r) => s + toInt(r.total_washes),    0)
-  const totMW   = allRows.reduce((s, r) => s + toInt(r.member_washes),   0)
-  const totMS   = allRows.reduce((s, r) => s + toInt(r.memberships_sold), 0)
-  const totOpp  = allRows.reduce((s, r) => s + toInt(r.opportunities),    0)
-  const totBtr  = allRows.reduce((s, r) => s + toInt(r.better),           0)
-  const totBst  = allRows.reduce((s, r) => s + toInt(r.best),             0)
-  const totGR   = allRows.reduce((s, r) => s + toInt(r.google_reviews),   0)
-
+  // ── Shop totals via latest-row logic ─────────────────────────────────────────
+  const latest  = shopTotals(rows)
+  const totTW   = toInt(latest?.total_washes)
+  const totMW   = toInt(latest?.member_washes)
+  const totGR   = toInt(latest?.google_reviews)
+  const totBasic  = toInt(latest?.basic)
+  const totGood   = toInt(latest?.good)
+  const totBetter = toInt(latest?.better)
+  const totBest   = toInt(latest?.best)
+  const totMS   = totBasic + totGood + totBetter + totBest
+  const totOpp  = opportunitiesFormula === 'simple'
+    ? Math.max(0, totTW - totMW)
+    : Math.max(0, totTW - totMW + totMS)
   const totConv = pct(totMS, totOpp)
-  const totPmix = pct(totBtr + totBst, totMS)
+  const totPmix = pct(totBetter + totBest, totMS)
 
   const displayDate = date
     ? new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
@@ -93,12 +91,12 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
         </h3>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: 'Total Washes',      value: totTW   || '—', accent: false },
-            { label: 'Member Washes',     value: totMW   || '—', accent: false },
-            { label: 'Memberships Sold',  value: totMS   || '—', accent: false },
-            { label: 'Google Reviews',    value: totGR   || '—', accent: false },
-            { label: 'Conversion',        value: totConv,         accent: true  },
-            { label: 'P-Mix',             value: totPmix,         accent: true  },
+            { label: 'Total Washes',     value: totTW  || '—', accent: false },
+            { label: 'Member Washes',    value: totMW  || '—', accent: false },
+            { label: 'Memberships Sold', value: totMS  || '—', accent: false },
+            { label: 'Google Reviews',   value: totGR  || '—', accent: false },
+            { label: 'Conversion',       value: totConv,        accent: true  },
+            { label: 'P-Mix',            value: totPmix,        accent: true  },
           ].map(({ label, value, accent }) => (
             <div
               key={label}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { shopTotals } from '../utils/logMath'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
@@ -43,14 +44,16 @@ function formatTime(ts) {
   return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-function aggRows(rows) {
-  const totBasic  = rows.reduce((s, r) => s + toInt(r.basic),         0)
-  const totGood   = rows.reduce((s, r) => s + toInt(r.good),          0)
-  const totBetter = rows.reduce((s, r) => s + toInt(r.better),        0)
-  const totBest   = rows.reduce((s, r) => s + toInt(r.best),          0)
-  const totTW     = rows.reduce((s, r) => s + toInt(r.total_washes),  0)
-  const totMW     = rows.reduce((s, r) => s + toInt(r.member_washes), 0)
-  const totGR     = rows.reduce((s, r) => s + toInt(r.google_reviews),0)
+function shopStats(rows) {
+  const latest = shopTotals(rows)
+  if (!latest) return null
+  const totTW     = toInt(latest.total_washes)
+  const totMW     = toInt(latest.member_washes)
+  const totGR     = toInt(latest.google_reviews)
+  const totBasic  = toInt(latest.basic)
+  const totGood   = toInt(latest.good)
+  const totBetter = toInt(latest.better)
+  const totBest   = toInt(latest.best)
   const totMS     = totBasic + totGood + totBetter + totBest
   const totOpp    = Math.max(0, totTW - totMW + totMS)
   const pMix      = totMS  > 0 ? ((totBetter + totBest) / totMS  * 100).toFixed(1) + '%' : '—'
@@ -164,21 +167,20 @@ function HourlyTable({ rows }) {
 
 function ShopCard({ location, rows, expanded, onToggle }) {
   const hasData = rows.length > 0
+  const stats   = hasData ? shopStats(rows) : null
 
-  const lastUpdated = hasData
+  const lastUpdated = stats
     ? formatTime(rows.reduce((max, r) =>
         r.updated_at > max ? r.updated_at : max, rows[0].updated_at))
     : null
 
-  const { totTW, totMW, totMS, totGR, pMix, conv } = hasData ? aggRows(rows) : {}
-
   const STATS = [
-    { label: 'Total Washes',  value: totTW  || '—' },
-    { label: 'Member Washes', value: totMW  || '—' },
-    { label: 'Memberships',   value: totMS  || '—' },
-    { label: 'Google',        value: totGR  || '—' },
-    { label: 'P-Mix',         value: pMix  ?? '—', accent: true },
-    { label: 'Conv',          value: conv  ?? '—', accent: true },
+    { label: 'Total Washes',  value: stats?.totTW  || '—' },
+    { label: 'Member Washes', value: stats?.totMW  || '—' },
+    { label: 'Memberships',   value: stats?.totMS  || '—' },
+    { label: 'Google',        value: stats?.totGR  || '—' },
+    { label: 'P-Mix',         value: stats?.pMix  ?? '—', accent: true },
+    { label: 'Conv',          value: stats?.conv  ?? '—', accent: true },
   ]
 
   return (

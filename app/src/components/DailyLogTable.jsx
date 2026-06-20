@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import EmployeeSelect from './EmployeeSelect'
+import { shopTotals } from '../utils/logMath'
 
 const TIME_SLOTS = [
   { label: '8:00 AM',  value: '08:00:00' },
@@ -464,10 +465,9 @@ export default function DailyLogTable({
     .map(key => COLUMN_DEFS.find(c => c.key === key))
     .filter(Boolean)
 
-  const totals      = ALL_KEYS.reduce((acc, f) => ({
-    ...acc, [f]: rows.reduce((s, r) => s + toInt(r[f]), 0),
-  }), {})
-  const totComputed = compute(totals, opportunitiesFormula)
+  const latestRow   = shopTotals(rows)
+  const totals      = latestRow ?? {}
+  const totComputed = latestRow ? compute(latestRow, opportunitiesFormula) : {}
 
   const cardSlotIdx = TIME_SLOTS.findIndex(s => s.value === cardHour)
   const cardRow     = rows[cardSlotIdx >= 0 ? cardSlotIdx : 0] ?? emptyRow(cardHour)

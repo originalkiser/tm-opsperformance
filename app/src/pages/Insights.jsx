@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
 import NetworkDayView from '../components/NetworkDayView'
+import { employeeDeltas } from '../utils/logMath'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
@@ -34,16 +35,32 @@ const agg = (rows) => {
   }
 }
 
-const aggEmp = (rows) => {
-  const basic  = rows.reduce((s, r) => s + toInt(r.basic),         0)
-  const good   = rows.reduce((s, r) => s + toInt(r.good),          0)
-  const better = rows.reduce((s, r) => s + toInt(r.better),        0)
-  const best   = rows.reduce((s, r) => s + toInt(r.best),          0)
-  const tw     = rows.reduce((s, r) => s + toInt(r.total_washes),  0)
-  const mw     = rows.reduce((s, r) => s + toInt(r.member_washes), 0)
-  const gr     = rows.reduce((s, r) => s + toInt(r.google_reviews),0)
-  const ms     = basic + good + better + best
-  const opp    = Math.max(0, tw - mw + ms)
+// aggEmp groups rows by (location, date, employee) then runs delta logic per (date, employee)
+// so that cumulative per-hour entries don't inflate totals
+const aggEmpFromLogs = (rows) => {
+  // Group by (location_id, employee_name, log_date) to apply per-day delta logic
+  const dayEmpMap = {}
+  rows.forEach(r => {
+    const name = r.employee_name?.trim()
+    if (!name) return
+    const key = `${r.location_id}::${name}::${r.log_date}`
+    if (!dayEmpMap[key]) dayEmpMap[key] = []
+    dayEmpMap[key].push(r)
+  })
+  // Sum delta day totals across all (day, location) combos
+  let basic = 0, good = 0, better = 0, best = 0, tw = 0, mw = 0, gr = 0
+  Object.values(dayEmpMap).forEach(dayRows => {
+    const { dayTotal } = employeeDeltas(dayRows)
+    basic  += dayTotal.basic
+    good   += dayTotal.good
+    better += dayTotal.better
+    best   += dayTotal.best
+    tw     += dayTotal.total_washes
+    mw     += dayTotal.member_washes
+    gr     += dayTotal.google_reviews
+  })
+  const ms  = basic + good + better + best
+  const opp = Math.max(0, tw - mw + ms)
   return {
     ms, gr, opp,
     pmixN: pctN(better + best, ms),
@@ -326,7 +343,7 @@ function TeamMemberTable({ data, locations }) {
 
   const allRows = Object.values(empMap).map(e => ({
     ...e,
-    ...aggEmp(e._rawRows),
+    ...aggEmpFromLogs(e._rawRows),
   }))
 
   if (!allRows.length) return (
@@ -568,6 +585,14 @@ export default function Insights() {
   const [loading, setLoading]               = useState(true)
   const [selectedShops, setSelectedShops]   = useState(null) // null = all
   const [trendLocId, setTrendLocId]         = useState('')
+  const [selectedMarket, setSelectedMarket] = useState('')
+
+  const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
+
+  // Locations scoped to selected market
+  const marketLocations = selectedMarket
+    ? locations.filter(l => l.market === selectedMarket)
+    : locations
 
   useEffect(() => {
     if (locations.length) {
@@ -576,15 +601,20 @@ export default function Insights() {
     }
   }, [locations])
 
+  // Reset shop selection when market changes
+  useEffect(() => {
+    setSelectedShops(null)
+  }, [selectedMarket])
+
   useEffect(() => {
     if (!trendLocId) return
     const visible = selectedShops === null
-      ? locations
-      : locations.filter(l => selectedShops.includes(l.id))
+      ? marketLocations
+      : marketLocations.filter(l => selectedShops.includes(l.id))
     if (!visible.find(l => l.id === trendLocId)) {
       setTrendLocId(visible[0]?.id ?? '')
     }
-  }, [selectedShops])
+  }, [selectedShops, selectedMarket])
 
   const fetchAll = async () => {
     setLoading(true)
@@ -600,11 +630,13 @@ export default function Insights() {
   }
 
   const visibleLocations = selectedShops === null
-    ? locations
-    : locations.filter(l => selectedShops.includes(l.id))
+    ? marketLocations
+    : marketLocations.filter(l => selectedShops.includes(l.id))
 
-  const filterLogs = (logs) =>
-    selectedShops === null ? logs : logs.filter(r => selectedShops.includes(r.location_id))
+  const filterLogs = (logs) => {
+    const locIds = visibleLocations.map(l => l.id)
+    return logs.filter(r => locIds.includes(r.location_id))
+  }
 
   const trendLogs  = mtdLogs.filter(r => r.location_id === trendLocId)
   const cardCls    = "bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border"
@@ -616,9 +648,21 @@ export default function Insights() {
 
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Dashboard</h1>
-          {locations.length > 1 && (
-            <ShopMultiSelect locations={locations} selected={selectedShops} onChange={setSelectedShops} />
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {markets.length > 0 && (
+              <select
+                value={selectedMarket}
+                onChange={e => setSelectedMarket(e.target.value)}
+                className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal transition-colors font-brand"
+              >
+                <option value="">All Markets</option>
+                {markets.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            )}
+            {marketLocations.length > 1 && (
+              <ShopMultiSelect locations={marketLocations} selected={selectedShops} onChange={setSelectedShops} />
+            )}
+          </div>
         </div>
 
         {loading ? (
