@@ -56,7 +56,7 @@ const compute = (row, formula = 'detailed') => {
   return { memberships_sold, opportunities, p_mix, conversion }
 }
 
-export default function DailyLogTable({ locationId, selectedDate, canEdit, opportunitiesFormula = 'detailed' }) {
+export default function DailyLogTable({ locationId, selectedDate, canEdit, opportunitiesFormula = 'detailed', onRowsChange }) {
   const [rows, setRows]     = useState(TIME_SLOTS.map(s => emptyRow(s.value)))
   const [employees, setEmps] = useState([])
   const [saving, setSaving]  = useState(new Set())
@@ -76,6 +76,8 @@ export default function DailyLogTable({ locationId, selectedDate, canEdit, oppor
   useEffect(() => { dateRef.current = selectedDate },     [selectedDate])
   useEffect(() => { canEditRef.current = canEdit },       [canEdit])
   useEffect(() => { formulaRef.current = opportunitiesFormula }, [opportunitiesFormula])
+
+  useEffect(() => { onRowsChange?.(rows) }, [rows])
 
   useEffect(() => {
     fetchData()
@@ -148,6 +150,9 @@ export default function DailyLogTable({ locationId, selectedDate, canEdit, oppor
     if (!canEditRef.current) return
     const row = rowsRef.current[index]
     if (!row) return
+    // Don't write empty rows to the database
+    const hasData = row.employee_name?.trim() || INPUT_FIELDS.some(f => toInt(row[f]) > 0)
+    if (!hasData) return
     const { memberships_sold, opportunities } = compute(row, formulaRef.current)
 
     setSaving(prev => new Set([...prev, index]))
@@ -183,6 +188,8 @@ export default function DailyLogTable({ locationId, selectedDate, canEdit, oppor
     if (!canEditRef.current) return
     const row = rowsRef.current[index]
     if (!row) return
+    const hasData = row.employee_name?.trim() || INPUT_FIELDS.some(f => toInt(row[f]) > 0)
+    if (!hasData) return
     const { memberships_sold, opportunities } = compute(row, formulaRef.current)
     await supabase.from('daily_logs').upsert(
       {

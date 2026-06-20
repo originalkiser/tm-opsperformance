@@ -1,17 +1,20 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
-
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
-const aggregate = (rows) => {
-  const tw  = rows.reduce((s, r) => s + toInt(r.total_washes),    0)
-  const mw  = rows.reduce((s, r) => s + toInt(r.member_washes),   0)
-  const gr  = rows.reduce((s, r) => s + toInt(r.google_reviews),  0)
-  const nm  = rows.reduce((s, r) => s + toInt(r.net_members),     0)
-  const ms  = rows.reduce((s, r) => s + toInt(r.memberships_sold),0)
-  const opp = rows.reduce((s, r) => s + toInt(r.opportunities),   0)
-  const btr = rows.reduce((s, r) => s + toInt(r.better),          0)
-  const bst = rows.reduce((s, r) => s + toInt(r.best),            0)
+const aggregate = (rows, formula = 'detailed') => {
+  const tw  = rows.reduce((s, r) => s + toInt(r.total_washes),   0)
+  const mw  = rows.reduce((s, r) => s + toInt(r.member_washes),  0)
+  const gr  = rows.reduce((s, r) => s + toInt(r.google_reviews), 0)
+  const nm  = rows.reduce((s, r) => s + toInt(r.net_members),    0)
+  const bsc = rows.reduce((s, r) => s + toInt(r.basic),          0)
+  const gd  = rows.reduce((s, r) => s + toInt(r.good),           0)
+  const btr = rows.reduce((s, r) => s + toInt(r.better),         0)
+  const bst = rows.reduce((s, r) => s + toInt(r.best),           0)
+
+  // Derive ms and opp from raw fields (same logic as DailyLogTable compute())
+  const ms  = bsc + gd + btr + bst
+  const opp = formula === 'simple'
+    ? Math.max(0, tw - mw)
+    : Math.max(0, tw - mw - ms)
 
   const p_mix      = ms > 0  ? ((btr + bst) / ms  * 100).toFixed(1) + '%' : ''
   const conversion = opp > 0 ? (ms / opp * 100).toFixed(1) + '%'          : ''
@@ -33,32 +36,21 @@ const HEADERS = [
   ['Conversion',       'bg-orange-600'],
 ]
 
-export default function EmployeeSummary({ locationId, selectedDate }) {
-  const [logs, setLogs] = useState([])
-
-  useEffect(() => { fetchData() }, [locationId, selectedDate])
-
-  const fetchData = async () => {
-    const { data } = await supabase
-      .from('daily_logs')
-      .select('*')
-      .eq('location_id', locationId)
-      .eq('log_date', selectedDate)
-      .not('employee_name', 'is', null)
-    setLogs(data || [])
-  }
+// rows come directly from DailyLogTable's live state — no fetch needed
+export default function EmployeeSummary({ rows = [], opportunitiesFormula = 'detailed' }) {
+  const namedRows = rows.filter(r => r.employee_name?.trim())
 
   const grouped = {}
-  logs.forEach(row => {
-    if (!row.employee_name) return
-    ;(grouped[row.employee_name] = grouped[row.employee_name] || []).push(row)
+  namedRows.forEach(row => {
+    const name = row.employee_name.trim()
+    ;(grouped[name] = grouped[name] || []).push(row)
   })
 
   const employees = Object.entries(grouped)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, rows]) => ({ name, ...aggregate(rows) }))
+    .map(([name, empRows]) => ({ name, ...aggregate(empRows, opportunitiesFormula) }))
 
-  const totals = aggregate(logs)
+  const totals = aggregate(namedRows, opportunitiesFormula)
 
   return (
     <div>

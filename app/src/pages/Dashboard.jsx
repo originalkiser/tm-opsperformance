@@ -12,6 +12,7 @@ export default function Dashboard() {
   const [selectedLocationId, setSelectedLocationId] = useState(null)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [activeTab, setActiveTab] = useState('daily')
+  const [liveRows, setLiveRows] = useState([])
 
   useEffect(() => {
     if (locations.length === 1 && !selectedLocationId) {
@@ -99,11 +100,12 @@ export default function Dashboard() {
                   selectedDate={selectedDate}
                   canEdit={canEdit}
                   opportunitiesFormula={opportunitiesFormula}
+                  onRowsChange={setLiveRows}
                 />
                 <div className="mt-8 pt-4 border-t border-gray-100">
                   <EmployeeSummary
-                    locationId={selectedLocationId}
-                    selectedDate={selectedDate}
+                    rows={liveRows}
+                    opportunitiesFormula={opportunitiesFormula}
                   />
                 </div>
               </div>
