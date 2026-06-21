@@ -90,7 +90,7 @@ const getWeekStart = () => {
   const d = new Date()
   const day = d.getDay()
   d.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
-  return d.toISOString().split('T')[0]
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 const getMonthStart = () => {
@@ -98,7 +98,7 @@ const getMonthStart = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-const today = () => new Date().toISOString().split('T')[0]
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
 // ── Shared UI pieces ──────────────────────────────────────────────────────────
 

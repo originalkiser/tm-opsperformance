@@ -2,7 +2,7 @@ export default function DateSelector({ value, onChange }) {
   const getDateStr = (daysAgo) => {
     const d = new Date()
     d.setDate(d.getDate() - daysAgo)
-    return d.toISOString().split('T')[0]
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   }
 
   const options = [

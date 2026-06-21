@@ -11,7 +11,7 @@ import DailySnapshot from '../components/DailySnapshot'
 export default function Dashboard() {
   const { profile, locations } = useAuth()
   const [selectedLocationId, setSelectedLocationId] = useState(null)
-  const [selectedDate, setSelectedDate]             = useState(new Date().toISOString().split('T')[0])
+  const [selectedDate, setSelectedDate]             = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
   const [activeTab, setActiveTab]                   = useState('daily')
   const [liveRows, setLiveRows]                     = useState([])
   const [selectedMarket, setSelectedMarket]         = useState(
