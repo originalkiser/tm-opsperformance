@@ -66,6 +66,26 @@ const aggEmpFromLogs = (rows) => {
   }
 }
 
+// Collapse all hourly rows to one row per (location, date): the latest time_slot with data.
+// Cumulative values grow through the day so the last filled slot = the day's total.
+const toDayTotals = (rows) => {
+  const map = {}
+  rows.forEach(r => {
+    const key = `${r.location_id}::${r.log_date}`
+    if (!map[key]) map[key] = []
+    map[key].push(r)
+  })
+  return Object.values(map).map(dayRows => {
+    const withData = dayRows.filter(r =>
+      toInt(r.total_washes) > 0 || toInt(r.member_washes) > 0 ||
+      toInt(r.memberships_sold) > 0 || toInt(r.opportunities) > 0 ||
+      toInt(r.google_reviews) > 0
+    )
+    const src = withData.length ? withData : dayRows
+    return src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
+  })
+}
+
 const getWeekStart = () => {
   const d = new Date()
   const day = d.getDay()
@@ -193,9 +213,11 @@ function MetricTable({ data, locations }) {
     <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
   )
 
-  const totals = agg(data)
-  const byLoc  = {}
-  data.forEach(r => { ;(byLoc[r.location_id] = byLoc[r.location_id] || []).push(r) })
+  // Collapse to one row per (location, date) so cumulative hourly entries aren't summed
+  const dayData = toDayTotals(data)
+  const totals  = agg(dayData)
+  const byLoc   = {}
+  dayData.forEach(r => { ;(byLoc[r.location_id] = byLoc[r.location_id] || []).push(r) })
 
   const rows = Object.entries(byLoc)
     .map(([locId, rows]) => ({
@@ -541,13 +563,19 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, rows]) => {
       const day = parseInt(date.split('-')[2])
-      const tw  = rows.reduce((s, r) => s + toInt(r.total_washes),    0)
-      const mw  = rows.reduce((s, r) => s + toInt(r.member_washes),   0)
-      const ms  = rows.reduce((s, r) => s + toInt(r.memberships_sold),0)
-      const opp = rows.reduce((s, r) => s + toInt(r.opportunities),   0)
-      const gr  = rows.reduce((s, r) => s + toInt(r.google_reviews),  0)
-      const btr = rows.reduce((s, r) => s + toInt(r.better),          0)
-      const bst = rows.reduce((s, r) => s + toInt(r.best),            0)
+      // Latest time_slot with data = cumulative day total (values grow through the day)
+      const withData = rows.filter(r =>
+        toInt(r.total_washes) > 0 || toInt(r.memberships_sold) > 0
+      )
+      const src = withData.length ? withData : rows
+      const r   = src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
+      const tw  = toInt(r.total_washes)
+      const mw  = toInt(r.member_washes)
+      const ms  = toInt(r.memberships_sold)
+      const opp = toInt(r.opportunities)
+      const gr  = toInt(r.google_reviews)
+      const btr = toInt(r.better)
+      const bst = toInt(r.best)
       return {
         day, tw, mw, ms, gr,
         conversion: opp > 0 ? parseFloat((ms         / opp * 100).toFixed(1)) : null,

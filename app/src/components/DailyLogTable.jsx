@@ -413,11 +413,11 @@ export default function DailyLogTable({
       ...historyRef.current.slice(-(MAX_HISTORY - 1)),
       rowsRef.current.map(r => ({ ...r })),
     ]
-    setRows(prev => {
-      const next = [...prev]
-      next[index] = { ...next[index], [field]: value }
-      return next
-    })
+    // Update ref immediately so saves triggered synchronously after onChange see the new value
+    const next = [...rowsRef.current]
+    next[index] = { ...next[index], [field]: value }
+    rowsRef.current = next
+    setRows(next)
     clearTimeout(saveTimers.current[index])
     saveTimers.current[index] = setTimeout(() => {
       delete saveTimers.current[index]
