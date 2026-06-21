@@ -78,7 +78,7 @@ export default function EmployeeSelect({
       <input
         ref={inputRef}
         type="text"
-        className="w-full py-1.5 px-1 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded text-xs font-brand transition-colors disabled:cursor-default"
+        className="w-full py-1.5 px-1 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded text-xs font-brand text-gray-800 dark:text-tm-dark-text placeholder:text-gray-400 dark:placeholder:text-tm-dark-muted transition-colors disabled:cursor-default"
         value={search}
         disabled={disabled}
         placeholder={placeholder}
