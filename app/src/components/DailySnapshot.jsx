@@ -1,4 +1,4 @@
-import { shopTotals, employeeDeltas } from '../utils/logMath'
+import { shopTotals, employeeDeltasByDay } from '../utils/logMath'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 const pct   = (num, den) => den > 0 ? (num / den * 100).toFixed(1) + '%' : '—'
@@ -14,26 +14,20 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
   const namedRows = rows.filter(r => r.employee_name?.trim())
 
   // ── Employee totals via delta logic ──────────────────────────────────────────
-  const grouped = {}
-  namedRows.forEach(r => {
-    const name = r.employee_name.trim()
-    if (!grouped[name]) grouped[name] = []
-    grouped[name].push(r)
-  })
+  const deltaMap = employeeDeltasByDay(namedRows)
 
-  const empStats = Object.entries(grouped).map(([name, empRows]) => {
-    const { dayTotal } = employeeDeltas(empRows)
-    const ms  = dayTotal.basic + dayTotal.good + dayTotal.better + dayTotal.best
+  const empStats = Object.entries(deltaMap).map(([name, d]) => {
+    const ms  = d.basic + d.good + d.better + d.best
     const opp = opportunitiesFormula === 'simple'
-      ? Math.max(0, dayTotal.total_washes - dayTotal.member_washes)
-      : Math.max(0, dayTotal.total_washes - dayTotal.member_washes + ms)
+      ? Math.max(0, d.total_washes - d.member_washes)
+      : Math.max(0, d.total_washes - d.member_washes + ms)
     return {
       name,
       ms,
       opp,
-      gr:         dayTotal.google_reviews,
+      gr:         d.google_reviews,
       conversion: pct(ms, opp),
-      pmix:       pct(dayTotal.better + dayTotal.best, ms),
+      pmix:       pct(d.better + d.best, ms),
     }
   }).sort((a, b) => b.ms - a.ms)
 

@@ -1,25 +1,24 @@
+import { employeeDeltasByDay } from '../utils/logMath'
+
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
-const aggregate = (rows, formula = 'detailed') => {
-  const tw  = rows.reduce((s, r) => s + toInt(r.total_washes),   0)
-  const mw  = rows.reduce((s, r) => s + toInt(r.member_washes),  0)
-  const gr  = rows.reduce((s, r) => s + toInt(r.google_reviews), 0)
-  const nm  = rows.reduce((s, r) => s + toInt(r.net_members),    0)
-  const bsc = rows.reduce((s, r) => s + toInt(r.basic),          0)
-  const gd  = rows.reduce((s, r) => s + toInt(r.good),           0)
-  const btr = rows.reduce((s, r) => s + toInt(r.better),         0)
-  const bst = rows.reduce((s, r) => s + toInt(r.best),           0)
-
-  // Derive ms and opp from raw fields (same logic as DailyLogTable compute())
-  const ms  = bsc + gd + btr + bst
+const derive = (d, formula) => {
+  const ms  = toInt(d.basic) + toInt(d.good) + toInt(d.better) + toInt(d.best)
   const opp = formula === 'simple'
-    ? Math.max(0, tw - mw)
-    : Math.max(0, tw - mw + ms)
-
-  const p_mix      = ms > 0  ? ((btr + bst) / ms  * 100).toFixed(1) + '%' : ''
-  const conversion = opp > 0 ? (ms / opp * 100).toFixed(1) + '%'          : ''
-
-  return { tw, mw, gr, nm, ms, opp, btr, bst, p_mix, conversion }
+    ? Math.max(0, toInt(d.total_washes) - toInt(d.member_washes))
+    : Math.max(0, toInt(d.total_washes) - toInt(d.member_washes) + ms)
+  return {
+    tw:         toInt(d.total_washes),
+    mw:         toInt(d.member_washes),
+    gr:         toInt(d.google_reviews),
+    nm:         toInt(d.net_members),
+    ms,
+    opp,
+    btr:        toInt(d.better),
+    bst:        toInt(d.best),
+    p_mix:      ms  > 0 ? ((toInt(d.better) + toInt(d.best)) / ms  * 100).toFixed(1) + '%' : '',
+    conversion: opp > 0 ? (ms / opp * 100).toFixed(1) + '%'                               : '',
+  }
 }
 
 const HEADERS = [
@@ -39,18 +38,18 @@ const HEADERS = [
 // rows come directly from DailyLogTable's live state — no fetch needed
 export default function EmployeeSummary({ rows = [], opportunitiesFormula = 'detailed' }) {
   const namedRows = rows.filter(r => r.employee_name?.trim())
+  const deltaMap  = employeeDeltasByDay(namedRows)
 
-  const grouped = {}
-  namedRows.forEach(row => {
-    const name = row.employee_name.trim()
-    ;(grouped[name] = grouped[name] || []).push(row)
-  })
-
-  const employees = Object.entries(grouped)
+  const employees = Object.entries(deltaMap)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, empRows]) => ({ name, ...aggregate(empRows, opportunitiesFormula) }))
+    .map(([name, d]) => ({ name, ...derive(d, opportunitiesFormula) }))
 
-  const totals = aggregate(namedRows, opportunitiesFormula)
+  // Totals: sum raw delta fields across all employees, then derive
+  const sumFields = { total_washes: 0, member_washes: 0, google_reviews: 0, net_members: 0, basic: 0, good: 0, better: 0, best: 0 }
+  Object.values(deltaMap).forEach(d => {
+    Object.keys(sumFields).forEach(f => { sumFields[f] += toInt(d[f]) })
+  })
+  const totals = derive(sumFields, opportunitiesFormula)
 
   return (
     <div>

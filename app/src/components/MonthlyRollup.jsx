@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { shopTotals, employeeDeltas } from '../utils/logMath'
+import { shopTotals, employeeDeltasByDay } from '../utils/logMath'
 
 const toInt = (v) => parseInt(v) || 0
 const pct   = (num, den) => den > 0 ? (num / den * 100).toFixed(1) + '%' : ''
@@ -40,10 +40,9 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
     setLoading(false)
   }
 
-  const dayStr     = (day) => `${year}-${pad(month)}-${pad(day)}`
-  const empLogs    = (emp)      => logs.filter(l => l.employee_name === emp)
-  const dayLogs    = (day)      => logs.filter(l => l.log_date === dayStr(day))
-  const dayEmpLogs = (day, emp) => logs.filter(l => l.log_date === dayStr(day) && l.employee_name === emp)
+  const dayStr  = (day) => `${year}-${pad(month)}-${pad(day)}`
+  const empLogs = (emp) => logs.filter(l => l.employee_name === emp)
+  const dayLogs = (day) => logs.filter(l => l.log_date === dayStr(day))
 
   const NUMERIC = [
     'total_washes','member_washes','google_reviews','net_members',
@@ -60,8 +59,9 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
 
   // Returns delta-based day total for (day, emp), or null if no rows
   const getEmpDayTotal = (day, emp) => {
-    const rows = dayEmpLogs(day, emp)
-    return rows.length ? employeeDeltas(rows).dayTotal : null
+    const rows = dayLogs(day)
+    if (!rows.length) return null
+    return employeeDeltasByDay(rows)[emp] ?? null
   }
 
   // Returns the most recently updated row for the shop on a given day

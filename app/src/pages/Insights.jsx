@@ -8,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
 import NetworkDayView from '../components/NetworkDayView'
-import { employeeDeltas } from '../utils/logMath'
+import { employeeDeltasByDay } from '../utils/logMath'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
@@ -35,34 +35,30 @@ const agg = (rows) => {
   }
 }
 
-// aggEmp groups rows by (location, date, employee) then runs delta logic per (date, employee)
-// so that cumulative per-hour entries don't inflate totals
+// Group by (location_id, log_date), run employeeDeltasByDay per group, sum all employee deltas
 const aggEmpFromLogs = (rows) => {
-  // Group by (location_id, employee_name, log_date) to apply per-day delta logic
-  const dayEmpMap = {}
+  const dayMap = {}
   rows.forEach(r => {
-    const name = r.employee_name?.trim()
-    if (!name) return
-    const key = `${r.location_id}::${name}::${r.log_date}`
-    if (!dayEmpMap[key]) dayEmpMap[key] = []
-    dayEmpMap[key].push(r)
+    const key = `${r.location_id}::${r.log_date}`
+    if (!dayMap[key]) dayMap[key] = []
+    dayMap[key].push(r)
   })
-  // Sum delta day totals across all (day, location) combos
   let basic = 0, good = 0, better = 0, best = 0, tw = 0, mw = 0, gr = 0
-  Object.values(dayEmpMap).forEach(dayRows => {
-    const { dayTotal } = employeeDeltas(dayRows)
-    basic  += dayTotal.basic
-    good   += dayTotal.good
-    better += dayTotal.better
-    best   += dayTotal.best
-    tw     += dayTotal.total_washes
-    mw     += dayTotal.member_washes
-    gr     += dayTotal.google_reviews
+  Object.values(dayMap).forEach(dayRows => {
+    Object.values(employeeDeltasByDay(dayRows)).forEach(d => {
+      basic  += d.basic
+      good   += d.good
+      better += d.better
+      best   += d.best
+      tw     += d.total_washes
+      mw     += d.member_washes
+      gr     += d.google_reviews
+    })
   })
   const ms  = basic + good + better + best
   const opp = Math.max(0, tw - mw + ms)
   return {
-    ms, gr, opp,
+    ms, gr, opp, better, best,
     pmixN: pctN(better + best, ms),
     convN: pctN(ms, opp),
     p_mix:      pct(better + best, ms),
@@ -309,16 +305,24 @@ function TMSalesRows({ rows, showSite, sort }) {
 }
 
 function TMSalesTotalsRow({ rows, showSite }) {
-  const all = rows.flatMap(r => r._rawRows)
-  const t   = aggEmpFromLogs(all)
+  let totMS = 0, totGR = 0, totBetter = 0, totBest = 0, totOpp = 0
+  rows.forEach(r => {
+    totMS     += r.ms      || 0
+    totGR     += r.gr      || 0
+    totBetter += r.better  || 0
+    totBest   += r.best    || 0
+    totOpp    += r.opp     || 0
+  })
+  const p_mix      = pct(totBetter + totBest, totMS)
+  const conversion = pct(totMS, totOpp)
   return (
     <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
       <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">Totals</td>
       {showSite && <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2" />}
-      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{t.ms || ''}</td>
-      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{t.gr || ''}</td>
-      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">{t.p_mix}</td>
-      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">{t.conversion}</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totMS || ''}</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totGR || ''}</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">{p_mix}</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">{conversion}</td>
     </tr>
   )
 }
@@ -331,20 +335,58 @@ function TeamMemberTable({ data, locations }) {
     <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
   )
 
-  // Build employee rows grouped by (location_id, employee_name)
-  const empMap = {}
+  // Group by (location_id, log_date), run employeeDeltasByDay per group,
+  // accumulate raw field totals per (location_id, employee_name)
+  const dayMap = {}
   data.forEach(r => {
-    const name = r.employee_name?.trim()
-    if (!name) return
-    const key = `${r.location_id}::${name}`
-    if (!empMap[key]) empMap[key] = { key, name, locationId: r.location_id, site: locations.find(l => l.id === r.location_id)?.name ?? '', _rawRows: [] }
-    empMap[key]._rawRows.push(r)
+    const key = `${r.location_id}::${r.log_date}`
+    if (!dayMap[key]) dayMap[key] = { locationId: r.location_id, rows: [] }
+    dayMap[key].rows.push(r)
   })
 
-  const allRows = Object.values(empMap).map(e => ({
-    ...e,
-    ...aggEmpFromLogs(e._rawRows),
-  }))
+  const empAccum = {}
+  Object.values(dayMap).forEach(({ locationId, rows }) => {
+    const deltas = employeeDeltasByDay(rows)
+    Object.entries(deltas).forEach(([name, d]) => {
+      const key = `${locationId}::${name}`
+      if (!empAccum[key]) {
+        empAccum[key] = {
+          key, name, locationId,
+          site: locations.find(l => l.id === locationId)?.name ?? '',
+          total_washes: 0, member_washes: 0, google_reviews: 0,
+          basic: 0, good: 0, better: 0, best: 0,
+        }
+      }
+      const e = empAccum[key]
+      e.total_washes   += d.total_washes
+      e.member_washes  += d.member_washes
+      e.google_reviews += d.google_reviews
+      e.basic          += d.basic
+      e.good           += d.good
+      e.better         += d.better
+      e.best           += d.best
+    })
+  })
+
+  const allRows = Object.values(empAccum).map(e => {
+    const ms  = e.basic + e.good + e.better + e.best
+    const opp = Math.max(0, e.total_washes - e.member_washes + ms)
+    return {
+      key:        e.key,
+      name:       e.name,
+      locationId: e.locationId,
+      site:       e.site,
+      ms,
+      gr:         e.google_reviews,
+      opp,
+      better:     e.better,
+      best:       e.best,
+      pmixN:      pctN(e.better + e.best, ms),
+      convN:      pctN(ms, opp),
+      p_mix:      pct(e.better + e.best, ms),
+      conversion: pct(ms, opp),
+    }
+  })
 
   if (!allRows.length) return (
     <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No employee data entered for this period.</div>

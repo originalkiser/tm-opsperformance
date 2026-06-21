@@ -1,6 +1,6 @@
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
-const FIELDS = [
+export const FIELDS = [
   'total_washes', 'member_washes', 'google_reviews',
   'basic', 'good', 'better', 'best', 'net_members',
 ]
@@ -17,28 +17,37 @@ export function shopTotals(rows) {
 }
 
 /**
- * Given all rows for one employee on one day, compute per-hour deltas
- * (each hour minus the prior hour for that employee) and sum them.
- * Returns { hourly, dayTotal } where dayTotal is the correct daily amount.
+ * Takes ALL rows for a shop-day (any employee mix).
+ * Sorts chronologically, then diffs each row against the PREVIOUS row
+ * (regardless of who entered it), attributing each delta to that row's employee.
+ *
+ * This correctly handles mid-shift employee changes:
+ *   - Cord's 11AM entry (TW=4) is diffed against Savannah's 10AM entry (TW=4) → delta=0
+ *   - Cord's 1PM entry (TW=10) vs Cord's 12PM (TW=6) → delta=4
+ *   - Cord total = 6, not 10
+ *
+ * Returns: { empName: { total_washes, member_washes, basic, good, better, best, ... }, ... }
  */
-export function employeeDeltas(empRows) {
-  if (!empRows || !empRows.length) return { hourly: [], dayTotal: FIELDS.reduce((a, f) => ({ ...a, [f]: 0 }), {}) }
-  const sorted = [...empRows].sort((a, b) => a.time_slot.localeCompare(b.time_slot))
+export function employeeDeltasByDay(allDayRows) {
+  const sorted = [...allDayRows].sort((a, b) => a.time_slot.localeCompare(b.time_slot))
+  const result = {}
 
-  const hourly = sorted.map((row, idx) => {
-    const prev = sorted[idx - 1]
-    return FIELDS.reduce((acc, f) => {
+  sorted.forEach((row, idx) => {
+    const name = row.employee_name?.trim()
+    if (!name) return
+
+    const prev = sorted[idx - 1]  // previous time slot, any employee
+
+    if (!result[name]) {
+      result[name] = FIELDS.reduce((a, f) => ({ ...a, [f]: 0 }), {})
+    }
+
+    FIELDS.forEach(f => {
       const curr  = toInt(row[f])
       const prior = prev ? toInt(prev[f]) : 0
-      acc[f] = Math.max(0, curr - prior)
-      return acc
-    }, { time_slot: row.time_slot, employee_name: row.employee_name })
+      result[name][f] += Math.max(0, curr - prior)
+    })
   })
 
-  const dayTotal = FIELDS.reduce((acc, f) => {
-    acc[f] = hourly.reduce((s, h) => s + h[f], 0)
-    return acc
-  }, {})
-
-  return { hourly, dayTotal }
+  return result
 }
