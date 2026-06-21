@@ -6,14 +6,18 @@ export const FIELDS = [
 ]
 
 /**
- * Returns the most recently updated row for a shop day.
- * That row's cumulative values ARE the shop's totals for the day.
+ * Returns the latest time-slot row that has any data entered for a shop day.
+ * Cumulative values grow through the day, so the latest filled-in time slot
+ * always holds the highest (most complete) totals — this is the day total.
+ * Works correctly whether one row or all 13 are filled in.
  */
 export function shopTotals(rows) {
   if (!rows || !rows.length) return null
-  const withTs = rows.filter(r => r.updated_at)
-  if (!withTs.length) return null
-  return withTs.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0]
+  const withData = rows.filter(r =>
+    r.employee_name?.trim() || FIELDS.some(f => toInt(r[f]) > 0)
+  )
+  if (!withData.length) return null
+  return withData.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
 }
 
 /**
