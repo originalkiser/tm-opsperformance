@@ -60,18 +60,22 @@ export default function EmployeeSelect({
     }
   }
 
-  // Close on outside click
+  // Keep a ref to the latest onBlur so the listener never needs to re-register
+  const onBlurRef = useRef(onBlur)
+  useEffect(() => { onBlurRef.current = onBlur })
+
+  // Close on outside click — registered once at mount, never re-registers
   useEffect(() => {
     const handler = (e) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) {
         setOpen(false)
         setHighlight(-1)
-        onBlur?.()
+        onBlurRef.current?.()
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [onBlur])
+  }, [])
 
   return (
     <div ref={wrapRef} className="relative w-full">

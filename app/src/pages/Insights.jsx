@@ -627,7 +627,9 @@ export default function Insights() {
   const [loading, setLoading]               = useState(true)
   const [selectedShops, setSelectedShops]   = useState(null) // null = all
   const [trendLocId, setTrendLocId]         = useState('')
-  const [selectedMarket, setSelectedMarket] = useState('')
+  const [selectedMarket, setSelectedMarket] = useState(
+    () => localStorage.getItem('tm_market_filter') || ''
+  )
 
   const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
 
@@ -694,7 +696,10 @@ export default function Insights() {
             {markets.length > 0 && (
               <select
                 value={selectedMarket}
-                onChange={e => setSelectedMarket(e.target.value)}
+                onChange={e => {
+                  setSelectedMarket(e.target.value)
+                  localStorage.setItem('tm_market_filter', e.target.value)
+                }}
                 className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal transition-colors font-brand"
               >
                 <option value="">All Markets</option>

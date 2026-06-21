@@ -14,7 +14,9 @@ export default function Dashboard() {
   const [selectedDate, setSelectedDate]             = useState(new Date().toISOString().split('T')[0])
   const [activeTab, setActiveTab]                   = useState('daily')
   const [liveRows, setLiveRows]                     = useState([])
-  const [selectedMarket, setSelectedMarket]         = useState('')
+  const [selectedMarket, setSelectedMarket]         = useState(
+    () => localStorage.getItem('tm_market_filter') || ''
+  )
 
   // Unique markets from all locations (only shown when markets are configured)
   const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
@@ -57,7 +59,10 @@ export default function Dashboard() {
           {isManager && markets.length > 0 && (
             <select
               value={selectedMarket}
-              onChange={e => setSelectedMarket(e.target.value)}
+              onChange={e => {
+                setSelectedMarket(e.target.value)
+                localStorage.setItem('tm_market_filter', e.target.value)
+              }}
               className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal font-brand"
             >
               <option value="">All Markets</option>
