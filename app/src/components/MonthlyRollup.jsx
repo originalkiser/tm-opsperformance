@@ -97,7 +97,7 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
   const TableHeader = ({ extraCols = [] }) => (
     <thead>
       <tr className="bg-tm-blue dark:bg-tm-navy text-white">
-        <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border text-left font-brand font-semibold text-[11px] w-10">DATE</th>
+        <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border text-left font-brand font-semibold text-[11px] w-24">DATE</th>
         {activeEmployees.map(emp => (
           <th key={emp} className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold text-[11px] min-w-[70px]">{emp}</th>
         ))}
@@ -150,7 +150,7 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
             <tbody>
               {activeDays.map((day, i) => (
                 <tr key={day} className={rowBg(i)}>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{day}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{month}/{day}/{year}</td>
                   {activeEmployees.map(emp => {
                     const val = empCellVal(day, emp)
                     return (
@@ -236,7 +236,7 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
             <tbody>
               {activeDays.map((day, i) => (
                 <tr key={day} className={rowBg(i)}>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{day}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{month}/{day}/{year}</td>
                   {activeEmployees.map(emp => (
                     <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
                       {empDayConv(day, emp)}
@@ -308,7 +308,7 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
             <tbody>
               {activeDays.map((day, i) => (
                 <tr key={day} className={rowBg(i)}>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{day}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{month}/{day}/{year}</td>
                   {activeEmployees.map(emp => (
                     <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
                       {empDayPmix(day, emp)}

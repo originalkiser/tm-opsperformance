@@ -72,6 +72,18 @@ const rowHasData = (row) =>
 
 const MAX_HISTORY = 30
 
+// Parse "8:00 AM" / "1:00 PM" → "08:00:00" / "13:00:00"
+const parseTimeToSlot = (str) => {
+  if (!str) return null
+  const m = str.match(/(\d+):(\d+)\s*(AM|PM)/i)
+  if (!m) return null
+  let h = parseInt(m[1])
+  const ampm = m[3].toUpperCase()
+  if (ampm === 'PM' && h !== 12) h += 12
+  if (ampm === 'AM' && h === 12) h = 0
+  return `${String(h).padStart(2, '0')}:00:00`
+}
+
 // ── Edit Employees Modal ─────────────────────────────────────────────────────
 
 function EditEmployeesModal({ locationId, onClose, onRefresh }) {
@@ -164,6 +176,57 @@ function EditEmployeesModal({ locationId, onClose, onRefresh }) {
   )
 }
 
+// ── Paste Data Modal ─────────────────────────────────────────────────────────
+
+function PasteModal({ onClose, onApply }) {
+  const [text, setText] = useState('')
+  const [error, setError] = useState('')
+
+  const handleApply = () => {
+    const result = onApply(text)
+    if (result?.error) { setError(result.error); return }
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative max-w-xl w-full mx-4 bg-white dark:bg-tm-dark-card rounded-xl shadow-2xl p-5 z-10">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-brand font-bold text-sm text-tm-blue dark:text-tm-dark-text">Paste Table Data</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white text-xl leading-none">×</button>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-3 font-brand">
+          Copy the table from your spreadsheet and paste it below. Must include a header row with column names (Name, Time, Google Reviews, Total Washes, etc.).
+        </p>
+        <textarea
+          autoFocus
+          className="w-full h-44 border border-gray-200 dark:border-tm-dark-border rounded-lg p-2 text-xs font-mono bg-gray-50 dark:bg-tm-dark-surface dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal resize-none"
+          placeholder="Paste table data here (Ctrl+V)…"
+          value={text}
+          onChange={e => { setText(e.target.value); setError('') }}
+        />
+        {error && <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-brand">{error}</p>}
+        <div className="flex justify-end gap-2 mt-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 rounded border border-gray-200 dark:border-tm-dark-border text-xs font-brand text-gray-600 dark:text-tm-dark-muted hover:bg-gray-50 dark:hover:bg-tm-dark-surface transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleApply}
+            disabled={!text.trim()}
+            className="px-4 py-1.5 rounded bg-tm-blue text-white text-xs font-brand hover:bg-tm-navy disabled:opacity-40 transition-colors"
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function DailyLogTable({
@@ -189,6 +252,8 @@ export default function DailyLogTable({
   const [reorderMode, setReorderMode] = useState(false)
   const [draggedIdx, setDraggedIdx]   = useState(null)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [showPasteModal, setShowPasteModal] = useState(false)
+  const [copyFeedback, setCopyFeedback]     = useState(false)
 
   // Column order — scoped per role
   const roleKey = `tm_col_order_${profile?.role || 'default'}`
@@ -227,6 +292,7 @@ export default function DailyLogTable({
   const dateRef       = useRef(selectedDate)
   const canEditRef    = useRef(canEdit)
   const formulaRef    = useRef(opportunitiesFormula)
+  const tableContainerRef = useRef(null)
 
   useEffect(() => { locationIdRef.current = locationId },        [locationId])
   useEffect(() => { dateRef.current = selectedDate },            [selectedDate])
@@ -445,6 +511,95 @@ export default function DailyLogTable({
     if (row?.employee_name?.trim()) autoAddEmployee(row.employee_name)
   }
 
+  // ── Arrow key navigation ─────────────────────────────────────────────────────
+
+  const handleCellKeyDown = (e, rowIdx, colIdx) => {
+    const deltas = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }
+    if (!deltas[e.key]) return
+    e.preventDefault()
+    const [dr, dc] = deltas[e.key]
+    tableContainerRef.current
+      ?.querySelector(`[data-row="${rowIdx + dr}"][data-col="${colIdx + dc}"]`)
+      ?.focus()
+  }
+
+  // ── Copy table ────────────────────────────────────────────────────────────────
+
+  const copyTable = () => {
+    const orderedCols = columnOrder.map(key => COLUMN_DEFS.find(c => c.key === key)).filter(Boolean)
+    const headerRow = ['Name', 'Time', ...orderedCols.map(c => c.label.replace('\n', ' ')), 'Memberships Sold', 'Opportunities', 'P-Mix', 'Conversion']
+    const dataRows = TIME_SLOTS.map((slot, i) => {
+      const row = rows[i]
+      const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
+      return [
+        row.employee_name || '',
+        slot.label,
+        ...orderedCols.map(col => toInt(row[col.key]) > 0 ? row[col.key] : ''),
+        memberships_sold > 0 ? memberships_sold : '',
+        opportunities > 0 ? opportunities : '',
+        p_mix || '',
+        conversion || '',
+      ].join('\t')
+    })
+    navigator.clipboard.writeText([headerRow.join('\t'), ...dataRows].join('\n'))
+    setCopyFeedback(true)
+    setTimeout(() => setCopyFeedback(false), 2000)
+  }
+
+  // ── Paste from table ──────────────────────────────────────────────────────────
+
+  const applyPaste = (text) => {
+    const lines = text.trim().split('\n').filter(l => l.trim())
+    if (lines.length < 2) return { error: 'No data rows found — paste must include a header row and at least one data row.' }
+
+    const headers = lines[0].split('\t').map(h => h.replace(/[\n\r\s]+/g, ' ').trim().toLowerCase())
+    const timeIdx = headers.findIndex(h => h === 'time')
+    if (timeIdx < 0) return { error: 'No "Time" column found. Make sure the header row is included.' }
+
+    const FIELD_MAP = {
+      'name': 'employee_name',
+      'google reviews': 'google_reviews',
+      'total washes': 'total_washes',
+      'member washes': 'member_washes',
+      'basic': 'basic',
+      'good': 'good',
+      'better': 'better',
+      'best': 'best',
+      'net members': 'net_members',
+    }
+    const colMap = {}
+    headers.forEach((h, i) => { if (FIELD_MAP[h]) colMap[i] = FIELD_MAP[h] })
+
+    const snapshot = rowsRef.current.map(r => ({ ...r }))
+    historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), snapshot]
+
+    const next = [...rowsRef.current]
+    let updated = 0
+    lines.slice(1).forEach(line => {
+      const cells = line.split('\t')
+      const slot = parseTimeToSlot(cells[timeIdx]?.trim())
+      if (!slot) return
+      const slotIdx = TIME_SLOTS.findIndex(s => s.value === slot)
+      if (slotIdx < 0) return
+      const updatedRow = { ...next[slotIdx] }
+      Object.entries(colMap).forEach(([ci, field]) => {
+        const raw = cells[ci]?.trim() ?? ''
+        updatedRow[field] = raw
+      })
+      next[slotIdx] = updatedRow
+      updated++
+    })
+
+    if (!updated) return { error: 'No matching time slots found (e.g. "8:00 AM", "1:00 PM").' }
+
+    rowsRef.current = next
+    setRows(next)
+    next.forEach((_, idx) => {
+      clearTimeout(saveTimers.current[idx])
+      saveTimers.current[idx] = setTimeout(() => { delete saveTimers.current[idx]; doSave(idx) }, 100)
+    })
+  }
+
   // ── Column order ─────────────────────────────────────────────────────────────
 
   const persistColumnOrder = (newOrder) => {
@@ -508,6 +663,20 @@ export default function DailyLogTable({
               }`}
             >
               ⠿ Columns
+            </button>
+          )}
+          <button
+            onClick={copyTable}
+            className="px-3 py-1.5 rounded-md border border-gray-200 dark:border-tm-dark-border text-gray-600 dark:text-tm-dark-muted bg-white dark:bg-tm-dark-surface hover:border-tm-teal hover:text-tm-blue dark:hover:text-tm-teal transition-colors font-brand text-xs font-semibold"
+          >
+            {copyFeedback ? '✓ Copied!' : '⎘ Copy'}
+          </button>
+          {canEdit && (
+            <button
+              onClick={() => setShowPasteModal(true)}
+              className="px-3 py-1.5 rounded-md border border-gray-200 dark:border-tm-dark-border text-gray-600 dark:text-tm-dark-muted bg-white dark:bg-tm-dark-surface hover:border-tm-teal hover:text-tm-blue dark:hover:text-tm-teal transition-colors font-brand text-xs font-semibold"
+            >
+              ⎗ Paste Data
             </button>
           )}
         </div>
@@ -627,7 +796,7 @@ export default function DailyLogTable({
 
       {/* ── Table View ────────────────────────────────────────────────────────── */}
       {viewMode === 'table' && (
-        <div className="overflow-x-auto">
+        <div ref={tableContainerRef} className="overflow-x-auto">
           <table className="w-full border-collapse text-xs min-w-[1100px]">
             <thead>
               <tr className="bg-tm-blue dark:bg-tm-navy text-white">
@@ -700,16 +869,19 @@ export default function DailyLogTable({
                     <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-medium text-gray-500 dark:text-tm-dark-muted w-20">
                       {slot.label}
                     </td>
-                    {orderedCols.map(col => (
+                    {orderedCols.map((col, colIdx) => (
                       <td key={col.key} className="border border-gray-200 dark:border-tm-dark-border px-1">
                         <input
                           type="number"
                           min="0"
+                          data-row={i}
+                          data-col={colIdx}
                           className="w-full text-center py-1.5 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded disabled:cursor-default text-gray-800 dark:text-tm-dark-text transition-colors"
                           value={row[col.key]}
                           disabled={!canEdit}
                           onChange={e => update(i, col.key, e.target.value)}
                           onBlur={() => saveImmediately(i)}
+                          onKeyDown={e => handleCellKeyDown(e, i, colIdx)}
                         />
                       </td>
                     ))}
@@ -761,6 +933,14 @@ export default function DailyLogTable({
           locationId={locationId}
           onClose={() => setShowEditModal(false)}
           onRefresh={fetchEmployees}
+        />
+      )}
+
+      {/* Paste Data Modal */}
+      {showPasteModal && (
+        <PasteModal
+          onClose={() => setShowPasteModal(false)}
+          onApply={applyPaste}
         />
       )}
     </div>

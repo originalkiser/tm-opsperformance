@@ -7,6 +7,15 @@ import DailyLogTable from '../components/DailyLogTable'
 import EmployeeSummary from '../components/EmployeeSummary'
 import MonthlyRollup from '../components/MonthlyRollup'
 import DailySnapshot from '../components/DailySnapshot'
+import { shopTotals } from '../utils/logMath'
+
+const formatTimeSlot = (ts) => {
+  if (!ts) return null
+  const h = parseInt(ts.split(':')[0])
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h
+  return `${h12}:00 ${ampm}`
+}
 
 export default function Dashboard() {
   const { profile, locations } = useAuth()
@@ -39,7 +48,8 @@ export default function Dashboard() {
     }
   }, [selectedMarket])
 
-  const location = locations.find(l => l.id === selectedLocationId)
+  const location    = locations.find(l => l.id === selectedLocationId)
+  const latestHour  = formatTimeSlot(shopTotals(liveRows)?.time_slot ?? null)
   const canEdit  =
     profile?.role === 'admin' ||
     profile?.role === 'area_manager' ||
@@ -90,7 +100,12 @@ export default function Dashboard() {
             {/* Location header */}
             <div className="bg-tm-navy dark:bg-tm-dark-nav text-white px-4 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <span className="font-brand font-bold text-sm tracking-wide">{location?.name}</span>
+                <span className="font-brand font-bold text-sm tracking-wide">
+                  {location?.name}
+                  {latestHour && (
+                    <span className="ml-1.5 font-normal text-tm-teal/80 text-xs">({latestHour})</span>
+                  )}
+                </span>
                 {location?.market && (
                   <span className="text-xs bg-tm-blue/60 text-tm-sky px-2 py-0.5 rounded font-brand tracking-wide">
                     {location.market}
