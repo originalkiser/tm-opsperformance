@@ -161,6 +161,8 @@ export default function Dashboard() {
                   <EmployeeSummary
                     rows={liveRows}
                     opportunitiesFormula={opportunitiesFormula}
+                    locationName={location?.name}
+                    selectedDate={selectedDate}
                   />
                 </div>
               </div>
