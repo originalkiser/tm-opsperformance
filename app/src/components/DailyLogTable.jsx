@@ -549,27 +549,177 @@ export default function DailyLogTable({
       ?.focus()
   }
 
-  // ── Copy table ────────────────────────────────────────────────────────────────
+  // ── Copy table as image ───────────────────────────────────────────────────────
 
-  const copyTable = () => {
-    const orderedCols = columnOrder.map(key => COLUMN_DEFS.find(c => c.key === key)).filter(Boolean)
-    const headerRow = ['Name', 'Time', ...orderedCols.map(c => c.label.replace('\n', ' ')), 'Memberships Sold', 'Opportunities', 'P-Mix', 'Conversion']
-    const dataRows = TIME_SLOTS.map((slot, i) => {
-      const row = rows[i]
-      const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
-      return [
-        row.employee_name || '',
-        slot.label,
-        ...orderedCols.map(col => toInt(row[col.key]) > 0 ? row[col.key] : ''),
-        memberships_sold > 0 ? memberships_sold : '',
-        opportunities > 0 ? opportunities : '',
-        p_mix || '',
-        conversion || '',
-      ].join('\t')
+  const copyTableAsImage = async () => {
+    const SCALE    = 2
+    const HEADER_H = 40
+    const ROW_H    = 24
+    const PAD      = 6
+    const FONT     = `-apple-system, "Segoe UI", Arial, sans-serif`
+
+    const KEY_W = {
+      employee_name: 90, _time: 64,
+      google_reviews: 54, total_washes: 54, member_washes: 60,
+      basic: 44, good: 44, better: 44, best: 44, net_members: 54,
+      _ms: 74, _opp: 72, _pmix: 55, _conv: 64,
+    }
+
+    const imgCols = [
+      { key: 'employee_name', label: 'Name',              align: 'left'   },
+      { key: '_time',         label: 'Time',              align: 'center' },
+      ...orderedCols.map(c => ({ key: c.key, label: c.label, align: 'center' })),
+      { key: '_ms',   label: 'Memberships\nSold', align: 'center', accent: 'teal'   },
+      { key: '_opp',  label: 'Opportunities',     align: 'center', accent: 'teal'   },
+      { key: '_pmix', label: 'P-Mix',             align: 'center', accent: 'orange' },
+      { key: '_conv', label: 'Conversion',        align: 'center', accent: 'orange' },
+    ]
+
+    const cw     = (col) => KEY_W[col.key] || 54
+    const totalW = imgCols.reduce((s, c) => s + cw(c), 0)
+    const totalH = HEADER_H + TIME_SLOTS.length * ROW_H + ROW_H
+
+    const canvas = document.createElement('canvas')
+    canvas.width  = totalW * SCALE
+    canvas.height = totalH * SCALE
+    const ctx = canvas.getContext('2d')
+    ctx.scale(SCALE, SCALE)
+
+    const C = {
+      navyBg: '#1B3A5C', tealBg: '#4DBDB5', orangeBg: '#D97706',
+      white: '#FFFFFF', navyText: '#0F2740', bodyText: '#1F2937',
+      timeText: '#6B7280', blueText: '#1E3A8A', orangeText: '#92400E',
+      rowAlt: '#EEF9F8', rowNorm: '#FFFFFF',
+      tealCell: '#CBF0EC', orangeCell: '#FFF3E8',
+      totRow: '#C0E8E3', totTeal: '#9FD9D4', totOrange: '#FED7AA',
+      grid: '#D1D5DB', border: '#9CA3AF',
+    }
+
+    const fillText = (text, x, y, align) => {
+      ctx.textAlign     = align === 'left' ? 'left' : 'center'
+      ctx.textBaseline  = 'middle'
+      ctx.fillText(String(text), x, y)
+    }
+
+    // ── Header ──
+    let x = 0
+    imgCols.forEach(col => {
+      const w = cw(col)
+      ctx.fillStyle = col.accent === 'teal' ? C.tealBg : col.accent === 'orange' ? C.orangeBg : C.navyBg
+      ctx.fillRect(x, 0, w, HEADER_H)
+
+      ctx.fillStyle = col.accent === 'teal' ? C.navyText : C.white
+      ctx.font      = `bold 10px ${FONT}`
+      const lines   = col.label.split('\n')
+      const lineH   = 13
+      const startY  = HEADER_H / 2 - (lines.length - 1) * lineH / 2
+      lines.forEach((line, li) => {
+        fillText(line, col.align === 'left' ? x + PAD : x + w / 2, startY + li * lineH, col.align)
+      })
+      x += w
     })
-    navigator.clipboard.writeText([headerRow.join('\t'), ...dataRows].join('\n'))
-    setCopyFeedback(true)
-    setTimeout(() => setCopyFeedback(false), 2000)
+
+    // ── Data rows ──
+    rows.forEach((row, i) => {
+      const y    = HEADER_H + i * ROW_H
+      const alt  = i % 2 === 0
+      const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
+      const vals = {
+        employee_name: row.employee_name || '',
+        _time:  TIME_SLOTS[i]?.label || '',
+        ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: toInt(row[c.key]) > 0 ? String(row[c.key]) : '' }), {}),
+        _ms:   memberships_sold > 0 ? String(memberships_sold) : '',
+        _opp:  opportunities    > 0 ? String(opportunities)    : '',
+        _pmix: p_mix       || '',
+        _conv: conversion  || '',
+      }
+
+      let cx = 0
+      imgCols.forEach(col => {
+        const w   = cw(col)
+        ctx.fillStyle = col.accent === 'teal'   ? C.tealCell
+                      : col.accent === 'orange' ? C.orangeCell
+                      : alt                     ? C.rowAlt
+                      : C.rowNorm
+        ctx.fillRect(cx, y, w, ROW_H)
+
+        const val = vals[col.key]
+        if (val) {
+          ctx.fillStyle = col.accent === 'orange' ? C.orangeText
+                        : col.accent === 'teal'   ? C.blueText
+                        : col.key === '_time'      ? C.timeText
+                        : C.bodyText
+          ctx.font = `${col.key === 'employee_name' ? '500' : '400'} 10px ${FONT}`
+          fillText(val, col.align === 'left' ? cx + PAD : cx + w / 2, y + ROW_H / 2, col.align)
+        }
+        cx += w
+      })
+    })
+
+    // ── Totals row ──
+    const totY  = HEADER_H + TIME_SLOTS.length * ROW_H
+    const totVs = {
+      employee_name: 'Totals', _time: '',
+      ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: totals[c.key] > 0 ? String(totals[c.key]) : '' }), {}),
+      _ms:   totComputed.memberships_sold > 0 ? String(totComputed.memberships_sold) : '',
+      _opp:  totComputed.opportunities    > 0 ? String(totComputed.opportunities)    : '',
+      _pmix: totComputed.p_mix       || '',
+      _conv: totComputed.conversion  || '',
+    }
+    let tx = 0
+    imgCols.forEach(col => {
+      const w = cw(col)
+      ctx.fillStyle = col.accent === 'teal' ? C.totTeal : col.accent === 'orange' ? C.totOrange : C.totRow
+      ctx.fillRect(tx, totY, w, ROW_H)
+      const val = totVs[col.key]
+      if (val) {
+        ctx.fillStyle = col.accent === 'orange' ? C.orangeText : C.blueText
+        ctx.font      = `bold 10px ${FONT}`
+        fillText(val, col.align === 'left' ? tx + PAD : tx + w / 2, totY + ROW_H / 2, col.align)
+      }
+      tx += w
+    })
+
+    // ── Grid lines ──
+    ctx.strokeStyle = C.grid
+    ctx.lineWidth   = 0.5
+    let gx = 0
+    imgCols.forEach(col => {
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, totalH); ctx.stroke()
+      gx += cw(col)
+    })
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, totalH); ctx.stroke()
+    for (let i = 0; i <= TIME_SLOTS.length + 1; i++) {
+      const gy = i === 0 ? HEADER_H : i <= TIME_SLOTS.length ? HEADER_H + i * ROW_H : totalH
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(totalW, gy); ctx.stroke()
+    }
+    ctx.strokeStyle = C.border
+    ctx.lineWidth   = 1
+    ctx.strokeRect(0.5, 0.5, totalW - 1, totalH - 1)
+
+    // ── Copy to clipboard ──
+    canvas.toBlob(async (blob) => {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+      } catch {
+        // Fallback: TSV text
+        const headerRow = ['Name', 'Time', ...orderedCols.map(c => c.label.replace('\n', ' ')), 'Memberships Sold', 'Opportunities', 'P-Mix', 'Conversion']
+        const dataRows = TIME_SLOTS.map((slot, i) => {
+          const row = rows[i]
+          const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
+          return [
+            row.employee_name || '', slot.label,
+            ...orderedCols.map(col => toInt(row[col.key]) > 0 ? row[col.key] : ''),
+            memberships_sold > 0 ? memberships_sold : '',
+            opportunities    > 0 ? opportunities    : '',
+            p_mix || '', conversion || '',
+          ].join('\t')
+        })
+        await navigator.clipboard.writeText([headerRow.join('\t'), ...dataRows].join('\n'))
+      }
+      setCopyFeedback(true)
+      setTimeout(() => setCopyFeedback(false), 2000)
+    }, 'image/png')
   }
 
   // ── Paste from table ──────────────────────────────────────────────────────────
@@ -692,7 +842,7 @@ export default function DailyLogTable({
             </button>
           )}
           <button
-            onClick={copyTable}
+            onClick={copyTableAsImage}
             className="px-3 py-1.5 rounded-md border border-gray-200 dark:border-tm-dark-border text-gray-600 dark:text-tm-dark-muted bg-white dark:bg-tm-dark-surface hover:border-tm-teal hover:text-tm-blue dark:hover:text-tm-teal transition-colors font-brand text-xs font-semibold"
           >
             {copyFeedback ? '✓ Copied!' : '⎘ Copy'}
