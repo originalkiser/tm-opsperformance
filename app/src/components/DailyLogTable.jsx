@@ -257,6 +257,7 @@ function PasteModal({ onClose, onApply }) {
 
 export default function DailyLogTable({
   locationId,
+  locationName,
   selectedDate,
   canEdit,
   opportunitiesFormula = 'detailed',
@@ -553,6 +554,7 @@ export default function DailyLogTable({
 
   const copyTableAsImage = async () => {
     const SCALE    = 2
+    const BANNER_H = 36
     const HEADER_H = 40
     const ROW_H    = 24
     const PAD      = 6
@@ -577,7 +579,7 @@ export default function DailyLogTable({
 
     const cw     = (col) => KEY_W[col.key] || 54
     const totalW = imgCols.reduce((s, c) => s + cw(c), 0)
-    const totalH = HEADER_H + TIME_SLOTS.length * ROW_H + ROW_H
+    const totalH = BANNER_H + HEADER_H + TIME_SLOTS.length * ROW_H + ROW_H
 
     const canvas = document.createElement('canvas')
     canvas.width  = totalW * SCALE
@@ -601,18 +603,34 @@ export default function DailyLogTable({
       ctx.fillText(String(text), x, y)
     }
 
+    // ── Banner ──
+    const dateLabel = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+    })
+    ctx.fillStyle = C.navyBg
+    ctx.fillRect(0, 0, totalW, BANNER_H)
+    ctx.fillStyle = C.white
+    ctx.font      = `bold 13px ${FONT}`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(locationName || '', PAD + 2, BANNER_H / 2)
+    ctx.font      = `12px ${FONT}`
+    ctx.textAlign = 'right'
+    ctx.fillStyle = '#7DD4CF'
+    ctx.fillText(dateLabel, totalW - PAD - 2, BANNER_H / 2)
+
     // ── Header ──
     let x = 0
     imgCols.forEach(col => {
       const w = cw(col)
       ctx.fillStyle = col.accent === 'teal' ? C.tealBg : col.accent === 'orange' ? C.orangeBg : C.navyBg
-      ctx.fillRect(x, 0, w, HEADER_H)
+      ctx.fillRect(x, BANNER_H, w, HEADER_H)
 
       ctx.fillStyle = col.accent === 'teal' ? C.navyText : C.white
       ctx.font      = `bold 10px ${FONT}`
       const lines   = col.label.split('\n')
       const lineH   = 13
-      const startY  = HEADER_H / 2 - (lines.length - 1) * lineH / 2
+      const startY  = BANNER_H + HEADER_H / 2 - (lines.length - 1) * lineH / 2
       lines.forEach((line, li) => {
         fillText(line, col.align === 'left' ? x + PAD : x + w / 2, startY + li * lineH, col.align)
       })
@@ -621,7 +639,7 @@ export default function DailyLogTable({
 
     // ── Data rows ──
     rows.forEach((row, i) => {
-      const y    = HEADER_H + i * ROW_H
+      const y    = BANNER_H + HEADER_H + i * ROW_H
       const alt  = i % 2 === 0
       const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
       const vals = {
@@ -657,7 +675,7 @@ export default function DailyLogTable({
     })
 
     // ── Totals row ──
-    const totY  = HEADER_H + TIME_SLOTS.length * ROW_H
+    const totY  = BANNER_H + HEADER_H + TIME_SLOTS.length * ROW_H
     const totVs = {
       employee_name: 'Totals', _time: '',
       ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: totals[c.key] > 0 ? String(totals[c.key]) : '' }), {}),
@@ -683,16 +701,23 @@ export default function DailyLogTable({
     // ── Grid lines ──
     ctx.strokeStyle = C.grid
     ctx.lineWidth   = 0.5
+    // Vertical — run full height but skip inside the banner
     let gx = 0
     imgCols.forEach(col => {
-      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, totalH); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(gx, BANNER_H); ctx.lineTo(gx, totalH); ctx.stroke()
       gx += cw(col)
     })
-    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, totalH); ctx.stroke()
-    for (let i = 0; i <= TIME_SLOTS.length + 1; i++) {
-      const gy = i === 0 ? HEADER_H : i <= TIME_SLOTS.length ? HEADER_H + i * ROW_H : totalH
+    ctx.beginPath(); ctx.moveTo(gx, BANNER_H); ctx.lineTo(gx, totalH); ctx.stroke()
+    // Horizontal — banner bottom + header bottom + each row
+    const hLines = [
+      BANNER_H,
+      BANNER_H + HEADER_H,
+      ...Array.from({ length: TIME_SLOTS.length }, (_, i) => BANNER_H + HEADER_H + (i + 1) * ROW_H),
+      totalH,
+    ]
+    hLines.forEach(gy => {
       ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(totalW, gy); ctx.stroke()
-    }
+    })
     ctx.strokeStyle = C.border
     ctx.lineWidth   = 1
     ctx.strokeRect(0.5, 0.5, totalW - 1, totalH - 1)

@@ -150,6 +150,7 @@ export default function Dashboard() {
               <div className={activeTab === 'daily' ? 'block' : 'hidden'}>
                 <DailyLogTable
                   locationId={selectedLocationId}
+                  locationName={location?.name}
                   selectedDate={selectedDate}
                   canEdit={canEdit}
                   opportunitiesFormula={opportunitiesFormula}
