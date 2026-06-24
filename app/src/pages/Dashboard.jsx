@@ -19,9 +19,18 @@ const formatTimeSlot = (ts) => {
 
 export default function Dashboard() {
   const { profile, locations } = useAuth()
-  const [selectedLocationId, setSelectedLocationId] = useState(null)
-  const [selectedDate, setSelectedDate]             = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
-  const [activeTab, setActiveTab]                   = useState('daily')
+  const [selectedLocationId, setSelectedLocationId] = useState(
+    () => localStorage.getItem('tm_selected_location') || null
+  )
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const saved = localStorage.getItem('tm_selected_date')
+    if (saved) return saved
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
+  const [activeTab, setActiveTab] = useState(
+    () => localStorage.getItem('tm_active_tab') || 'daily'
+  )
   const [liveRows, setLiveRows]                     = useState([])
   const [selectedMarket, setSelectedMarket]         = useState(
     () => localStorage.getItem('tm_market_filter') || ''
@@ -34,6 +43,28 @@ export default function Dashboard() {
   const filteredLocations = selectedMarket
     ? locations.filter(l => l.market === selectedMarket)
     : locations
+
+  // Persist selection to localStorage whenever it changes
+  useEffect(() => {
+    if (selectedLocationId) localStorage.setItem('tm_selected_location', selectedLocationId)
+    else localStorage.removeItem('tm_selected_location')
+  }, [selectedLocationId])
+
+  useEffect(() => {
+    localStorage.setItem('tm_selected_date', selectedDate)
+  }, [selectedDate])
+
+  useEffect(() => {
+    localStorage.setItem('tm_active_tab', activeTab)
+  }, [activeTab])
+
+  // Once locations load, drop any saved location that no longer exists
+  useEffect(() => {
+    if (!locations.length) return
+    if (selectedLocationId && !locations.find(l => l.id === selectedLocationId)) {
+      setSelectedLocationId(null)
+    }
+  }, [locations])
 
   useEffect(() => {
     if (filteredLocations.length === 1 && !selectedLocationId) {
