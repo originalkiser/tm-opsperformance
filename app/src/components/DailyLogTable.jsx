@@ -84,6 +84,32 @@ const parseTimeToSlot = (str) => {
   return `${String(h).padStart(2, '0')}:00:00`
 }
 
+// RFC-4180-style TSV parser — handles quoted fields with embedded newlines/tabs
+const parseTSV = (text) => {
+  const rows = []
+  let row = [], cell = '', inQuotes = false, i = 0
+  while (i < text.length) {
+    const ch = text[i]
+    if (inQuotes) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i += 2; continue }
+      if (ch === '"') { inQuotes = false }
+      else { cell += ch }
+    } else {
+      if (ch === '"') { inQuotes = true }
+      else if (ch === '\t') { row.push(cell); cell = '' }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++
+        row.push(cell); cell = ''
+        if (row.some(c => c.trim())) rows.push(row)
+        row = []
+      } else { cell += ch }
+    }
+    i++
+  }
+  if (cell || row.length) { row.push(cell); if (row.some(c => c.trim())) rows.push(row) }
+  return rows
+}
+
 // ── Edit Employees Modal ─────────────────────────────────────────────────────
 
 function EditEmployeesModal({ locationId, onClose, onRefresh }) {
@@ -549,10 +575,11 @@ export default function DailyLogTable({
   // ── Paste from table ──────────────────────────────────────────────────────────
 
   const applyPaste = (text) => {
-    const lines = text.trim().split('\n').filter(l => l.trim())
-    if (lines.length < 2) return { error: 'No data rows found — paste must include a header row and at least one data row.' }
+    const parsed = parseTSV(text)
+    if (parsed.length < 2) return { error: 'No data rows found — paste must include a header row and at least one data row.' }
 
-    const headers = lines[0].split('\t').map(h => h.replace(/[\n\r\s]+/g, ' ').trim().toLowerCase())
+    // Normalize headers: strip quotes, collapse whitespace
+    const headers = parsed[0].map(h => h.replace(/[\n\r\s]+/g, ' ').trim().toLowerCase())
     const timeIdx = headers.findIndex(h => h === 'time')
     if (timeIdx < 0) return { error: 'No "Time" column found. Make sure the header row is included.' }
 
@@ -575,16 +602,15 @@ export default function DailyLogTable({
 
     const next = [...rowsRef.current]
     let updated = 0
-    lines.slice(1).forEach(line => {
-      const cells = line.split('\t')
+    parsed.slice(1).forEach(cells => {
       const slot = parseTimeToSlot(cells[timeIdx]?.trim())
       if (!slot) return
       const slotIdx = TIME_SLOTS.findIndex(s => s.value === slot)
       if (slotIdx < 0) return
       const updatedRow = { ...next[slotIdx] }
       Object.entries(colMap).forEach(([ci, field]) => {
-        const raw = cells[ci]?.trim() ?? ''
-        updatedRow[field] = raw
+        // blank cells paste as empty string — toInt treats '' as 0
+        updatedRow[field] = cells[ci]?.trim() ?? ''
       })
       next[slotIdx] = updatedRow
       updated++
