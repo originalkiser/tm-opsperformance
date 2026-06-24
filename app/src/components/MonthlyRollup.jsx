@@ -5,6 +5,14 @@ import { shopTotals, employeeDeltasByDay } from '../utils/logMath'
 const toInt = (v) => parseInt(v) || 0
 const pct   = (num, den) => den > 0 ? (num / den * 100).toFixed(1) + '%' : ''
 
+const fmtSlot = (ts) => {
+  if (!ts) return null
+  const h = parseInt(ts.split(':')[0])
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h
+  return `${h12}:00 ${ampm}`
+}
+
 export default function MonthlyRollup({ locationId, selectedDate, opportunitiesFormula = 'detailed' }) {
   const [logs, setLogs]           = useState([])
   const [employees, setEmployees] = useState([])
@@ -52,8 +60,18 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
     empLogs(emp).some(r => NUMERIC.some(f => toInt(r[f]) > 0))
   )
 
+  const now    = new Date()
+  const todayDay = (now.getFullYear() === year && now.getMonth() + 1 === month)
+    ? now.getDate()
+    : null
+
   const activeDays = Array.from({ length: daysInMonth }, (_, i) => i + 1)
-    .filter(day => logs.some(l => l.log_date === dayStr(day)))
+    .filter(day => logs.some(l => l.log_date === dayStr(day)) || day === todayDay)
+
+  const asOfTime = (day) => {
+    if (day !== todayDay) return null
+    return fmtSlot(shopTotals(dayLogs(day))?.time_slot ?? null)
+  }
 
   // ── Delta helpers ─────────────────────────────────────────────────────────────
 
@@ -150,7 +168,12 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
             <tbody>
               {activeDays.map((day, i) => (
                 <tr key={day} className={rowBg(i)}>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{month}/{day}/{year}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand leading-tight">
+                    {month}/{day}/{year}
+                    {asOfTime(day) && (
+                      <div className="text-[9px] text-tm-teal font-normal whitespace-nowrap">(as of {asOfTime(day)})</div>
+                    )}
+                  </td>
                   {activeEmployees.map(emp => {
                     const val = empCellVal(day, emp)
                     return (
@@ -236,7 +259,12 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
             <tbody>
               {activeDays.map((day, i) => (
                 <tr key={day} className={rowBg(i)}>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{month}/{day}/{year}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand leading-tight">
+                    {month}/{day}/{year}
+                    {asOfTime(day) && (
+                      <div className="text-[9px] text-tm-teal font-normal whitespace-nowrap">(as of {asOfTime(day)})</div>
+                    )}
+                  </td>
                   {activeEmployees.map(emp => (
                     <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
                       {empDayConv(day, emp)}
@@ -308,7 +336,12 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
             <tbody>
               {activeDays.map((day, i) => (
                 <tr key={day} className={rowBg(i)}>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand">{month}/{day}/{year}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand leading-tight">
+                    {month}/{day}/{year}
+                    {asOfTime(day) && (
+                      <div className="text-[9px] text-tm-teal font-normal whitespace-nowrap">(as of {asOfTime(day)})</div>
+                    )}
+                  </td>
                   {activeEmployees.map(emp => (
                     <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
                       {empDayPmix(day, emp)}
