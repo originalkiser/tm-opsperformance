@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
 import NetworkDayView from '../components/NetworkDayView'
+import DateSelector, { computeDateRange, fmtDateRange } from '../components/DateSelector'
 import { employeeDeltasByDay } from '../utils/logMath'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
@@ -35,39 +36,7 @@ const agg = (rows) => {
   }
 }
 
-// Group by (location_id, log_date), run employeeDeltasByDay per group, sum all employee deltas
-const aggEmpFromLogs = (rows) => {
-  const dayMap = {}
-  rows.forEach(r => {
-    const key = `${r.location_id}::${r.log_date}`
-    if (!dayMap[key]) dayMap[key] = []
-    dayMap[key].push(r)
-  })
-  let basic = 0, good = 0, better = 0, best = 0, tw = 0, mw = 0, gr = 0
-  Object.values(dayMap).forEach(dayRows => {
-    Object.values(employeeDeltasByDay(dayRows)).forEach(d => {
-      basic  += d.basic
-      good   += d.good
-      better += d.better
-      best   += d.best
-      tw     += d.total_washes
-      mw     += d.member_washes
-      gr     += d.google_reviews
-    })
-  })
-  const ms  = basic + good + better + best
-  const opp = Math.max(0, tw - mw + ms)
-  return {
-    ms, gr, opp, better, best,
-    pmixN: pctN(better + best, ms),
-    convN: pctN(ms, opp),
-    p_mix:      pct(better + best, ms),
-    conversion: pct(ms, opp),
-  }
-}
-
 // Collapse all hourly rows to one row per (location, date): the latest time_slot with data.
-// Cumulative values grow through the day so the last filled slot = the day's total.
 const toDayTotals = (rows) => {
   const map = {}
   rows.forEach(r => {
@@ -85,20 +54,6 @@ const toDayTotals = (rows) => {
     return src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
   })
 }
-
-const getWeekStart = () => {
-  const d = new Date()
-  const day = d.getDay()
-  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-const getMonthStart = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-}
-
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
 // ── Shared UI pieces ──────────────────────────────────────────────────────────
 
@@ -129,7 +84,6 @@ const parsePct = (v) => parseFloat(v) || 0
 const thCls = 'px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide cursor-pointer select-none hover:bg-tm-navy/80 dark:hover:bg-tm-dark-border/60 transition-colors whitespace-nowrap'
 
 // ── Shop multi-select ─────────────────────────────────────────────────────────
-// selected = null → all shops; selected = [] → none; selected = [ids] → subset
 
 function ShopMultiSelect({ locations, selected, onChange }) {
   const [open, setOpen] = useState(false)
@@ -154,9 +108,7 @@ function ShopMultiSelect({ locations, selected, onChange }) {
         ? locations.find(l => l.id === selected[0])?.name ?? '1 shop'
         : `${selected.length} of ${locations.length} shops`
 
-  const toggleAll = () => {
-    allSelected ? onChange([]) : onChange(null)
-  }
+  const toggleAll = () => { allSelected ? onChange([]) : onChange(null) }
 
   const toggle = (id) => {
     const current = selected === null ? locations.map(l => l.id) : selected
@@ -213,17 +165,15 @@ function MetricTable({ data, locations }) {
     <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
   )
 
-  // Collapse to one row per (location, date) so cumulative hourly entries aren't summed
   const dayData = toDayTotals(data)
   const totals  = agg(dayData)
   const byLoc   = {}
   dayData.forEach(r => { ;(byLoc[r.location_id] = byLoc[r.location_id] || []).push(r) })
 
-  const rows = Object.entries(byLoc)
-    .map(([locId, rows]) => ({
-      name: locations.find(l => l.id === locId)?.name || locId,
-      ...agg(rows),
-    }))
+  const rows = Object.entries(byLoc).map(([locId, rows]) => ({
+    name: locations.find(l => l.id === locId)?.name || locId,
+    ...agg(rows),
+  }))
 
   const sorted = [...rows].sort((a, b) => {
     const dir = sort.dir === 'asc' ? 1 : -1
@@ -245,14 +195,14 @@ function MetricTable({ data, locations }) {
   )
 
   const COLS = [
-    { key: 'name',       label: 'Location',          align: 'left'   },
-    { key: 'tw',         label: 'Total Washes',       align: 'left'   },
-    { key: 'mw',         label: 'Member Washes',      align: 'center' },
-    { key: 'ms',         label: 'Memberships Sold',   align: 'center' },
-    { key: 'opp',        label: 'Opportunities',      align: 'center' },
-    { key: 'gr',         label: 'Google Reviews',     align: 'center' },
-    { key: 'p_mix',      label: 'P-Mix',              align: 'center' },
-    { key: 'conversion', label: 'Conversion',         align: 'center' },
+    { key: 'name',       label: 'Location',        align: 'left'   },
+    { key: 'tw',         label: 'Total Washes',     align: 'left'   },
+    { key: 'mw',         label: 'Member Washes',    align: 'center' },
+    { key: 'ms',         label: 'Memberships Sold', align: 'center' },
+    { key: 'opp',        label: 'Opportunities',    align: 'center' },
+    { key: 'gr',         label: 'Google Reviews',   align: 'center' },
+    { key: 'p_mix',      label: 'P-Mix',            align: 'center' },
+    { key: 'conversion', label: 'Conversion',       align: 'center' },
   ]
 
   return (
@@ -357,8 +307,6 @@ function TeamMemberTable({ data, locations }) {
     <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
   )
 
-  // Group by (location_id, log_date), run employeeDeltasByDay per group,
-  // accumulate raw field totals per (location_id, employee_name)
   const dayMap = {}
   data.forEach(r => {
     const key = `${r.location_id}::${r.log_date}`
@@ -370,7 +318,7 @@ function TeamMemberTable({ data, locations }) {
   Object.values(dayMap).forEach(({ locationId, rows }) => {
     const deltas = employeeDeltasByDay(rows)
     Object.entries(deltas).forEach(([name, d]) => {
-      const key = `${locationId}::${name}`
+      const key = `${locationId}::${name.toLowerCase()}`
       if (!empAccum[key]) {
         empAccum[key] = {
           key, name, locationId,
@@ -398,9 +346,8 @@ function TeamMemberTable({ data, locations }) {
       name:       e.name,
       locationId: e.locationId,
       site:       e.site,
-      ms,
+      ms, opp,
       gr:         e.google_reviews,
-      opp,
       better:     e.better,
       best:       e.best,
       pmixN:      pctN(e.better + e.best, ms),
@@ -415,14 +362,13 @@ function TeamMemberTable({ data, locations }) {
   )
 
   const TM_COLS_COMBINED = [
-    { key: 'name',       label: 'Employee'      },
-    { key: 'site',       label: 'Site'          },
-    { key: 'ms',         label: 'Memberships'   },
-    { key: 'gr',         label: 'Google Reviews'},
-    { key: 'p_mix',      label: 'P-Mix'         },
-    { key: 'conversion', label: 'Conversion'    },
+    { key: 'name',       label: 'Employee'       },
+    { key: 'site',       label: 'Site'           },
+    { key: 'ms',         label: 'Memberships'    },
+    { key: 'gr',         label: 'Google Reviews' },
+    { key: 'p_mix',      label: 'P-Mix'          },
+    { key: 'conversion', label: 'Conversion'     },
   ]
-
   const TM_COLS_SPLIT = TM_COLS_COMBINED.filter(c => c.key !== 'site')
 
   const TableHead = ({ cols }) => (
@@ -439,7 +385,6 @@ function TeamMemberTable({ data, locations }) {
 
   return (
     <div>
-      {/* Toggle */}
       <div className="flex justify-end mb-3">
         <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-tm-dark-border shadow-sm">
           {[
@@ -462,7 +407,6 @@ function TeamMemberTable({ data, locations }) {
       </div>
 
       {splitByShop ? (
-        // One table per location
         <div className="space-y-5">
           {locations.map(loc => {
             const locRows = allRows.filter(r => r.locationId === loc.id)
@@ -484,7 +428,6 @@ function TeamMemberTable({ data, locations }) {
           })}
         </div>
       ) : (
-        // Single combined table
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-xs">
             <TableHead cols={TM_COLS_COMBINED} />
@@ -509,7 +452,7 @@ const ChartTooltip = ({ active, payload, label, isPct }) => {
   const val = payload[0]?.value
   return (
     <div className="bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded shadow-md px-3 py-2 text-xs font-brand">
-      <p className="text-gray-500 dark:text-tm-dark-muted mb-1">Day {label}</p>
+      <p className="text-gray-500 dark:text-tm-dark-muted mb-1">{label}</p>
       <p className="font-semibold text-tm-blue dark:text-tm-teal">
         {val != null ? (isPct ? `${val}%` : val) : '—'}
       </p>
@@ -532,7 +475,7 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', d
           {type === 'line' ? (
             <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fontFamily: 'Chakra Petch', fill: axisColor }} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} tickFormatter={v => isPct ? `${v}%` : v} />
               <Tooltip content={<ChartTooltip isPct={isPct} />} />
               <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} dot={{ r: 3, fill: color }} connectNulls={false} />
@@ -540,7 +483,7 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', d
           ) : (
             <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fontFamily: 'Chakra Petch', fill: axisColor }} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} />
               <Tooltip content={<ChartTooltip isPct={isPct} />} />
               <Bar dataKey={dataKey} fill={color} radius={[2, 2, 0, 0]} />
@@ -562,8 +505,8 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
   const chartData = Object.entries(dayMap)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, rows]) => {
-      const day = parseInt(date.split('-')[2])
-      // Latest time_slot with data = cumulative day total (values grow through the day)
+      const d = new Date(date + 'T00:00:00')
+      const label = `${d.getMonth() + 1}/${d.getDate()}`
       const withData = rows.filter(r =>
         toInt(r.total_washes) > 0 || toInt(r.memberships_sold) > 0
       )
@@ -577,15 +520,15 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
       const btr = toInt(r.better)
       const bst = toInt(r.best)
       return {
-        day, tw, mw, ms, gr,
+        label, tw, mw, ms, gr,
         conversion: opp > 0 ? parseFloat((ms         / opp * 100).toFixed(1)) : null,
         pmix:       ms  > 0 ? parseFloat(((btr + bst) / ms  * 100).toFixed(1)) : null,
       }
     })
 
-  const navyColor    = dark ? '#D6E4F0' : '#1A3555'
+  const navyColor     = dark ? '#D6E4F0' : '#1A3555'
   const trendLocation = locations.find(l => l.id === trendLocId)
-  const selectCls    = "border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
+  const selectCls     = "border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
 
   return (
     <div>
@@ -606,12 +549,12 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
         <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          <MiniChart title="Daily Memberships Sold"  data={chartData} dataKey="ms"         color={TEAL}      dark={dark} />
-          <MiniChart title="Daily Conversion %"      data={chartData} dataKey="conversion" color={ORANGE}    dark={dark} type="line" isPct />
-          <MiniChart title="Daily Google Reviews"    data={chartData} dataKey="gr"         color={navyColor} dark={dark} />
-          <MiniChart title="Daily Total Washes"      data={chartData} dataKey="tw"         color={navyColor} dark={dark} />
-          <MiniChart title="Daily P-Mix %"           data={chartData} dataKey="pmix"       color={ORANGE}    dark={dark} type="line" isPct />
-          <MiniChart title="Daily Member Washes"     data={chartData} dataKey="mw"         color={TEAL}      dark={dark} />
+          <MiniChart title="Daily Memberships Sold" data={chartData} dataKey="ms"         color={TEAL}      dark={dark} />
+          <MiniChart title="Daily Conversion %"     data={chartData} dataKey="conversion" color={ORANGE}    dark={dark} type="line" isPct />
+          <MiniChart title="Daily Google Reviews"   data={chartData} dataKey="gr"         color={navyColor} dark={dark} />
+          <MiniChart title="Daily Total Washes"     data={chartData} dataKey="tw"         color={navyColor} dark={dark} />
+          <MiniChart title="Daily P-Mix %"          data={chartData} dataKey="pmix"       color={ORANGE}    dark={dark} type="line" isPct />
+          <MiniChart title="Daily Member Washes"    data={chartData} dataKey="mw"         color={TEAL}      dark={dark} />
         </div>
       )}
     </div>
@@ -650,30 +593,40 @@ function Section({ badge, badgeCls, subtitle, children, defaultOpen = true }) {
 export default function Insights() {
   const { locations } = useAuth()
   const [dark]        = useDarkModeCtx()
-  const [wtdLogs, setWtdLogs]               = useState([])
-  const [mtdLogs, setMtdLogs]               = useState([])
+  const [logs, setLogs]                     = useState([])
   const [loading, setLoading]               = useState(true)
-  const [selectedShops, setSelectedShops]   = useState(null) // null = all
+  const [selectedShops, setSelectedShops]   = useState(null)
   const [trendLocId, setTrendLocId]         = useState('')
   const [selectedMarket, setSelectedMarket] = useState(
     () => localStorage.getItem('tm_market_filter') || ''
   )
 
+  const [dateRange, setDateRange] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('tm_insights_date_range'))
+      if (saved?.preset && saved?.start && saved?.end) {
+        return saved.preset === 'custom' ? saved : computeDateRange(saved.preset)
+      }
+    } catch {}
+    return computeDateRange('current_week')
+  })
+
   const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
 
-  // Locations scoped to selected market
   const marketLocations = selectedMarket
     ? locations.filter(l => l.market === selectedMarket)
     : locations
 
   useEffect(() => {
     if (locations.length) {
-      fetchAll()
       if (!trendLocId) setTrendLocId(locations[0]?.id ?? '')
     }
   }, [locations])
 
-  // Reset shop selection when market changes
+  useEffect(() => {
+    if (locations.length) fetchData()
+  }, [locations, dateRange])
+
   useEffect(() => {
     setSelectedShops(null)
   }, [selectedMarket])
@@ -688,29 +641,35 @@ export default function Insights() {
     }
   }, [selectedShops, selectedMarket])
 
-  const fetchAll = async () => {
+  const fetchData = async () => {
     setLoading(true)
     const locIds = locations.map(l => l.id)
-    const td = today()
-    const [wtd, mtd] = await Promise.all([
-      supabase.from('daily_logs').select('*').in('location_id', locIds).gte('log_date', getWeekStart()).lte('log_date', td),
-      supabase.from('daily_logs').select('*').in('location_id', locIds).gte('log_date', getMonthStart()).lte('log_date', td),
-    ])
-    setWtdLogs(wtd.data || [])
-    setMtdLogs(mtd.data || [])
+    const { data } = await supabase
+      .from('daily_logs')
+      .select('*')
+      .in('location_id', locIds)
+      .gte('log_date', dateRange.start)
+      .lte('log_date', dateRange.end)
+    setLogs(data || [])
     setLoading(false)
+  }
+
+  const handleDateRangeChange = (newRange) => {
+    setDateRange(newRange)
+    localStorage.setItem('tm_insights_date_range', JSON.stringify(newRange))
   }
 
   const visibleLocations = selectedShops === null
     ? marketLocations
     : marketLocations.filter(l => selectedShops.includes(l.id))
 
-  const filterLogs = (logs) => {
+  const filterLogs = (allLogs) => {
     const locIds = visibleLocations.map(l => l.id)
-    return logs.filter(r => locIds.includes(r.location_id))
+    return allLogs.filter(r => locIds.includes(r.location_id))
   }
 
-  const trendLogs  = mtdLogs.filter(r => r.location_id === trendLocId)
+  const trendLogs  = logs.filter(r => r.location_id === trendLocId)
+  const rangeLabel = fmtDateRange(dateRange.start, dateRange.end)
   const cardCls    = "bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border"
 
   return (
@@ -737,6 +696,7 @@ export default function Insights() {
             {marketLocations.length > 1 && (
               <ShopMultiSelect locations={marketLocations} selected={selectedShops} onChange={setSelectedShops} />
             )}
+            <DateSelector dateRange={dateRange} onChange={handleDateRangeChange} />
           </div>
         </div>
 
@@ -751,31 +711,19 @@ export default function Insights() {
               </div>
             </Section>
 
-            <Section badge="WTD" badgeCls="bg-tm-blue" subtitle={`WTD Site Performance — ${getWeekStart()} through ${today()}`}>
+            <Section badge="SITES" badgeCls="bg-tm-blue" subtitle={`Site Performance — ${rangeLabel}`}>
               <div className="mt-3">
-                <MetricTable data={filterLogs(wtdLogs)} locations={visibleLocations} />
+                <MetricTable data={filterLogs(logs)} locations={visibleLocations} />
               </div>
             </Section>
 
-            <Section badge="WTD" badgeCls="bg-tm-blue" subtitle={`WTD Team Member Sales — ${getWeekStart()} through ${today()}`}>
+            <Section badge="TEAM" badgeCls="bg-[#1A3555]" subtitle={`Team Member Sales — ${rangeLabel}`}>
               <div className="mt-3">
-                <TeamMemberTable data={filterLogs(wtdLogs)} locations={visibleLocations} />
+                <TeamMemberTable data={filterLogs(logs)} locations={visibleLocations} />
               </div>
             </Section>
 
-            <Section badge="MTD" badgeCls="bg-emerald-700" subtitle={`MTD Site Performance — ${getMonthStart()} through ${today()}`}>
-              <div className="mt-3">
-                <MetricTable data={filterLogs(mtdLogs)} locations={visibleLocations} />
-              </div>
-            </Section>
-
-            <Section badge="MTD" badgeCls="bg-emerald-700" subtitle={`MTD Team Member Sales — ${getMonthStart()} through ${today()}`}>
-              <div className="mt-3">
-                <TeamMemberTable data={filterLogs(mtdLogs)} locations={visibleLocations} />
-              </div>
-            </Section>
-
-            <Section badge="DAILY" badgeCls="bg-orange-600" subtitle="Month-to-date daily trends">
+            <Section badge="DAILY" badgeCls="bg-orange-600" subtitle={`Daily trends — ${rangeLabel}`}>
               <div className="mt-3">
                 <DailyTrends
                   logs={trendLogs}
