@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
-import DateSelector, { computeDateRange, fmtDateRange } from '../components/DateSelector'
+import DateSelector, { computeDateRange, fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
 import LocationSelector from '../components/LocationSelector'
 import DailyLogTable from '../components/DailyLogTable'
 import EmployeeSummary from '../components/EmployeeSummary'
@@ -29,16 +29,7 @@ export default function Dashboard() {
     () => localStorage.getItem('tm_selected_location') || null
   )
 
-  const [dateRange, setDateRange] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('tm_date_range'))
-      if (saved?.preset && saved?.start && saved?.end) {
-        // Always recompute preset ranges so "current week" stays current
-        return saved.preset === 'custom' ? saved : computeDateRange(saved.preset)
-      }
-    } catch {}
-    return computeDateRange('current_week')
-  })
+  const [dateRange, setDateRange] = useState(() => loadSavedDateRange('tm_date_range'))
 
   const [selectedDate, setSelectedDate] = useState(() => {
     const saved = localStorage.getItem('tm_selected_date')
@@ -65,7 +56,7 @@ export default function Dashboard() {
   }, [selectedLocationId])
 
   useEffect(() => {
-    localStorage.setItem('tm_date_range', JSON.stringify(dateRange))
+    saveDateRange('tm_date_range', dateRange)
   }, [dateRange])
 
   useEffect(() => {

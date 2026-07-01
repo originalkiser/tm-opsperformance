@@ -14,9 +14,12 @@ function getMonday(date) {
 }
 
 export function computeDateRange(preset) {
-  const today = new Date()
+  const today    = new Date()
   const todayStr = toDateStr(today)
 
+  if (preset === 'today') {
+    return { preset, start: todayStr, end: todayStr }
+  }
   if (preset === 'current_week') {
     const mon = getMonday(today)
     const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
@@ -50,24 +53,46 @@ export function fmtDateRange(start, end) {
   const e = new Date(end   + 'T00:00:00')
   const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const fmt = (d) => d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
-  if (start === end) {
-    return `${DAY[s.getDay()]} ${fmt(s)}`
-  }
+  if (start === end) return `${DAY[s.getDay()]} ${fmt(s)}`
   return `${DAY[s.getDay()]} ${fmt(s)} – ${DAY[e.getDay()]} ${fmt(e)}`
+}
+
+const ONE_HOUR = 60 * 60 * 1000
+
+// Load a saved date range from localStorage. Falls back to 'today' if the
+// saved selection is older than one hour or missing.
+export function loadSavedDateRange(key) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key))
+    if (saved?.preset && saved?.start && saved?.end) {
+      const age = Date.now() - (saved.savedAt || 0)
+      if (age <= ONE_HOUR) {
+        // Recompute preset ranges so "current week" etc. stay current
+        return saved.preset === 'custom' ? saved : computeDateRange(saved.preset)
+      }
+    }
+  } catch {}
+  return computeDateRange('today')
+}
+
+// Save a date range to localStorage with a timestamp.
+export function saveDateRange(key, range) {
+  localStorage.setItem(key, JSON.stringify({ ...range, savedAt: Date.now() }))
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const PRESETS = [
-  { key: 'current_week',  label: 'Current Week'  },
-  { key: 'last_week',     label: 'Last Week'      },
-  { key: 'two_weeks_ago', label: 'Two Weeks Ago'  },
-  { key: 'month_to_date', label: 'Month to Date'  },
-  { key: 'last_month',    label: 'Last Month'     },
+  { key: 'today',         label: 'Today'          },
+  { key: 'current_week',  label: 'Current Week'   },
+  { key: 'last_week',     label: 'Last Week'       },
+  { key: 'two_weeks_ago', label: 'Two Weeks Ago'   },
+  { key: 'month_to_date', label: 'Month to Date'   },
+  { key: 'last_month',    label: 'Last Month'      },
 ]
 
 export default function DateSelector({ dateRange, onChange }) {
-  const [open, setOpen]             = useState(false)
+  const [open, setOpen]               = useState(false)
   const [customStart, setCustomStart] = useState(dateRange?.start || '')
   const [customEnd,   setCustomEnd]   = useState(dateRange?.end   || '')
   const ref = useRef(null)
@@ -97,6 +122,9 @@ export default function DateSelector({ dateRange, onChange }) {
     PRESETS.find(p => p.key === dateRange?.preset)?.label ||
     (dateRange?.preset === 'custom' ? 'Custom' : 'Select Range')
 
+  // For 'today' preset, hide the date range suffix in the trigger (it's redundant)
+  const showRangeSuffix = dateRange?.preset !== 'today' && dateRange?.start
+
   return (
     <div ref={ref} className="relative">
       {/* Trigger */}
@@ -105,7 +133,7 @@ export default function DateSelector({ dateRange, onChange }) {
         className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-gray-300 dark:border-tm-dark-border bg-white dark:bg-tm-dark-card text-sm font-brand text-gray-700 dark:text-tm-dark-text hover:border-tm-teal dark:hover:border-tm-teal transition-colors whitespace-nowrap"
       >
         <span className="font-semibold">{currentPresetLabel}</span>
-        {dateRange?.start && (
+        {showRangeSuffix && (
           <span className="text-xs text-gray-400 dark:text-tm-dark-muted font-normal">
             {fmtDateRange(dateRange.start, dateRange.end)}
           </span>
@@ -119,7 +147,7 @@ export default function DateSelector({ dateRange, onChange }) {
 
           {/* Preset options */}
           {PRESETS.map(p => {
-            const range = computeDateRange(p.key)
+            const range  = computeDateRange(p.key)
             const active = dateRange?.preset === p.key
             return (
               <button
@@ -137,7 +165,7 @@ export default function DateSelector({ dateRange, onChange }) {
                   <span className="text-[9px] leading-none">{active ? '●' : '○'}</span>
                   {p.label}
                 </span>
-                {range && (
+                {range && p.key !== 'today' && (
                   <span className="text-xs text-gray-400 dark:text-tm-dark-muted ml-4 whitespace-nowrap">
                     {fmtDateRange(range.start, range.end)}
                   </span>

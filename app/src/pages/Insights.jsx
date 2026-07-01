@@ -8,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
 import NetworkDayView from '../components/NetworkDayView'
-import DateSelector, { computeDateRange, fmtDateRange } from '../components/DateSelector'
+import DateSelector, { computeDateRange, fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
 import { employeeDeltasByDay } from '../utils/logMath'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
@@ -601,15 +601,7 @@ export default function Insights() {
     () => localStorage.getItem('tm_market_filter') || ''
   )
 
-  const [dateRange, setDateRange] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('tm_insights_date_range'))
-      if (saved?.preset && saved?.start && saved?.end) {
-        return saved.preset === 'custom' ? saved : computeDateRange(saved.preset)
-      }
-    } catch {}
-    return computeDateRange('current_week')
-  })
+  const [dateRange, setDateRange] = useState(() => loadSavedDateRange('tm_insights_date_range'))
 
   const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
 
@@ -656,7 +648,7 @@ export default function Insights() {
 
   const handleDateRangeChange = (newRange) => {
     setDateRange(newRange)
-    localStorage.setItem('tm_insights_date_range', JSON.stringify(newRange))
+    saveDateRange('tm_insights_date_range', newRange)
   }
 
   const visibleLocations = selectedShops === null
