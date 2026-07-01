@@ -115,7 +115,7 @@ export default function DateSelector({ dateRange, onChange }) {
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl shadow-2xl py-1 min-w-[300px]">
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl shadow-2xl py-1 min-w-[300px]">
 
           {/* Preset options */}
           {PRESETS.map(p => {

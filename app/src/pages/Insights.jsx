@@ -705,9 +705,9 @@ export default function Insights() {
         ) : (
           <div className="space-y-4">
 
-            <Section badge="NETWORK" badgeCls="bg-tm-blue" subtitle="Live day view across shops">
+            <Section badge="NETWORK" badgeCls="bg-tm-blue" subtitle="Day view across shops">
               <div className="mt-3">
-                <NetworkDayView locations={visibleLocations} />
+                <NetworkDayView locations={visibleLocations} date={dateRange.end} />
               </div>
             </Section>
 

@@ -260,16 +260,26 @@ function SkeletonCard({ name }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function NetworkDayView({ locations: locProp }) {
+export default function NetworkDayView({ locations: locProp, date: dateProp }) {
   const { locations: authLocations } = useAuth()
   const locations = locProp ?? authLocations
-  const [offset, setOffset]     = useState(0)
+
+  // Start at the prop date (range end); offset buttons override to a relative day
+  const [selectedDate, setSelectedDate] = useState(() => dateProp || dateForOffset(0))
   const [logs, setLogs]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [expanded, setExpanded] = useState(new Set())
 
-  const dateStr   = dateForOffset(offset)
+  // When the prop date changes (range changed), follow it
+  useEffect(() => {
+    if (dateProp) setSelectedDate(dateProp)
+  }, [dateProp])
+
+  const dateStr   = selectedDate
   const dateLabel = formatDateLabel(dateStr)
+
+  // Which offset button is currently active, if any (-1 = none)
+  const activeOffset = OFFSETS.findIndex(o => dateForOffset(o.offset) === dateStr)
 
   useEffect(() => {
     if (!locations.length) return
@@ -308,13 +318,13 @@ export default function NetworkDayView({ locations: locProp }) {
       <div className="flex flex-wrap items-center gap-3 mb-5">
         <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-tm-dark-border shadow-sm">
           {OFFSETS.map(({ label, offset: off }, idx) => {
-            const active = off === offset
+            const active  = activeOffset === idx
             const isFirst = idx === 0
             const isLast  = idx === OFFSETS.length - 1
             return (
               <button
                 key={off}
-                onClick={() => setOffset(off)}
+                onClick={() => setSelectedDate(dateForOffset(off))}
                 className={`px-3 py-1.5 text-xs font-brand font-semibold transition-colors border-r last:border-r-0 border-gray-200 dark:border-tm-dark-border
                   ${isFirst  ? 'rounded-l-lg' : ''}
                   ${isLast   ? 'rounded-r-lg' : ''}
