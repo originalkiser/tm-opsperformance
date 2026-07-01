@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import tmLogo from '../assets/TM-Logo 1-1.png'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
@@ -42,11 +43,8 @@ export default function NavBar() {
         {/* ── Left: Logo + action buttons ── */}
         <div className="flex items-center gap-1">
           {/* Brand badge */}
-          <Link to="/" className="flex items-center gap-3 pr-4 border-r border-tm-teal/20 mr-2 py-2">
-            <div className="flex flex-col items-center justify-center bg-tm-navy border border-tm-teal/40 rounded px-2 py-0.5 leading-none">
-              <span className="text-tm-teal font-brand font-semibold tracking-widest text-[6px] uppercase">Trademark</span>
-              <span className="text-white font-brand font-bold tracking-wider text-[11px] uppercase leading-tight">Car Wash</span>
-            </div>
+          <Link to="/" className="flex items-center gap-3 pr-4 border-r border-tm-teal/20 mr-2 py-1.5">
+            <img src={tmLogo} alt="Trademark Car Wash" className="h-8 w-auto" />
             <span className="font-brand font-bold text-sm tracking-wide hidden sm:block">TM Operations</span>
           </Link>
 
