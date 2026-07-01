@@ -13,86 +13,123 @@ const fmtSlot = (ts) => {
   return `${h12}:00 ${ampm}`
 }
 
-export default function MonthlyRollup({ locationId, selectedDate, opportunitiesFormula = 'detailed' }) {
-  const [logs, setLogs]           = useState([])
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function todayStr() {
+  return toDateStr(new Date())
+}
+
+function buildDateList(start, end) {
+  const dates = []
+  const d = new Date(start + 'T00:00:00')
+  const e = new Date(end   + 'T00:00:00')
+  while (d <= e) {
+    dates.push(toDateStr(d))
+    d.setDate(d.getDate() + 1)
+  }
+  return dates
+}
+
+function fmtRangeLabel(start, end) {
+  const s = new Date(start + 'T00:00:00')
+  const e = new Date(end   + 'T00:00:00')
+  const opts = { month: 'long', day: 'numeric' }
+  if (start === end) {
+    return s.toLocaleDateString('en-US', { ...opts, year: 'numeric' })
+  }
+  if (s.getFullYear() === e.getFullYear() && s.getMonth() === e.getMonth()) {
+    return `${s.toLocaleDateString('en-US', { month: 'long' })} ${s.getDate()}–${e.getDate()}, ${e.getFullYear()}`
+  }
+  if (s.getFullYear() === e.getFullYear()) {
+    return `${s.toLocaleDateString('en-US', opts)} – ${e.toLocaleDateString('en-US', opts)}, ${e.getFullYear()}`
+  }
+  return `${s.toLocaleDateString('en-US', { ...opts, year: 'numeric' })} – ${e.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
+}
+
+function fmtDay(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' })
+}
+
+export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportunitiesFormula = 'detailed' }) {
+  const [logs, setLogs]       = useState([])
   const [employees, setEmployees] = useState([])
-  const [loading, setLoading]     = useState(true)
+  const [loading, setLoading] = useState(true)
 
-  const d           = new Date(selectedDate + 'T00:00:00')
-  const year        = d.getFullYear()
-  const month       = d.getMonth() + 1
-  const daysInMonth = new Date(year, month, 0).getDate()
-  const pad         = (n) => String(n).padStart(2, '0')
-  const monthLabel  = d.toLocaleString('default', { month: 'long', year: 'numeric' })
-
-  useEffect(() => { fetchData() }, [locationId, selectedDate])
+  useEffect(() => { fetchData() }, [locationId, dateStart, dateEnd])
 
   const fetchData = async () => {
     setLoading(true)
-    const start = `${year}-${pad(month)}-01`
-    const end   = `${year}-${pad(month)}-${pad(daysInMonth)}`
-
     const [{ data: logData }, { data: empData }] = await Promise.all([
       supabase.from('daily_logs').select('*')
-        .eq('location_id', locationId).gte('log_date', start).lte('log_date', end),
+        .eq('location_id', locationId)
+        .gte('log_date', dateStart)
+        .lte('log_date', dateEnd),
       supabase.from('employees').select('name')
-        .eq('location_id', locationId).eq('is_active', true).order('name'),
+        .eq('location_id', locationId)
+        .eq('is_active', true)
+        .order('name'),
     ])
 
-    const logNames = [...new Set((logData || []).map(l => l.employee_name).filter(Boolean))]
-    const empNames = (empData || []).map(e => e.name)
-    const allNames = [...new Set([...empNames, ...logNames])].sort()
+    // Build canonical employee name map — case-insensitive, first-seen wins
+    const canonicalMap = {}
+    const addName = (name) => {
+      const trimmed = name?.trim()
+      if (!trimmed) return
+      const lower = trimmed.toLowerCase()
+      if (!canonicalMap[lower]) canonicalMap[lower] = trimmed
+    }
+    ;(empData  || []).forEach(e => addName(e.name))
+    ;(logData  || []).forEach(l => addName(l.employee_name))
+    const allNames = Object.values(canonicalMap).sort()
 
     setLogs(logData || [])
     setEmployees(allNames)
     setLoading(false)
   }
 
-  const dayStr  = (day) => `${year}-${pad(month)}-${pad(day)}`
-  const empLogs = (emp) => logs.filter(l => l.employee_name === emp)
-  const dayLogs = (day) => logs.filter(l => l.log_date === dayStr(day))
+  const allDates   = buildDateList(dateStart, dateEnd)
+  const today      = todayStr()
+  const rangeLabel = fmtRangeLabel(dateStart, dateEnd)
 
-  const NUMERIC = [
-    'total_washes','member_washes','google_reviews','net_members',
-    'basic','good','better','best',
-  ]
-  const activeEmployees = employees.filter(emp =>
-    empLogs(emp).some(r => NUMERIC.some(f => toInt(r[f]) > 0))
+  const dayLogs = (dateStr) => logs.filter(l => l.log_date === dateStr)
+
+  // Case-insensitive employee log filter
+  const empLogs = (emp) =>
+    logs.filter(l => l.employee_name?.trim().toLowerCase() === emp.toLowerCase())
+
+  const activeDays = allDates.filter(
+    d => logs.some(l => l.log_date === d) || d === today
   )
 
-  const now    = new Date()
-  const todayDay = (now.getFullYear() === year && now.getMonth() + 1 === month)
-    ? now.getDate()
-    : null
-
-  const activeDays = Array.from({ length: daysInMonth }, (_, i) => i + 1)
-    .filter(day => logs.some(l => l.log_date === dayStr(day)) || day === todayDay)
-
-  const asOfTime = (day) => {
-    if (day !== todayDay) return null
-    return fmtSlot(shopTotals(dayLogs(day))?.time_slot ?? null)
+  const asOfTime = (dateStr) => {
+    if (dateStr !== today) return null
+    return fmtSlot(shopTotals(dayLogs(dateStr))?.time_slot ?? null)
   }
 
   // ── Delta helpers ─────────────────────────────────────────────────────────────
 
-  // Returns delta-based day total for (day, emp), or null if no rows
-  const getEmpDayTotal = (day, emp) => {
-    const rows = dayLogs(day)
+  const getEmpDayTotal = (dateStr, emp) => {
+    const rows = dayLogs(dateStr)
     if (!rows.length) return null
-    return employeeDeltasByDay(rows)[emp] ?? null
+    const deltas = employeeDeltasByDay(rows)
+    // Match by canonical name (employeeDeltasByDay returns canonical names)
+    const entry = Object.entries(deltas).find(
+      ([k]) => k.toLowerCase() === emp.toLowerCase()
+    )
+    return entry ? entry[1] : null
   }
 
-  // Returns the most recently updated row for the shop on a given day
-  const getDayShopRow = (day) => shopTotals(dayLogs(day))
+  const getDayShopRow = (dateStr) => shopTotals(dayLogs(dateStr))
 
-  // Get a specific raw/computed field from a delta total
   const deltaVal = (t, field) => {
     if (!t) return 0
     if (field === 'memberships_sold') return toInt(t.basic) + toInt(t.good) + toInt(t.better) + toInt(t.best)
     return toInt(t[field])
   }
 
-  // Get a specific raw/computed field from a shop row
   const shopVal = (r, field) => {
     if (!r) return 0
     if (field === 'memberships_sold') return toInt(r.basic) + toInt(r.good) + toInt(r.better) + toInt(r.best)
@@ -101,21 +138,25 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
 
   if (loading) return (
     <div className="py-12 text-center text-gray-400 dark:text-tm-dark-muted text-sm font-brand">
-      Loading {monthLabel}…
+      Loading {rangeLabel}…
     </div>
   )
   if (!logs.length) return (
     <div className="py-12 text-center text-gray-400 dark:text-tm-dark-muted text-sm font-brand">
-      No data recorded for {monthLabel}.
+      No data recorded for {rangeLabel}.
     </div>
   )
 
-  // ── Shared components ─────────────────────────────────────────────────────────
+  // ── Shared sub-components ─────────────────────────────────────────────────────
+
+  const activeEmployees = employees.filter(emp =>
+    empLogs(emp).some(r => ['total_washes','member_washes','google_reviews','net_members','basic','good','better','best'].some(f => toInt(r[f]) > 0))
+  )
 
   const TableHeader = ({ extraCols = [] }) => (
     <thead>
       <tr className="bg-tm-blue dark:bg-tm-navy text-white">
-        <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border text-left font-brand font-semibold text-[11px] w-24">DATE</th>
+        <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border text-left font-brand font-semibold text-[11px] w-28">DATE</th>
         {activeEmployees.map(emp => (
           <th key={emp} className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold text-[11px] min-w-[70px]">{emp}</th>
         ))}
@@ -154,10 +195,10 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
   // ── Count table ───────────────────────────────────────────────────────────────
 
   const CountTable = ({ title, accentClass, field }) => {
-    const empCellVal  = (day, emp) => deltaVal(getEmpDayTotal(day, emp), field)
-    const shopCellVal = (day)      => shopVal(getDayShopRow(day), field)
-    const empColTotal = (emp)      => activeDays.reduce((s, d) => s + empCellVal(d, emp), 0)
-    const grandTotal               = activeDays.reduce((s, d) => s + shopCellVal(d), 0)
+    const empCellVal  = (d, emp) => deltaVal(getEmpDayTotal(d, emp), field)
+    const shopCellVal = (d)      => shopVal(getDayShopRow(d), field)
+    const empColTotal = (emp)    => activeDays.reduce((s, d) => s + empCellVal(d, emp), 0)
+    const grandTotal             = activeDays.reduce((s, d) => s + shopCellVal(d), 0)
 
     return (
       <div>
@@ -166,16 +207,16 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
           <table className="border-collapse text-[11px] w-full">
             <TableHeader />
             <tbody>
-              {activeDays.map((day, i) => (
-                <tr key={day} className={rowBg(i)}>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand leading-tight">
-                    {month}/{day}/{year}
-                    {asOfTime(day) && (
-                      <div className="text-[9px] text-tm-teal font-normal whitespace-nowrap">(as of {asOfTime(day)})</div>
+              {activeDays.map((dateStr, i) => (
+                <tr key={dateStr} className={rowBg(i)}>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand leading-tight whitespace-nowrap">
+                    {fmtDay(dateStr)}
+                    {asOfTime(dateStr) && (
+                      <div className="text-[9px] text-tm-teal font-normal whitespace-nowrap">(as of {asOfTime(dateStr)})</div>
                     )}
                   </td>
                   {activeEmployees.map(emp => {
-                    const val = empCellVal(day, emp)
+                    const val = empCellVal(dateStr, emp)
                     return (
                       <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-brand dark:text-tm-dark-text">
                         {val > 0 ? val : ''}
@@ -183,7 +224,7 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
                     )
                   })}
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold font-brand dark:text-tm-dark-text">
-                    {shopCellVal(day) > 0 ? shopCellVal(day) : ''}
+                    {shopCellVal(dateStr) > 0 ? shopCellVal(dateStr) : ''}
                   </td>
                 </tr>
               ))}
@@ -203,8 +244,8 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
   // ── Conversion % table ────────────────────────────────────────────────────────
 
   const ConversionTable = () => {
-    const empDayConv = (day, emp) => {
-      const t = getEmpDayTotal(day, emp)
+    const empDayConv = (dateStr, emp) => {
+      const t = getEmpDayTotal(dateStr, emp)
       if (!t) return ''
       const ms  = t.basic + t.good + t.better + t.best
       const opp = opportunitiesFormula === 'simple'
@@ -213,8 +254,8 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
       return pct(ms, opp)
     }
 
-    const shopDayConv = (day) => {
-      const r = getDayShopRow(day)
+    const shopDayConv = (dateStr) => {
+      const r = getDayShopRow(dateStr)
       if (!r) return ''
       const ms  = toInt(r.basic) + toInt(r.good) + toInt(r.better) + toInt(r.best)
       const opp = opportunitiesFormula === 'simple'
@@ -225,8 +266,8 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
 
     const empColConv = (emp) => {
       let totMS = 0, totOpp = 0
-      activeDays.forEach(day => {
-        const t = getEmpDayTotal(day, emp)
+      activeDays.forEach(dateStr => {
+        const t = getEmpDayTotal(dateStr, emp)
         if (!t) return
         const ms  = t.basic + t.good + t.better + t.best
         const opp = opportunitiesFormula === 'simple'
@@ -239,8 +280,8 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
     }
 
     let grMS = 0, grOpp = 0
-    activeDays.forEach(day => {
-      const r = getDayShopRow(day)
+    activeDays.forEach(dateStr => {
+      const r = getDayShopRow(dateStr)
       if (!r) return
       const ms  = toInt(r.basic) + toInt(r.good) + toInt(r.better) + toInt(r.best)
       const opp = opportunitiesFormula === 'simple'
@@ -257,21 +298,21 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
           <table className="border-collapse text-[11px] w-full">
             <TableHeader extraCols={[{ label: 'Total', cls: 'bg-orange-600' }]} />
             <tbody>
-              {activeDays.map((day, i) => (
-                <tr key={day} className={rowBg(i)}>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand leading-tight">
-                    {month}/{day}/{year}
-                    {asOfTime(day) && (
-                      <div className="text-[9px] text-tm-teal font-normal whitespace-nowrap">(as of {asOfTime(day)})</div>
+              {activeDays.map((dateStr, i) => (
+                <tr key={dateStr} className={rowBg(i)}>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand leading-tight whitespace-nowrap">
+                    {fmtDay(dateStr)}
+                    {asOfTime(dateStr) && (
+                      <div className="text-[9px] text-tm-teal font-normal whitespace-nowrap">(as of {asOfTime(dateStr)})</div>
                     )}
                   </td>
                   {activeEmployees.map(emp => (
                     <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
-                      {empDayConv(day, emp)}
+                      {empDayConv(dateStr, emp)}
                     </td>
                   ))}
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 font-semibold font-brand">
-                    {shopDayConv(day)}
+                    {shopDayConv(dateStr)}
                   </td>
                 </tr>
               ))}
@@ -292,16 +333,16 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
   // ── P-Mix % table ─────────────────────────────────────────────────────────────
 
   const PMixTable = () => {
-    const empDayPmix = (day, emp) => {
-      const t = getEmpDayTotal(day, emp)
+    const empDayPmix = (dateStr, emp) => {
+      const t = getEmpDayTotal(dateStr, emp)
       if (!t) return ''
       const ms   = t.basic + t.good + t.better + t.best
       const prem = t.better + t.best
       return pct(prem, ms)
     }
 
-    const shopDayPmix = (day) => {
-      const r = getDayShopRow(day)
+    const shopDayPmix = (dateStr) => {
+      const r = getDayShopRow(dateStr)
       if (!r) return ''
       const ms   = toInt(r.basic) + toInt(r.good) + toInt(r.better) + toInt(r.best)
       const prem = toInt(r.better) + toInt(r.best)
@@ -310,8 +351,8 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
 
     const empColPmix = (emp) => {
       let totMS = 0, totPrem = 0
-      activeDays.forEach(day => {
-        const t = getEmpDayTotal(day, emp)
+      activeDays.forEach(dateStr => {
+        const t = getEmpDayTotal(dateStr, emp)
         if (!t) return
         totMS   += t.basic + t.good + t.better + t.best
         totPrem += t.better + t.best
@@ -320,8 +361,8 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
     }
 
     let grMS = 0, grPrem = 0
-    activeDays.forEach(day => {
-      const r = getDayShopRow(day)
+    activeDays.forEach(dateStr => {
+      const r = getDayShopRow(dateStr)
       if (!r) return
       grMS   += toInt(r.basic) + toInt(r.good) + toInt(r.better) + toInt(r.best)
       grPrem += toInt(r.better) + toInt(r.best)
@@ -334,21 +375,21 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
           <table className="border-collapse text-[11px] w-full">
             <TableHeader extraCols={[{ label: 'Total', cls: 'bg-orange-600' }]} />
             <tbody>
-              {activeDays.map((day, i) => (
-                <tr key={day} className={rowBg(i)}>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand leading-tight">
-                    {month}/{day}/{year}
-                    {asOfTime(day) && (
-                      <div className="text-[9px] text-tm-teal font-normal whitespace-nowrap">(as of {asOfTime(day)})</div>
+              {activeDays.map((dateStr, i) => (
+                <tr key={dateStr} className={rowBg(i)}>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-tm-dark-muted font-brand leading-tight whitespace-nowrap">
+                    {fmtDay(dateStr)}
+                    {asOfTime(dateStr) && (
+                      <div className="text-[9px] text-tm-teal font-normal whitespace-nowrap">(as of {asOfTime(dateStr)})</div>
                     )}
                   </td>
                   {activeEmployees.map(emp => (
                     <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
-                      {empDayPmix(day, emp)}
+                      {empDayPmix(dateStr, emp)}
                     </td>
                   ))}
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 font-semibold font-brand">
-                    {shopDayPmix(day)}
+                    {shopDayPmix(dateStr)}
                   </td>
                 </tr>
               ))}
@@ -371,8 +412,12 @@ export default function MonthlyRollup({ locationId, selectedDate, opportunitiesF
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
-        <span className="bg-tm-blue text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">MTH</span>
-        <h2 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide uppercase">{monthLabel}</h2>
+        <span className="bg-tm-blue text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">
+          {allDates.length <= 7 ? 'WK' : allDates.length <= 31 ? 'MTH' : 'RNG'}
+        </span>
+        <h2 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide uppercase">
+          {rangeLabel}
+        </h2>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">

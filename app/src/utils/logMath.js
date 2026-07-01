@@ -9,7 +9,6 @@ export const FIELDS = [
  * Returns the latest time-slot row that has any data entered for a shop day.
  * Cumulative values grow through the day, so the latest filled-in time slot
  * always holds the highest (most complete) totals — this is the day total.
- * Works correctly whether one row or all 13 are filled in.
  */
 export function shopTotals(rows) {
   if (!rows || !rows.length) return null
@@ -25,33 +24,33 @@ export function shopTotals(rows) {
  * Sorts chronologically, then diffs each row against the PREVIOUS row
  * (regardless of who entered it), attributing each delta to that row's employee.
  *
- * This correctly handles mid-shift employee changes:
- *   - Cord's 11AM entry (TW=4) is diffed against Savannah's 10AM entry (TW=4) → delta=0
- *   - Cord's 1PM entry (TW=10) vs Cord's 12PM (TW=6) → delta=4
- *   - Cord total = 6, not 10
- *
- * Returns: { empName: { total_washes, member_washes, basic, good, better, best, ... }, ... }
+ * Employee names are matched case-insensitively — "Chris", "chris", and "CHRIS"
+ * all accumulate into a single entry keyed by the first-seen capitalization.
  */
 export function employeeDeltasByDay(allDayRows) {
   const sorted = [...allDayRows].sort((a, b) => a.time_slot.localeCompare(b.time_slot))
-  const result = {}
+  const result    = {}   // lowercase key → accumulated deltas
+  const canonical = {}   // lowercase key → first-seen display name
 
   sorted.forEach((row, idx) => {
-    const name = row.employee_name?.trim()
-    if (!name) return
+    const raw = row.employee_name?.trim()
+    if (!raw) return
+    const key = raw.toLowerCase()
+    if (!canonical[key]) canonical[key] = raw
 
-    const prev = sorted[idx - 1]  // previous time slot, any employee
-
-    if (!result[name]) {
-      result[name] = FIELDS.reduce((a, f) => ({ ...a, [f]: 0 }), {})
+    const prev = sorted[idx - 1]
+    if (!result[key]) {
+      result[key] = FIELDS.reduce((a, f) => ({ ...a, [f]: 0 }), {})
     }
-
     FIELDS.forEach(f => {
       const curr  = toInt(row[f])
       const prior = prev ? toInt(prev[f]) : 0
-      result[name][f] += Math.max(0, curr - prior)
+      result[key][f] += Math.max(0, curr - prior)
     })
   })
 
-  return result
+  // Re-key by canonical (first-seen) display name
+  return Object.fromEntries(
+    Object.entries(result).map(([key, data]) => [canonical[key], data])
+  )
 }
