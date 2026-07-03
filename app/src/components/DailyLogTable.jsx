@@ -594,12 +594,20 @@ export default function DailyLogTable({
     const C = {
       navyBg: '#1B3A5C', tealBg: '#4DBDB5', orangeBg: '#D97706',
       white: '#FFFFFF', navyText: '#0F2740', bodyText: '#1F2937',
-      timeText: '#6B7280', blueText: '#1E3A8A', orangeText: '#92400E',
+      timeText: '#6B7280', blueText: '#1E3A8A',
       rowAlt: '#EEF9F8', rowNorm: '#FFFFFF',
-      tealCell: '#CBF0EC', orangeCell: '#FFF3E8',
-      totRow: '#C0E8E3', totTeal: '#9FD9D4', totOrange: '#FED7AA',
+      tealCell: '#CBF0EC',
+      totRow: '#C0E8E3', totTeal: '#9FD9D4',
       grid: '#D1D5DB', border: '#9CA3AF',
     }
+
+    const th = metricThresholds
+    const pmixBg    = (v) => { const n = parseFloat(v); const g = th?.pmix_green ?? 60; return !isNaN(n) && n >= g ? '#DCFCE7' : '#FFF3E8' }
+    const pmixFg    = (v) => { const n = parseFloat(v); const g = th?.pmix_green ?? 60; return !isNaN(n) && n >= g ? '#166534' : '#92400E' }
+    const pmixTotBg = (v) => { const n = parseFloat(v); const g = th?.pmix_green ?? 60; return !isNaN(n) && n >= g ? '#BBF7D0' : '#FED7AA' }
+    const convBg    = (v) => { const n = parseFloat(v); const r = th?.conv_red ?? 7, y = th?.conv_yellow ?? 10; if (isNaN(n)) return '#FFF3E8'; if (n < r) return '#FEE2E2'; if (n < y) return '#FEF9C3'; return '#DCFCE7' }
+    const convFg    = (v) => { const n = parseFloat(v); const r = th?.conv_red ?? 7, y = th?.conv_yellow ?? 10; if (isNaN(n)) return '#92400E'; if (n < r) return '#991B1B'; if (n < y) return '#854D0E'; return '#166534' }
+    const convTotBg = (v) => { const n = parseFloat(v); const r = th?.conv_red ?? 7, y = th?.conv_yellow ?? 10; if (isNaN(n)) return '#FED7AA'; if (n < r) return '#FECACA'; if (n < y) return '#FEF08A'; return '#BBF7D0' }
 
     const fillText = (text, x, y, align) => {
       ctx.textAlign     = align === 'left' ? 'left' : 'center'
@@ -659,18 +667,21 @@ export default function DailyLogTable({
       let cx = 0
       imgCols.forEach(col => {
         const w   = cw(col)
-        ctx.fillStyle = col.accent === 'teal'   ? C.tealCell
-                      : col.accent === 'orange' ? C.orangeCell
-                      : alt                     ? C.rowAlt
-                      : C.rowNorm
+        const val = vals[col.key]
+        let cellBg, cellFg
+        if (col.key === '_pmix') {
+          cellBg = pmixBg(val); cellFg = pmixFg(val)
+        } else if (col.key === '_conv') {
+          cellBg = convBg(val); cellFg = convFg(val)
+        } else {
+          cellBg = col.accent === 'teal' ? C.tealCell : alt ? C.rowAlt : C.rowNorm
+          cellFg = col.accent === 'teal' ? C.blueText : col.key === '_time' ? C.timeText : C.bodyText
+        }
+        ctx.fillStyle = cellBg
         ctx.fillRect(cx, y, w, ROW_H)
 
-        const val = vals[col.key]
         if (val) {
-          ctx.fillStyle = col.accent === 'orange' ? C.orangeText
-                        : col.accent === 'teal'   ? C.blueText
-                        : col.key === '_time'      ? C.timeText
-                        : C.bodyText
+          ctx.fillStyle = cellFg
           ctx.font = `${col.key === 'employee_name' ? '500' : '400'} 10px ${FONT}`
           fillText(val, col.align === 'left' ? cx + PAD : cx + w / 2, y + ROW_H / 2, col.align)
         }
@@ -690,12 +701,21 @@ export default function DailyLogTable({
     }
     let tx = 0
     imgCols.forEach(col => {
-      const w = cw(col)
-      ctx.fillStyle = col.accent === 'teal' ? C.totTeal : col.accent === 'orange' ? C.totOrange : C.totRow
-      ctx.fillRect(tx, totY, w, ROW_H)
+      const w   = cw(col)
       const val = totVs[col.key]
+      let cellBg, cellFg
+      if (col.key === '_pmix') {
+        cellBg = pmixTotBg(val); cellFg = pmixFg(val)
+      } else if (col.key === '_conv') {
+        cellBg = convTotBg(val); cellFg = convFg(val)
+      } else {
+        cellBg = col.accent === 'teal' ? C.totTeal : C.totRow
+        cellFg = C.blueText
+      }
+      ctx.fillStyle = cellBg
+      ctx.fillRect(tx, totY, w, ROW_H)
       if (val) {
-        ctx.fillStyle = col.accent === 'orange' ? C.orangeText : C.blueText
+        ctx.fillStyle = cellFg
         ctx.font      = `bold 10px ${FONT}`
         fillText(val, col.align === 'left' ? tx + PAD : tx + w / 2, totY + ROW_H / 2, col.align)
       }
