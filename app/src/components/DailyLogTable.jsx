@@ -270,9 +270,11 @@ export default function DailyLogTable({
   const [employees, setEmps]  = useState([])
   const [saving, setSaving]   = useState(new Set())
   const [saveError, setSaveError] = useState(null)
-  const [viewMode, setViewMode] = useState(
-    () => localStorage.getItem('tm_daily_view_mode') || 'table'
-  )
+  const [viewMode, setViewMode] = useState(() => {
+    const saved = localStorage.getItem('tm_daily_view_mode')
+    if (saved) return saved
+    return typeof window !== 'undefined' && window.innerWidth < 768 ? 'card' : 'table'
+  })
   const [cardHour, setCardHour] = useState(() => {
     const h = new Date().getHours()
     const target = `${String(Math.max(8, h - 1)).padStart(2, '0')}:00:00`
@@ -846,7 +848,7 @@ export default function DailyLogTable({
             onClick={toggleViewMode}
             className="px-3 py-1.5 rounded-md border border-tm-teal/40 text-tm-blue dark:text-tm-teal bg-white dark:bg-tm-dark-surface hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors font-brand text-xs font-semibold tracking-wide"
           >
-            {viewMode === 'table' ? '≡ Card View' : '⊞ Table View'}
+            {viewMode === 'table' ? '≡ Switch to Card View' : '⊞ Switch to Table View'}
           </button>
           {canEdit && (
             <button
@@ -904,41 +906,43 @@ export default function DailyLogTable({
       {/* ── Card View ─────────────────────────────────────────────────────────── */}
       {viewMode === 'card' && (
         <div className="max-w-md mx-auto">
-          {/* Sticky header */}
-          <div className="sticky top-0 z-20 bg-white dark:bg-tm-dark-bg border-b border-gray-200 dark:border-tm-dark-border pt-2 pb-3 mb-4">
-            <div className="mb-3">
-              <label className="block text-[10px] font-brand font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">
-                Hour
-              </label>
-              <select
-                className="border border-gray-300 dark:border-tm-dark-border rounded-lg px-3 py-2 text-sm font-brand bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal w-full"
-                value={cardHour}
-                onChange={e => setCardHour(e.target.value)}
-              >
-                {TIME_SLOTS.map(s => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] font-brand font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">
-                Employee
-              </label>
-              {canEdit ? (
-                <div className="border border-gray-300 dark:border-tm-dark-border rounded-lg px-2 py-1 bg-white dark:bg-tm-dark-card">
-                  <EmployeeSelect
-                    value={cardRow.employee_name}
-                    onChange={v => update(cardSlotIdx, 'employee_name', v)}
-                    onBlur={() => saveImmediately(cardSlotIdx)}
-                    employees={employees}
-                    placeholder="Select employee…"
-                  />
-                </div>
-              ) : (
-                <span className="text-sm font-brand text-gray-700 dark:text-tm-dark-text">
-                  {cardRow.employee_name || '—'}
-                </span>
-              )}
+          {/* Time + Employee header */}
+          <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl px-3 pt-3 pb-3 mb-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-brand font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">
+                  Hour
+                </label>
+                <select
+                  className="border border-gray-300 dark:border-tm-dark-border rounded-lg px-2 py-2 text-sm font-brand bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal w-full"
+                  value={cardHour}
+                  onChange={e => setCardHour(e.target.value)}
+                >
+                  {TIME_SLOTS.map(s => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-brand font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">
+                  Employee
+                </label>
+                {canEdit ? (
+                  <div className="border border-gray-300 dark:border-tm-dark-border rounded-lg px-2 py-1.5 bg-white dark:bg-tm-dark-surface min-h-[38px] flex items-center">
+                    <EmployeeSelect
+                      value={cardRow.employee_name}
+                      onChange={v => update(cardSlotIdx, 'employee_name', v)}
+                      onBlur={() => saveImmediately(cardSlotIdx)}
+                      employees={employees}
+                      placeholder="Tap to select…"
+                    />
+                  </div>
+                ) : (
+                  <span className="text-sm font-brand text-gray-700 dark:text-tm-dark-text">
+                    {cardRow.employee_name || '—'}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -962,7 +966,8 @@ export default function DailyLogTable({
                   <input
                     type="number"
                     min="0"
-                    className="w-full text-2xl font-semibold text-gray-800 dark:text-tm-dark-text bg-transparent border-none outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded transition-colors min-h-[48px] disabled:cursor-default"
+                    placeholder="0"
+                    className="w-full text-2xl font-semibold text-gray-800 dark:text-tm-dark-text bg-transparent border-none outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded transition-colors min-h-[48px] disabled:cursor-default placeholder:text-gray-300 dark:placeholder:text-tm-dark-muted/40"
                     value={cardRow[field]}
                     disabled={!canEdit}
                     onChange={e => update(cardSlotIdx, field, e.target.value)}
