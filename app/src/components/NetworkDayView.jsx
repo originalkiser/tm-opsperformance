@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { shopTotals } from '../utils/logMath'
+import { pmixTextCls, convTextCls, pmixCls, convCls } from '../utils/metricColors'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
@@ -63,7 +64,7 @@ function shopStats(rows) {
 
 // ── Expanded read-only hourly table ──────────────────────────────────────────
 
-function HourlyTable({ rows }) {
+function HourlyTable({ rows, thresholds }) {
   const qualifying = [...rows]
     .sort((a, b) => (a.time_slot > b.time_slot ? 1 : -1))
     .filter(r => r.employee_name || [
@@ -152,8 +153,8 @@ function HourlyTable({ rows }) {
                 {cell(toInt(row.net_members)    || '')}
                 {cell(ms  > 0 ? ms   : '', true)}
                 {cell(opp > 0 ? opp  : '', true)}
-                {cell(pmix,                      true)}
-                {cell(conv,                      true)}
+                <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-mono text-xs font-semibold ${pmix ? pmixCls(pmix, thresholds) : 'bg-tm-sky/30 dark:bg-tm-teal/10 dark:text-tm-dark-text'}`}>{pmix}</td>
+                <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-mono text-xs font-semibold ${conv ? convCls(conv, thresholds) : 'bg-tm-sky/30 dark:bg-tm-teal/10 dark:text-tm-dark-text'}`}>{conv}</td>
               </tr>
             )
           })}
@@ -166,8 +167,9 @@ function HourlyTable({ rows }) {
 // ── Shop card ─────────────────────────────────────────────────────────────────
 
 function ShopCard({ location, rows, expanded, onToggle }) {
-  const hasData = rows.length > 0
-  const stats   = hasData ? shopStats(rows) : null
+  const hasData    = rows.length > 0
+  const stats      = hasData ? shopStats(rows) : null
+  const thresholds = location.metric_thresholds
 
   const lastUpdated = stats
     ? formatTime(rows.reduce((max, r) =>
@@ -179,8 +181,8 @@ function ShopCard({ location, rows, expanded, onToggle }) {
     { label: 'Member Washes', value: stats?.totMW  || '—' },
     { label: 'Memberships',   value: stats?.totMS  || '—' },
     { label: 'Google',        value: stats?.totGR  || '—' },
-    { label: 'P-Mix',         value: stats?.pMix  ?? '—', accent: true },
-    { label: 'Conv',          value: stats?.conv  ?? '—', accent: true },
+    { label: 'P-Mix', value: stats?.pMix ?? '—', textCls: pmixTextCls(stats?.pMix, thresholds) },
+    { label: 'Conv',  value: stats?.conv ?? '—', textCls: convTextCls(stats?.conv, thresholds) },
   ]
 
   return (
@@ -200,16 +202,12 @@ function ShopCard({ location, rows, expanded, onToggle }) {
       {/* Totals row */}
       {hasData ? (
         <div className="px-4 py-3 grid grid-cols-3 sm:grid-cols-6 gap-2 border-b border-gray-100 dark:border-tm-dark-border">
-          {STATS.map(({ label, value, accent }) => (
+          {STATS.map(({ label, value, textCls }) => (
             <div key={label} className="text-center">
               <div className="text-[10px] font-brand uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-0.5">
                 {label}
               </div>
-              <div className={`text-sm font-bold font-brand ${
-                accent
-                  ? 'text-orange-700 dark:text-orange-300'
-                  : 'text-tm-blue dark:text-tm-dark-text'
-              }`}>
+              <div className={`text-sm font-bold font-brand ${textCls || 'text-tm-blue dark:text-tm-dark-text'}`}>
                 {value}
               </div>
             </div>
@@ -236,7 +234,7 @@ function ShopCard({ location, rows, expanded, onToggle }) {
       {/* Expanded hourly table */}
       {expanded && (
         <div className="border-t border-gray-100 dark:border-tm-dark-border">
-          <HourlyTable rows={rows} />
+          <HourlyTable rows={rows} thresholds={thresholds} />
         </div>
       )}
     </div>

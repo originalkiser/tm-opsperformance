@@ -38,6 +38,41 @@ export function pmixTotalsCls(valStr, thresholds) {
   return 'bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300'
 }
 
+// Text-only variants (no bg) — for inline values where only text color is needed
+export function pmixTextCls(valStr, thresholds) {
+  const n = parsePct(valStr)
+  if (isNaN(n) || !valStr) return 'text-orange-700 dark:text-orange-300'
+  const green = thresholds?.pmix_green ?? DEFAULT_THRESHOLDS.pmix_green
+  if (n >= green) return 'text-green-700 dark:text-green-300'
+  return 'text-orange-700 dark:text-orange-300'
+}
+
+export function convTextCls(valStr, thresholds) {
+  const n = parsePct(valStr)
+  if (isNaN(n) || !valStr) return 'text-orange-700 dark:text-orange-300'
+  const red    = thresholds?.conv_red    ?? DEFAULT_THRESHOLDS.conv_red
+  const yellow = thresholds?.conv_yellow ?? DEFAULT_THRESHOLDS.conv_yellow
+  if (n < red)    return 'text-red-600 dark:text-red-400'
+  if (n < yellow) return 'text-yellow-600 dark:text-yellow-300'
+  return 'text-green-700 dark:text-green-300'
+}
+
+// Hex colors for canvas/SVG (charts) — no dark mode, use on colored backgrounds
+export function pmixHex(value, thresholds) {
+  if (value == null) return '#9ca3af'
+  const green = thresholds?.pmix_green ?? DEFAULT_THRESHOLDS.pmix_green
+  return value >= green ? '#16a34a' : '#ea580c'
+}
+
+export function convHex(value, thresholds) {
+  if (value == null) return '#9ca3af'
+  const red    = thresholds?.conv_red    ?? DEFAULT_THRESHOLDS.conv_red
+  const yellow = thresholds?.conv_yellow ?? DEFAULT_THRESHOLDS.conv_yellow
+  if (value < red)    return '#dc2626'
+  if (value < yellow) return '#d97706'
+  return '#16a34a'
+}
+
 export function convTotalsCls(valStr, thresholds) {
   const n = parsePct(valStr)
   if (isNaN(n) || !valStr) return 'bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300'

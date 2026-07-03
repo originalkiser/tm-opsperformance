@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, Tooltip, CartesianGrid,
+  XAxis, YAxis, Tooltip, CartesianGrid, Cell,
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -10,7 +10,7 @@ import NavBar from '../components/NavBar'
 import NetworkDayView from '../components/NetworkDayView'
 import DateSelector, { computeDateRange, fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
 import { employeeDeltasByDay } from '../utils/logMath'
-import { pmixCls, pmixTotalsCls, convCls, convTotalsCls } from '../utils/metricColors'
+import { pmixCls, pmixTotalsCls, convCls, convTotalsCls, pmixHex, convHex } from '../utils/metricColors'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
@@ -461,10 +461,20 @@ const ChartTooltip = ({ active, payload, label, isPct }) => {
   )
 }
 
-function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', dark }) {
-  const axisColor = dark ? '#7A9BBF' : '#6B7280'
-  const gridColor = dark ? '#1E3A5F' : '#f0f0f0'
-  const hasData = data.some(d => d[dataKey] != null && d[dataKey] > 0)
+function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', dark, colorFn }) {
+  const axisColor  = dark ? '#7A9BBF' : '#6B7280'
+  const gridColor  = dark ? '#1E3A5F' : '#f0f0f0'
+  const lineStroke = colorFn ? (dark ? '#4b6175' : '#9ca3af') : color
+  const hasData    = data.some(d => d[dataKey] != null && d[dataKey] > 0)
+
+  const customDot = colorFn
+    ? (props) => {
+        const { cx, cy, value } = props
+        if (value == null) return null
+        const c = colorFn(value)
+        return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={4} fill={c} stroke={c} strokeWidth={1} />
+      }
+    : { r: 3, fill: color }
 
   return (
     <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border shadow-sm p-4">
@@ -479,7 +489,7 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', d
               <XAxis dataKey="label" tick={{ fontSize: 9, fontFamily: 'Chakra Petch', fill: axisColor }} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} tickFormatter={v => isPct ? `${v}%` : v} />
               <Tooltip content={<ChartTooltip isPct={isPct} />} />
-              <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} dot={{ r: 3, fill: color }} connectNulls={false} />
+              <Line type="monotone" dataKey={dataKey} stroke={lineStroke} strokeWidth={2} dot={customDot} connectNulls={false} />
             </LineChart>
           ) : (
             <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
@@ -487,7 +497,11 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', d
               <XAxis dataKey="label" tick={{ fontSize: 9, fontFamily: 'Chakra Petch', fill: axisColor }} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} />
               <Tooltip content={<ChartTooltip isPct={isPct} />} />
-              <Bar dataKey={dataKey} fill={color} radius={[2, 2, 0, 0]} />
+              <Bar dataKey={dataKey} fill={colorFn ? undefined : color} radius={[2, 2, 0, 0]}>
+                {colorFn && data.map((entry, i) => (
+                  <Cell key={i} fill={colorFn(entry[dataKey])} />
+                ))}
+              </Bar>
             </BarChart>
           )}
         </ResponsiveContainer>
@@ -530,6 +544,9 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
   const navyColor     = dark ? '#D6E4F0' : '#1A3555'
   const trendLocation = locations.find(l => l.id === trendLocId)
   const selectCls     = "border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
+  const thresholds    = trendLocation?.metric_thresholds
+  const convColorFn   = (v) => convHex(v, thresholds)
+  const pmixColorFn   = (v) => pmixHex(v, thresholds)
 
   return (
     <div>
@@ -551,10 +568,10 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           <MiniChart title="Daily Memberships Sold" data={chartData} dataKey="ms"         color={TEAL}      dark={dark} />
-          <MiniChart title="Daily Conversion %"     data={chartData} dataKey="conversion" color={ORANGE}    dark={dark} type="line" isPct />
+          <MiniChart title="Daily Conversion %"     data={chartData} dataKey="conversion" color={ORANGE}    dark={dark} type="line" isPct colorFn={convColorFn} />
           <MiniChart title="Daily Google Reviews"   data={chartData} dataKey="gr"         color={navyColor} dark={dark} />
           <MiniChart title="Daily Total Washes"     data={chartData} dataKey="tw"         color={navyColor} dark={dark} />
-          <MiniChart title="Daily P-Mix %"          data={chartData} dataKey="pmix"       color={ORANGE}    dark={dark} type="line" isPct />
+          <MiniChart title="Daily P-Mix %"          data={chartData} dataKey="pmix"       color={ORANGE}    dark={dark} type="line" isPct colorFn={pmixColorFn} />
           <MiniChart title="Daily Member Washes"    data={chartData} dataKey="mw"         color={TEAL}      dark={dark} />
         </div>
       )}
