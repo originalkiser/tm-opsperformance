@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { employeeDeltasByDay } from '../utils/logMath'
+import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
@@ -51,7 +52,7 @@ const IMG_COLS = [
 ]
 
 // rows come directly from DailyLogTable's live state — no fetch needed
-export default function EmployeeSummary({ rows = [], opportunitiesFormula = 'detailed', locationName, selectedDate }) {
+export default function EmployeeSummary({ rows = [], opportunitiesFormula = 'detailed', locationName, selectedDate, metricThresholds }) {
   const [copyFeedback, setCopyFeedback] = useState(false)
 
   const namedRows = rows.filter(r => r.employee_name?.trim())
@@ -244,8 +245,8 @@ export default function EmployeeSummary({ rows = [], opportunitiesFormula = 'det
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{emp.nm  || ''}</td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{emp.btr || ''}</td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{emp.bst || ''}</td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 font-semibold">{emp.p_mix}</td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 font-semibold">{emp.conversion}</td>
+                  <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${pmixCls(emp.p_mix, metricThresholds)}`}>{emp.p_mix}</td>
+                  <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${convCls(emp.conversion, metricThresholds)}`}>{emp.conversion}</td>
                 </tr>
               ))}
               <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
@@ -258,8 +259,8 @@ export default function EmployeeSummary({ rows = [], opportunitiesFormula = 'det
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{totals.nm  || ''}</td>
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{totals.btr || ''}</td>
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{totals.bst || ''}</td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">{totals.p_mix}</td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">{totals.conversion}</td>
+                <td className={`border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${pmixTotalsCls(totals.p_mix, metricThresholds)}`}>{totals.p_mix}</td>
+                <td className={`border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${convTotalsCls(totals.conversion, metricThresholds)}`}>{totals.conversion}</td>
               </tr>
             </tbody>
           </table>

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import EmployeeSelect from './EmployeeSelect'
 import { shopTotals } from '../utils/logMath'
+import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
 
 const TIME_SLOTS = [
   { label: '8:00 AM',  value: '08:00:00' },
@@ -263,6 +264,7 @@ export default function DailyLogTable({
   opportunitiesFormula = 'detailed',
   onRowsChange,
   profile,
+  metricThresholds,
 }) {
   const [rows, setRows]       = useState(TIME_SLOTS.map(s => emptyRow(s.value)))
   const [employees, setEmps]  = useState([])
@@ -1092,10 +1094,10 @@ export default function DailyLogTable({
                     <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-sky/30 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-semibold font-brand">
                       {opportunities > 0 ? opportunities : ''}
                     </td>
-                    <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 font-semibold">
+                    <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${pmixCls(p_mix, metricThresholds)}`}>
                       {p_mix}
                     </td>
-                    <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 font-semibold">
+                    <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${convCls(conversion, metricThresholds)}`}>
                       {conversion}
                     </td>
                   </tr>
@@ -1116,10 +1118,10 @@ export default function DailyLogTable({
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-teal/20 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-brand">
                   {totComputed.opportunities > 0 ? totComputed.opportunities : ''}
                 </td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">
+                <td className={`border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${pmixTotalsCls(totComputed.p_mix, metricThresholds)}`}>
                   {totComputed.p_mix}
                 </td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300">
+                <td className={`border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${convTotalsCls(totComputed.conversion, metricThresholds)}`}>
                   {totComputed.conversion}
                 </td>
               </tr>

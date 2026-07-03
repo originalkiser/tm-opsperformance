@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { shopTotals, employeeDeltasByDay } from '../utils/logMath'
+import { pmixCls, convCls } from '../utils/metricColors'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 const pct   = (num, den) => den > 0 ? (num / den * 100).toFixed(1) + '%' : '—'
@@ -11,7 +12,7 @@ function MedalIcon({ rank }) {
   return <span className="text-gray-300 dark:text-tm-dark-muted text-xs font-bold w-5 text-center">{rank}</span>
 }
 
-export default function DailySnapshot({ rows = [], date, locationName, opportunitiesFormula = 'detailed' }) {
+export default function DailySnapshot({ rows = [], date, locationName, opportunitiesFormula = 'detailed', metricThresholds }) {
   const [copyFeedback, setCopyFeedback] = useState(false)
 
   const namedRows = rows.filter(r => r.employee_name?.trim())
@@ -49,6 +50,22 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
     : Math.max(0, totTW - totMW + totMS)
   const totConv = pct(totMS, totOpp)
   const totPmix = pct(totBetter + totBest, totMS)
+
+  const convTextCls = (v) => {
+    const n = parseFloat(v)
+    if (isNaN(n)) return 'text-orange-700 dark:text-orange-300'
+    const red    = metricThresholds?.conv_red    ?? 7
+    const yellow = metricThresholds?.conv_yellow ?? 10
+    if (n < red)    return 'text-red-600 dark:text-red-400'
+    if (n < yellow) return 'text-yellow-600 dark:text-yellow-300'
+    return 'text-green-700 dark:text-green-300'
+  }
+  const pmixTextCls = (v) => {
+    const n = parseFloat(v)
+    if (isNaN(n)) return 'text-orange-700 dark:text-orange-300'
+    const green = metricThresholds?.pmix_green ?? 60
+    return n >= green ? 'text-green-700 dark:text-green-300' : 'text-orange-700 dark:text-orange-300'
+  }
 
   const displayDate = date
     ? new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
@@ -292,29 +309,25 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
         </h3>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: 'Total Washes',     value: totTW  || '—', accent: false },
-            { label: 'Member Washes',    value: totMW  || '—', accent: false },
-            { label: 'Memberships Sold', value: totMS  || '—', accent: false },
-            { label: 'Google Reviews',   value: totGR  || '—', accent: false },
-            { label: 'Conversion',       value: totConv,        accent: true  },
-            { label: 'P-Mix',            value: totPmix,        accent: true  },
-          ].map(({ label, value, accent }) => (
+            { label: 'Total Washes',     value: totTW  || '—' },
+            { label: 'Member Washes',    value: totMW  || '—' },
+            { label: 'Memberships Sold', value: totMS  || '—' },
+            { label: 'Google Reviews',   value: totGR  || '—' },
+            { label: 'Conversion',       value: totConv, metricCls: convCls(totConv, metricThresholds) },
+            { label: 'P-Mix',            value: totPmix, metricCls: pmixCls(totPmix, metricThresholds) },
+          ].map(({ label, value, metricCls }) => (
             <div
               key={label}
-              className={`rounded-lg p-3 ${
-                accent
-                  ? 'bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/30'
-                  : 'bg-tm-sky/20 dark:bg-tm-teal/10 border border-tm-sky/30 dark:border-tm-teal/20'
+              className={`rounded-lg p-3 border ${
+                metricCls
+                  ? metricCls + ' border-current/20'
+                  : 'bg-tm-sky/20 dark:bg-tm-teal/10 border-tm-sky/30 dark:border-tm-teal/20'
               }`}
             >
               <div className="text-[10px] font-brand font-semibold uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted mb-0.5">
                 {label}
               </div>
-              <div className={`text-xl font-bold font-brand ${
-                accent
-                  ? 'text-orange-700 dark:text-orange-300'
-                  : 'text-tm-blue dark:text-tm-teal'
-              }`}>
+              <div className={`text-xl font-bold font-brand ${metricCls ? '' : 'text-tm-blue dark:text-tm-teal'}`}>
                 {value}
               </div>
             </div>
@@ -347,10 +360,10 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
                   </div>
                   <div className="flex gap-3 mt-0.5 flex-wrap">
                     <span className="text-[10px] text-gray-500 dark:text-tm-dark-muted font-brand">
-                      Conv: <span className="font-semibold text-orange-700 dark:text-orange-300">{emp.conversion}</span>
+                      Conv: <span className={`font-semibold ${convTextCls(emp.conversion)}`}>{emp.conversion}</span>
                     </span>
                     <span className="text-[10px] text-gray-500 dark:text-tm-dark-muted font-brand">
-                      P-Mix: <span className="font-semibold text-orange-700 dark:text-orange-300">{emp.pmix}</span>
+                      P-Mix: <span className={`font-semibold ${pmixTextCls(emp.pmix)}`}>{emp.pmix}</span>
                     </span>
                     {emp.gr > 0 && (
                       <span className="text-[10px] text-gray-500 dark:text-tm-dark-muted font-brand">

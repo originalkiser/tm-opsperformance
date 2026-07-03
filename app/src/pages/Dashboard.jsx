@@ -244,6 +244,7 @@ export default function Dashboard() {
                   opportunitiesFormula={opportunitiesFormula}
                   onRowsChange={setLiveRows}
                   profile={profile}
+                  metricThresholds={location?.metric_thresholds}
                 />
                 <div className="mt-8 pt-4 border-t border-gray-100 dark:border-tm-dark-border">
                   <EmployeeSummary
@@ -251,6 +252,7 @@ export default function Dashboard() {
                     opportunitiesFormula={opportunitiesFormula}
                     locationName={location?.name}
                     selectedDate={selectedDate}
+                    metricThresholds={location?.metric_thresholds}
                   />
                 </div>
               </div>
@@ -261,6 +263,7 @@ export default function Dashboard() {
                   date={selectedDate}
                   locationName={location?.name}
                   opportunitiesFormula={opportunitiesFormula}
+                  metricThresholds={location?.metric_thresholds}
                 />
               </div>
 
@@ -270,6 +273,7 @@ export default function Dashboard() {
                   dateStart={dateRange.start}
                   dateEnd={dateRange.end}
                   opportunitiesFormula={opportunitiesFormula}
+                  metricThresholds={location?.metric_thresholds}
                 />
               </div>
             </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { shopTotals, employeeDeltasByDay } from '../utils/logMath'
+import { pmixCls, pmixTotalsCls, convCls, convTotalsCls } from '../utils/metricColors'
 
 const toInt = (v) => parseInt(v) || 0
 const pct   = (num, den) => den > 0 ? (num / den * 100).toFixed(1) + '%' : ''
@@ -53,7 +54,7 @@ function fmtDay(dateStr) {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' })
 }
 
-export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportunitiesFormula = 'detailed' }) {
+export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportunitiesFormula = 'detailed', metricThresholds }) {
   const [logs, setLogs]       = useState([])
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
@@ -307,11 +308,11 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
                     )}
                   </td>
                   {activeEmployees.map(emp => (
-                    <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
+                    <td key={emp} className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold font-brand ${convCls(empDayConv(dateStr, emp), metricThresholds)}`}>
                       {empDayConv(dateStr, emp)}
                     </td>
                   ))}
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 font-semibold font-brand">
+                  <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold font-brand ${convCls(shopDayConv(dateStr), metricThresholds)}`}>
                     {shopDayConv(dateStr)}
                   </td>
                 </tr>
@@ -320,7 +321,7 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
                 cells={activeEmployees.map(emp => empColConv(emp))}
                 extraCells={[{
                   val: pct(grMS, grOpp),
-                  cls: 'bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300',
+                  cls: convTotalsCls(pct(grMS, grOpp), metricThresholds),
                 }]}
               />
             </tbody>
@@ -384,11 +385,11 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
                     )}
                   </td>
                   {activeEmployees.map(emp => (
-                    <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center text-orange-700 dark:text-orange-300 font-semibold font-brand">
+                    <td key={emp} className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold font-brand ${pmixCls(empDayPmix(dateStr, emp), metricThresholds)}`}>
                       {empDayPmix(dateStr, emp)}
                     </td>
                   ))}
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300 font-semibold font-brand">
+                  <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold font-brand ${pmixCls(shopDayPmix(dateStr), metricThresholds)}`}>
                     {shopDayPmix(dateStr)}
                   </td>
                 </tr>
@@ -397,7 +398,7 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
                 cells={activeEmployees.map(emp => empColPmix(emp))}
                 extraCells={[{
                   val: pct(grPrem, grMS),
-                  cls: 'bg-orange-100 dark:bg-orange-900/20 text-orange-800 dark:text-orange-300',
+                  cls: pmixTotalsCls(pct(grPrem, grMS), metricThresholds),
                 }]}
               />
             </tbody>
