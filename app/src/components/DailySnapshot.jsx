@@ -86,13 +86,20 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
     const C = {
       navy: '#1B3A5C', teal: '#4DBDB5', white: '#FFFFFF',
       tealLight: '#EEF9F8', tealBorder: '#C8EAE8', tealText: '#1E3A8A',
-      orangeLight: '#FFF3E8', orangeBorder: '#FED7AA', orangeText: '#92400E',
       body: '#1F2937', muted: '#6B7280',
       sectionBg: '#FFFFFF', border: '#E5E7EB',
       pageBg: '#F3F4F6',
       gold: '#FEF3C7', goldBorder: '#FDE68A',
       rowBg: '#F9FAFB',
     }
+
+    const th = metricThresholds
+    const pmixBg  = (v) => { const n = parseFloat(v); const g = th?.pmix_green ?? 60; return !isNaN(n) && n >= g ? '#DCFCE7' : '#FFF3E8' }
+    const pmixFg  = (v) => { const n = parseFloat(v); const g = th?.pmix_green ?? 60; return !isNaN(n) && n >= g ? '#166534' : '#92400E' }
+    const pmixBdr = (v) => { const n = parseFloat(v); const g = th?.pmix_green ?? 60; return !isNaN(n) && n >= g ? '#BBF7D0' : '#FED7AA' }
+    const convBg  = (v) => { const n = parseFloat(v); const r = th?.conv_red ?? 7, y = th?.conv_yellow ?? 10; if (isNaN(n)) return '#FFF3E8'; if (n < r) return '#FEE2E2'; if (n < y) return '#FEF9C3'; return '#DCFCE7' }
+    const convFg  = (v) => { const n = parseFloat(v); const r = th?.conv_red ?? 7, y = th?.conv_yellow ?? 10; if (isNaN(n)) return '#92400E'; if (n < r) return '#991B1B'; if (n < y) return '#854D0E'; return '#166534' }
+    const convBdr = (v) => { const n = parseFloat(v); const r = th?.conv_red ?? 7, y = th?.conv_yellow ?? 10; if (isNaN(n)) return '#FED7AA'; if (n < r) return '#FECACA'; if (n < y) return '#FEF08A'; return '#BBF7D0' }
 
     const rr = (ctx, x, y, w, h, r) => {
       ctx.beginPath()
@@ -165,12 +172,12 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
     ctx.fillText('OVERALL PERFORMANCE', PAD + 10, s1y + PAD + SEC_TITLE_H / 2)
 
     const statItems = [
-      { label: 'Total Washes',     value: totTW  || '—', accent: false },
-      { label: 'Member Washes',    value: totMW  || '—', accent: false },
-      { label: 'Memberships Sold', value: totMS  || '—', accent: false },
-      { label: 'Google Reviews',   value: totGR  || '—', accent: false },
-      { label: 'Conversion',       value: totConv,        accent: true  },
-      { label: 'P-Mix',            value: totPmix,        accent: true  },
+      { label: 'Total Washes',     value: totTW  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
+      { label: 'Member Washes',    value: totMW  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
+      { label: 'Memberships Sold', value: totMS  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
+      { label: 'Google Reviews',   value: totGR  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
+      { label: 'Conversion',       value: totConv,        bg: convBg(totConv),  bdr: convBdr(totConv),  fg: convFg(totConv)     },
+      { label: 'P-Mix',            value: totPmix,        bg: pmixBg(totPmix),  bdr: pmixBdr(totPmix),  fg: pmixFg(totPmix)    },
     ]
 
     const statAreaX = PAD + 10
@@ -185,8 +192,8 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
       const sy  = statStartY + row * (STAT_H + STAT_GAP)
 
       rr(ctx, sx, sy, cellW, STAT_H, 6)
-      ctx.fillStyle   = stat.accent ? C.orangeLight : C.tealLight; ctx.fill()
-      ctx.strokeStyle = stat.accent ? C.orangeBorder : C.tealBorder
+      ctx.fillStyle   = stat.bg; ctx.fill()
+      ctx.strokeStyle = stat.bdr
       ctx.lineWidth   = 1; ctx.stroke()
 
       ctx.fillStyle    = C.muted
@@ -194,7 +201,7 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
       ctx.textAlign    = 'left'; ctx.textBaseline = 'top'
       ctx.fillText(stat.label.toUpperCase(), sx + 8, sy + 9)
 
-      ctx.fillStyle    = stat.accent ? C.orangeText : C.tealText
+      ctx.fillStyle    = stat.fg
       ctx.font         = `bold 22px ${FONT}`
       ctx.textBaseline = 'bottom'
       ctx.fillText(String(stat.value), sx + 8, sy + STAT_H - 8)
@@ -241,11 +248,22 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
         ctx.textAlign    = 'left'; ctx.textBaseline = 'middle'
         ctx.fillText(emp.name, empAreaX + 44, ey + EMP_H / 2 - 9)
 
-        // Sub-stats
-        const sub = [`Conv: ${emp.conversion}`, `P-Mix: ${emp.pmix}`, emp.gr > 0 ? `Reviews: ${emp.gr}` : null].filter(Boolean).join('  ·  ')
-        ctx.fillStyle    = C.muted
-        ctx.font         = `9px ${FONT}`
-        ctx.fillText(sub, empAreaX + 44, ey + EMP_H / 2 + 9)
+        // Sub-stats with conditional coloring for Conv and P-Mix
+        ctx.font = `9px ${FONT}`
+        ctx.textAlign = 'left'
+        const subParts = [
+          { text: 'Conv: ', color: C.muted },
+          { text: emp.conversion, color: convFg(emp.conversion) },
+          { text: '  ·  P-Mix: ', color: C.muted },
+          { text: emp.pmix, color: pmixFg(emp.pmix) },
+          ...(emp.gr > 0 ? [{ text: '  ·  Reviews: ', color: C.muted }, { text: String(emp.gr), color: C.muted }] : []),
+        ]
+        let subX = empAreaX + 44
+        for (const part of subParts) {
+          ctx.fillStyle = part.color
+          ctx.fillText(part.text, subX, ey + EMP_H / 2 + 9)
+          subX += ctx.measureText(part.text).width
+        }
 
         // MS count (right side)
         ctx.fillStyle    = C.tealText
