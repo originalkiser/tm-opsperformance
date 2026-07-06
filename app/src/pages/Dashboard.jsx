@@ -33,7 +33,11 @@ export default function Dashboard() {
 
   const [selectedDate, setSelectedDate] = useState(() => {
     const saved = localStorage.getItem('tm_selected_date')
-    return saved || todayStr()
+    const today = todayStr()
+    // If the saved date is in the past, always start on today so overnight
+    // browsers don't carry yesterday's selection into the new day.
+    if (saved && saved >= today) return saved
+    return today
   })
 
   const [activeTab, setActiveTab] = useState(
