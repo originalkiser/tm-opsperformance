@@ -89,6 +89,79 @@ const parsePct = (v) => parseFloat(v) || 0
 
 const thCls = 'px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide cursor-pointer select-none hover:bg-tm-navy/80 dark:hover:bg-tm-dark-border/60 transition-colors whitespace-nowrap'
 
+// ── Market multi-select ───────────────────────────────────────────────────────
+
+function MarketMultiSelect({ markets, selected, onChange }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const allSelected  = selected === null || selected.length === markets.length
+  const noneSelected = selected !== null && selected.length === 0
+
+  const label = allSelected
+    ? 'All Markets'
+    : noneSelected
+      ? 'No Markets'
+      : selected.length === 1
+        ? selected[0]
+        : `${selected.length} of ${markets.length} markets`
+
+  const toggleAll = () => { allSelected ? onChange([]) : onChange(null) }
+
+  const toggle = (market) => {
+    const current = selected === null ? [...markets] : selected
+    if (current.includes(market)) {
+      onChange(current.filter(m => m !== market))
+    } else {
+      const next = [...current, market]
+      onChange(next.length === markets.length ? null : next)
+    }
+  }
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text hover:border-tm-teal focus:outline-none focus:ring-2 focus:ring-tm-teal transition-colors font-brand"
+      >
+        <span>{label}</span>
+        <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}>
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd"/>
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg min-w-[200px] py-1">
+          <label className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors">
+            <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-tm-teal w-3.5 h-3.5" />
+            <span className="text-xs font-brand font-semibold text-gray-700 dark:text-tm-dark-text">All Markets</span>
+          </label>
+          <div className="border-t border-gray-100 dark:border-tm-dark-border my-1" />
+          {markets.map(market => (
+            <label key={market} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors">
+              <input
+                type="checkbox"
+                checked={allSelected || (selected !== null && selected.includes(market))}
+                onChange={() => toggle(market)}
+                className="accent-tm-teal w-3.5 h-3.5"
+              />
+              <span className="text-xs font-brand text-gray-700 dark:text-tm-dark-text">{market}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Shop multi-select ─────────────────────────────────────────────────────────
 
 function ShopMultiSelect({ locations, selected, onChange }) {
@@ -653,19 +726,24 @@ export default function Insights() {
   const [dark]        = useDarkModeCtx()
   const [logs, setLogs]                     = useState([])
   const [loading, setLoading]               = useState(true)
-  const [selectedShops, setSelectedShops]   = useState(null)
-  const [trendLocId, setTrendLocId]         = useState('') // '' = all visible locations
-  const [selectedMarket, setSelectedMarket] = useState(
-    () => localStorage.getItem('tm_market_filter') || ''
-  )
+  const [selectedShops, setSelectedShops]     = useState(null)
+  const [trendLocId, setTrendLocId]           = useState('') // '' = all visible locations
+  const [selectedMarkets, setSelectedMarkets] = useState(() => {
+    try {
+      const raw = localStorage.getItem('tm_market_filter')
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : null
+    } catch { return null }
+  })
 
   const [dateRange, setDateRange] = useState(() => loadSavedDateRange('tm_insights_date_range'))
 
   const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
 
-  const marketLocations = selectedMarket
-    ? locations.filter(l => l.market === selectedMarket)
-    : locations
+  const marketLocations = selectedMarkets === null
+    ? locations
+    : locations.filter(l => selectedMarkets.includes(l.market))
 
   useEffect(() => {
     if (locations.length) fetchData()
@@ -673,7 +751,7 @@ export default function Insights() {
 
   useEffect(() => {
     setSelectedShops(null)
-  }, [selectedMarket])
+  }, [selectedMarkets])
 
   useEffect(() => {
     if (!trendLocId) return // '' = all locations, always valid
@@ -726,17 +804,14 @@ export default function Insights() {
           <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Dashboard</h1>
           <div className="flex flex-wrap items-center gap-2">
             {markets.length > 0 && (
-              <select
-                value={selectedMarket}
-                onChange={e => {
-                  setSelectedMarket(e.target.value)
-                  localStorage.setItem('tm_market_filter', e.target.value)
+              <MarketMultiSelect
+                markets={markets}
+                selected={selectedMarkets}
+                onChange={v => {
+                  setSelectedMarkets(v)
+                  localStorage.setItem('tm_market_filter', JSON.stringify(v))
                 }}
-                className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal transition-colors font-brand"
-              >
-                <option value="">All Markets</option>
-                {markets.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
+              />
             )}
             {marketLocations.length > 1 && (
               <ShopMultiSelect locations={marketLocations} selected={selectedShops} onChange={setSelectedShops} />
