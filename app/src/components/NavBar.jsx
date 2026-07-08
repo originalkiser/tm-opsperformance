@@ -61,7 +61,7 @@ export default function NavBar() {
             </Link>
           ) : (
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/insights')}
               className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-blue/60 border border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white transition-colors font-brand font-semibold text-xs tracking-wide"
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">

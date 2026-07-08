@@ -51,7 +51,7 @@ export default function App() {
             <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route
               path="/insights"
-              element={<ProtectedRoute><ManagerRoute><Insights /></ManagerRoute></ProtectedRoute>}
+              element={<ProtectedRoute><Insights /></ProtectedRoute>}
             />
             <Route
               path="/admin"

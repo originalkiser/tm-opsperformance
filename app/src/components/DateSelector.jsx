@@ -72,7 +72,7 @@ export function loadSavedDateRange(key) {
       }
     }
   } catch {}
-  return computeDateRange('today')
+  return computeDateRange('month_to_date')
 }
 
 // Save a date range to localStorage with a timestamp.
@@ -93,9 +93,18 @@ const PRESETS = [
 
 export default function DateSelector({ dateRange, onChange }) {
   const [open, setOpen]               = useState(false)
+  const [dropdownAlign, setDropdownAlign] = useState('right')
   const [customStart, setCustomStart] = useState(dateRange?.start || '')
   const [customEnd,   setCustomEnd]   = useState(dateRange?.end   || '')
   const ref = useRef(null)
+
+  const handleToggle = () => {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect()
+      setDropdownAlign(window.innerWidth - rect.right >= 320 ? 'left' : 'right')
+    }
+    setOpen(o => !o)
+  }
 
   useEffect(() => {
     const handler = (e) => {
@@ -129,7 +138,7 @@ export default function DateSelector({ dateRange, onChange }) {
     <div ref={ref} className="relative">
       {/* Trigger */}
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={handleToggle}
         className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-gray-300 dark:border-tm-dark-border bg-white dark:bg-tm-dark-card text-sm font-brand text-gray-700 dark:text-tm-dark-text hover:border-tm-teal dark:hover:border-tm-teal transition-colors whitespace-nowrap"
       >
         <span className="font-semibold">{currentPresetLabel}</span>
@@ -143,7 +152,7 @@ export default function DateSelector({ dateRange, onChange }) {
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl shadow-2xl py-1 min-w-[300px]">
+        <div className={`absolute ${dropdownAlign === 'left' ? 'left-0' : 'right-0'} top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl shadow-2xl py-1 min-w-[300px]`}>
 
           {/* Preset options */}
           {PRESETS.map(p => {

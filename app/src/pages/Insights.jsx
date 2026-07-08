@@ -516,35 +516,69 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', d
 }
 
 function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
-  const dayMap = {}
-  logs.forEach(r => {
-    if (!dayMap[r.log_date]) dayMap[r.log_date] = []
-    dayMap[r.log_date].push(r)
-  })
-
-  const chartData = Object.entries(dayMap)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, rows]) => {
-      const d = new Date(date + 'T00:00:00')
-      const label = `${d.getMonth() + 1}/${d.getDate()}`
-      const withData = rows.filter(r =>
-        toInt(r.total_washes) > 0 || toInt(r.memberships_sold) > 0
-      )
-      const src = withData.length ? withData : rows
-      const r   = src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
-      const tw  = toInt(r.total_washes)
-      const mw  = toInt(r.member_washes)
-      const ms  = toInt(r.memberships_sold)
-      const opp = toInt(r.opportunities)
-      const gr  = toInt(r.google_reviews)
-      const btr = toInt(r.better)
-      const bst = toInt(r.best)
-      return {
-        label, tw, mw, ms, gr,
-        conversion: opp > 0 ? parseFloat((ms         / opp * 100).toFixed(1)) : null,
-        pmix:       ms  > 0 ? parseFloat(((btr + bst) / ms  * 100).toFixed(1)) : null,
-      }
-    })
+  // For a single location: use hourly rows as-is (last row = day total).
+  // For all locations: reduce to one row per (location, date) then sum across locations.
+  const chartData = (() => {
+    if (trendLocId) {
+      // Single location — existing logic
+      const dayMap = {}
+      logs.forEach(r => {
+        if (!dayMap[r.log_date]) dayMap[r.log_date] = []
+        dayMap[r.log_date].push(r)
+      })
+      return Object.entries(dayMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, rows]) => {
+          const d = new Date(date + 'T00:00:00')
+          const withData = rows.filter(r => toInt(r.total_washes) > 0 || toInt(r.memberships_sold) > 0)
+          const src = withData.length ? withData : rows
+          const r = src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
+          const tw = toInt(r.total_washes), mw = toInt(r.member_washes)
+          const ms = toInt(r.memberships_sold), opp = toInt(r.opportunities)
+          const gr = toInt(r.google_reviews), btr = toInt(r.better), bst = toInt(r.best)
+          return {
+            label: `${d.getMonth() + 1}/${d.getDate()}`, tw, mw, ms, gr,
+            conversion: opp > 0 ? parseFloat((ms / opp * 100).toFixed(1)) : null,
+            pmix:       ms  > 0 ? parseFloat(((btr + bst) / ms * 100).toFixed(1)) : null,
+          }
+        })
+    } else {
+      // All locations — get latest row per (location, date) then sum across locations per date
+      const locDateMap = {}
+      logs.forEach(r => {
+        const key = `${r.location_id}::${r.log_date}`
+        if (!locDateMap[key]) locDateMap[key] = []
+        locDateMap[key].push(r)
+      })
+      const bestRows = Object.values(locDateMap).map(rows => {
+        const withData = rows.filter(r => toInt(r.total_washes) > 0 || toInt(r.memberships_sold) > 0)
+        const src = withData.length ? withData : rows
+        return src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
+      })
+      const dateMap = {}
+      bestRows.forEach(r => {
+        if (!dateMap[r.log_date]) dateMap[r.log_date] = []
+        dateMap[r.log_date].push(r)
+      })
+      return Object.entries(dateMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, rows]) => {
+          const d = new Date(date + 'T00:00:00')
+          const tw  = rows.reduce((s, r) => s + toInt(r.total_washes),    0)
+          const mw  = rows.reduce((s, r) => s + toInt(r.member_washes),   0)
+          const ms  = rows.reduce((s, r) => s + toInt(r.memberships_sold),0)
+          const opp = rows.reduce((s, r) => s + toInt(r.opportunities),   0)
+          const gr  = rows.reduce((s, r) => s + toInt(r.google_reviews),  0)
+          const btr = rows.reduce((s, r) => s + toInt(r.better),          0)
+          const bst = rows.reduce((s, r) => s + toInt(r.best),            0)
+          return {
+            label: `${d.getMonth() + 1}/${d.getDate()}`, tw, mw, ms, gr,
+            conversion: opp > 0 ? parseFloat((ms / opp * 100).toFixed(1)) : null,
+            pmix:       ms  > 0 ? parseFloat(((btr + bst) / ms * 100).toFixed(1)) : null,
+          }
+        })
+    }
+  })()
 
   const navyColor     = dark ? '#D6E4F0' : '#1A3555'
   const trendLocation = locations.find(l => l.id === trendLocId)
@@ -558,11 +592,12 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
       {locations.length > 1 && (
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <span className="text-sm text-gray-500 dark:text-tm-dark-muted">
-            {trendLocation ? trendLocation.name : ''}
+            {trendLocation ? trendLocation.name : 'All Shops'}
           </span>
           <div className="flex items-center gap-2">
             <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Location:</label>
             <select value={trendLocId} onChange={e => onTrendLocChange(e.target.value)} className={selectCls}>
+              <option value="">All Shops</option>
               {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </div>
@@ -619,7 +654,7 @@ export default function Insights() {
   const [logs, setLogs]                     = useState([])
   const [loading, setLoading]               = useState(true)
   const [selectedShops, setSelectedShops]   = useState(null)
-  const [trendLocId, setTrendLocId]         = useState('')
+  const [trendLocId, setTrendLocId]         = useState('') // '' = all visible locations
   const [selectedMarket, setSelectedMarket] = useState(
     () => localStorage.getItem('tm_market_filter') || ''
   )
@@ -633,12 +668,6 @@ export default function Insights() {
     : locations
 
   useEffect(() => {
-    if (locations.length) {
-      if (!trendLocId) setTrendLocId(locations[0]?.id ?? '')
-    }
-  }, [locations])
-
-  useEffect(() => {
     if (locations.length) fetchData()
   }, [locations, dateRange])
 
@@ -647,12 +676,12 @@ export default function Insights() {
   }, [selectedMarket])
 
   useEffect(() => {
-    if (!trendLocId) return
+    if (!trendLocId) return // '' = all locations, always valid
     const visible = selectedShops === null
       ? marketLocations
       : marketLocations.filter(l => selectedShops.includes(l.id))
     if (!visible.find(l => l.id === trendLocId)) {
-      setTrendLocId(visible[0]?.id ?? '')
+      setTrendLocId('') // fall back to "all" when selected location leaves the visible set
     }
   }, [selectedShops, selectedMarket])
 
@@ -683,16 +712,17 @@ export default function Insights() {
     return allLogs.filter(r => locIds.includes(r.location_id))
   }
 
-  const trendLogs  = logs.filter(r => r.location_id === trendLocId)
+  const trendLogs  = trendLocId ? logs.filter(r => r.location_id === trendLocId) : filterLogs(logs)
   const rangeLabel = fmtDateRange(dateRange.start, dateRange.end)
   const cardCls    = "bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border"
 
   return (
     <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
-      <div className="max-w-screen-2xl mx-auto px-4 py-6">
 
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+      {/* Sticky header — always visible while scrolling */}
+      <div className="sticky top-0 z-30 bg-tm-cream dark:bg-tm-dark-bg border-b border-gray-200 dark:border-tm-dark-border shadow-sm">
+        <div className="max-w-screen-2xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Dashboard</h1>
           <div className="flex flex-wrap items-center gap-2">
             {markets.length > 0 && (
@@ -714,7 +744,9 @@ export default function Insights() {
             <DateSelector dateRange={dateRange} onChange={handleDateRangeChange} />
           </div>
         </div>
+      </div>
 
+      <div className="max-w-screen-2xl mx-auto px-4 py-6">
         {loading ? (
           <div className={`${cardCls} p-12 text-center text-gray-400 dark:text-tm-dark-muted`}>Loading…</div>
         ) : (
