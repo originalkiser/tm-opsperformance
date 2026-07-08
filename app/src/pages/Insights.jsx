@@ -761,7 +761,7 @@ export default function Insights() {
     if (!visible.find(l => l.id === trendLocId)) {
       setTrendLocId('') // fall back to "all" when selected location leaves the visible set
     }
-  }, [selectedShops, selectedMarket])
+  }, [selectedShops, selectedMarkets])
 
   const fetchData = async () => {
     setLoading(true)
