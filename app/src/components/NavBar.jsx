@@ -61,7 +61,7 @@ export default function NavBar() {
             </Link>
           ) : (
             <button
-              onClick={() => { localStorage.setItem('tm_active_tab', 'snapshot'); navigate('/') }}
+              onClick={() => navigate('/')}
               className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-blue/60 border border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white transition-colors font-brand font-semibold text-xs tracking-wide"
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
@@ -73,7 +73,7 @@ export default function NavBar() {
 
           {/* Shop Entry — everyone */}
           <button
-            onClick={() => { localStorage.setItem('tm_active_tab', 'daily'); navigate('/') }}
+            onClick={() => navigate('/')}
             className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-teal text-tm-navy hover:brightness-110 transition-colors font-brand font-bold text-xs tracking-wide"
           >
             <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
