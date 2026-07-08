@@ -830,7 +830,7 @@ export default function Insights() {
 
             <Section badge="NETWORK" badgeCls="bg-tm-blue" subtitle="Day view across shops">
               <div className="mt-3">
-                <NetworkDayView locations={visibleLocations} date={dateRange.end > todayStr() ? todayStr() : dateRange.end} />
+                <NetworkDayView locations={visibleLocations} date={todayStr()} />
               </div>
             </Section>
 
