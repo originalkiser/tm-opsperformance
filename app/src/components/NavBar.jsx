@@ -48,8 +48,8 @@ export default function NavBar() {
             <span className="font-brand font-bold text-sm tracking-wide hidden sm:block">TM Operations</span>
           </Link>
 
-          {/* Dashboard — managers only */}
-          {isManager && (
+          {/* Dashboard — managers → Insights; store users → Snapshot tab */}
+          {isManager ? (
             <Link
               to="/insights"
               className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-blue/60 border border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white transition-colors font-brand font-semibold text-xs tracking-wide"
@@ -59,11 +59,21 @@ export default function NavBar() {
               </svg>
               Dashboard
             </Link>
+          ) : (
+            <button
+              onClick={() => { localStorage.setItem('tm_active_tab', 'snapshot'); navigate('/') }}
+              className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-blue/60 border border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white transition-colors font-brand font-semibold text-xs tracking-wide"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3zm5-4a1 1 0 011-1h2a1 1 0 011 1v7a1 1 0 01-1 1H8a1 1 0 01-1-1V7zm5-5a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V2z"/>
+              </svg>
+              My Dashboard
+            </button>
           )}
 
           {/* Shop Entry — everyone */}
           <button
-            onClick={() => navigate('/')}
+            onClick={() => { localStorage.setItem('tm_active_tab', 'daily'); navigate('/') }}
             className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-teal text-tm-navy hover:brightness-110 transition-colors font-brand font-bold text-xs tracking-wide"
           >
             <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
 import DateSelector, { computeDateRange, fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
@@ -24,6 +25,7 @@ function todayStr() {
 
 export default function Dashboard() {
   const { profile, locations } = useAuth()
+  const routerLocation = useLocation()
 
   const [selectedLocationId, setSelectedLocationId] = useState(
     () => localStorage.getItem('tm_selected_location') || null
@@ -70,6 +72,12 @@ export default function Dashboard() {
   useEffect(() => {
     localStorage.setItem('tm_active_tab', activeTab)
   }, [activeTab])
+
+  // Re-read active tab from localStorage on navigation (e.g. "My Dashboard" sets snapshot before navigating)
+  useEffect(() => {
+    const saved = localStorage.getItem('tm_active_tab')
+    if (saved) setActiveTab(saved)
+  }, [routerLocation])
 
   // Clamp selectedDate within the current dateRange
   useEffect(() => {
