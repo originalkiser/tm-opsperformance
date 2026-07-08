@@ -12,9 +12,10 @@ export const FIELDS = [
  */
 export function shopTotals(rows) {
   if (!rows || !rows.length) return null
-  const withData = rows.filter(r =>
-    r.employee_name?.trim() || FIELDS.some(f => toInt(r[f]) > 0)
-  )
+  // Only consider rows with at least one non-zero metric — a row with just an
+  // employee name and all zeros is not a real data point and should not shadow
+  // earlier rows that have actual numbers.
+  const withData = rows.filter(r => FIELDS.some(f => toInt(r[f]) > 0))
   if (!withData.length) return null
   return withData.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
 }
