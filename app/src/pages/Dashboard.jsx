@@ -88,6 +88,13 @@ export default function Dashboard() {
     }
   }, [locations])
 
+  // Auto-select the only available location (store users always have exactly one)
+  useEffect(() => {
+    if (!selectedLocationId && filteredLocations.length === 1) {
+      setSelectedLocationId(filteredLocations[0].id)
+    }
+  }, [filteredLocations, selectedLocationId])
+
   // Auto-select if only one location is visible
   useEffect(() => {
     if (filteredLocations.length === 1 && !selectedLocationId) {
