@@ -12,10 +12,10 @@ export const FIELDS = [
  */
 export function shopTotals(rows) {
   if (!rows || !rows.length) return null
-  // Only consider rows with at least one non-zero metric — a row with just an
-  // employee name and all zeros is not a real data point and should not shadow
-  // earlier rows that have actual numbers.
-  const withData = rows.filter(r => FIELDS.some(f => toInt(r[f]) > 0))
+  // A row is only considered complete if both total_washes and member_washes are
+  // non-zero. This prevents a newly-opened time slot with zeros from shadowing
+  // earlier rows that contain real wash counts.
+  const withData = rows.filter(r => toInt(r.total_washes) > 0 && toInt(r.member_washes) > 0)
   if (!withData.length) return null
   return withData.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
 }
