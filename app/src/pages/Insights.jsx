@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
 import NetworkDayView from '../components/NetworkDayView'
+import TmLoader from '../components/TmLoader'
 import DateSelector, { computeDateRange, fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
 import { employeeDeltasByDay } from '../utils/logMath'
 import { pmixCls, pmixTotalsCls, convCls, convTotalsCls, pmixHex, convHex } from '../utils/metricColors'
@@ -823,7 +824,7 @@ export default function Insights() {
 
       <div className="max-w-screen-2xl mx-auto px-4 py-6">
         {loading ? (
-          <div className={`${cardCls} p-12 text-center text-gray-400 dark:text-tm-dark-muted`}>Loading…</div>
+          <div className={`${cardCls} p-12 flex items-center justify-center`}><TmLoader /></div>
         ) : (
           <div className="space-y-4">
 

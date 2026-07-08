@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import EmployeeSelect from './EmployeeSelect'
+import TmLoader from './TmLoader'
 import { shopTotals } from '../utils/logMath'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
 
@@ -153,7 +154,7 @@ function EditEmployeesModal({ locationId, onClose, onRefresh }) {
           </button>
         </div>
         {loading ? (
-          <p className="text-sm text-gray-400 dark:text-tm-dark-muted">Loading…</p>
+          <div className="flex justify-center py-4"><TmLoader size={56} /></div>
         ) : (
           <div className="space-y-1 max-h-72 overflow-y-auto">
             {emps.map(emp => (

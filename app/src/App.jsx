@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
 import Insights from './pages/Insights'
 import UpdateBanner from './components/UpdateBanner'
+import TmLoader from './components/TmLoader'
 import { useVersionCheck } from './hooks/useVersionCheck'
 
 function ProtectedRoute({ children }) {
@@ -14,7 +15,7 @@ function ProtectedRoute({ children }) {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-tm-cream dark:bg-tm-dark-bg">
-        <div className="text-tm-blue dark:text-tm-dark-text text-sm font-brand font-medium tracking-wide">Loading…</div>
+        <TmLoader />
       </div>
     )
   }

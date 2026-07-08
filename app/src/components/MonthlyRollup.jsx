@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import TmLoader from './TmLoader'
 import { shopTotals, employeeDeltasByDay } from '../utils/logMath'
 import { pmixCls, pmixTotalsCls, convCls, convTotalsCls } from '../utils/metricColors'
 
@@ -138,8 +139,8 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
   }
 
   if (loading) return (
-    <div className="py-12 text-center text-gray-400 dark:text-tm-dark-muted text-sm font-brand">
-      Loading {rangeLabel}…
+    <div className="py-12 flex items-center justify-center">
+      <TmLoader />
     </div>
   )
   if (!logs.length) return (

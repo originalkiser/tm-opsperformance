@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { supabaseAdmin } from '../lib/supabaseAdmin'
 import { useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
+import TmLoader from '../components/TmLoader'
 import { DEFAULT_THRESHOLDS } from '../utils/metricColors'
 
 function generatePassword() {
@@ -228,7 +229,7 @@ export default function Admin() {
   if (loading) return (
     <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
-      <div className="flex items-center justify-center h-64 text-gray-400 dark:text-tm-dark-muted">Loading…</div>
+      <div className="flex items-center justify-center h-64"><TmLoader /></div>
     </div>
   )
 
