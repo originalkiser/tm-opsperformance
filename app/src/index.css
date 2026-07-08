@@ -23,7 +23,6 @@ input[type='number'] {
 .dark .tm-loader { color: #8ECFCB; }
 .tm-loader svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .tm-loader__line { animation: tm-loader-draw 2.6s ease-in-out infinite; }
-.tm-loader__mark { position: absolute; width: 62%; left: 50%; top: 55%; transform: translate(-50%, -50%); pointer-events: none; }
 @keyframes tm-loader-draw {
   0%,  6%   { stroke-dashoffset: 1; }
   46%, 54%  { stroke-dashoffset: 0; }

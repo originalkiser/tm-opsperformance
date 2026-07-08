@@ -1,5 +1,3 @@
-import tmLogo from '../assets/TM-Logo 1-1.png'
-
 export default function TmLoader({ size }) {
   return (
     <span
@@ -20,7 +18,6 @@ export default function TmLoader({ size }) {
           strokeDasharray="1 1"
         />
       </svg>
-      <img className="tm-loader__mark" src={tmLogo} alt="" />
     </span>
   )
 }
