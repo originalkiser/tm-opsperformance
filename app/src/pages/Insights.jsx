@@ -767,13 +767,24 @@ export default function Insights() {
   const fetchData = async () => {
     setLoading(true)
     const locIds = locations.map(l => l.id)
-    const { data } = await supabase
-      .from('daily_logs')
-      .select('*')
-      .in('location_id', locIds)
-      .gte('log_date', dateRange.start)
-      .lte('log_date', dateRange.end)
-    setLogs(data || [])
+    // Supabase caps each query at 1000 rows and truncates silently. Longer date
+    // ranges (month to date across all shops) exceed that, which made whole
+    // locations disappear from the tables. Page through until a short page.
+    const PAGE = 1000
+    const all = []
+    for (let from = 0; ; from += PAGE) {
+      const { data } = await supabase
+        .from('daily_logs')
+        .select('*')
+        .in('location_id', locIds)
+        .gte('log_date', dateRange.start)
+        .lte('log_date', dateRange.end)
+        .order('id')
+        .range(from, from + PAGE - 1)
+      if (data?.length) all.push(...data)
+      if (!data || data.length < PAGE) break
+    }
+    setLogs(all)
     setLoading(false)
   }
 
