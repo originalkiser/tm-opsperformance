@@ -12,6 +12,7 @@ import TmLoader from '../components/TmLoader'
 import DateSelector, { computeDateRange, fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
 import { employeeDeltasByDay } from '../utils/logMath'
 import { pmixCls, pmixTotalsCls, convCls, convTotalsCls, pmixHex, convHex } from '../utils/metricColors'
+import { exportCsv, exportXlsx, exportPdf } from '../utils/exportTable'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
@@ -90,36 +91,59 @@ const parsePct = (v) => parseFloat(v) || 0
 
 const thCls = 'px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide cursor-pointer select-none hover:bg-tm-navy/80 dark:hover:bg-tm-dark-border/60 transition-colors whitespace-nowrap'
 
-// ── CSV export ────────────────────────────────────────────────────────────────
+// ── Export menu (CSV / Excel / PDF) ───────────────────────────────────────────
 
-// Leading BOM so Excel opens the file as UTF-8.
-function downloadCsv(filename, headers, rows) {
-  const esc = (v) => {
-    const s = String(v ?? '')
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+const EXPORTERS = { csv: exportCsv, xlsx: exportXlsx, pdf: exportPdf }
+
+function ExportMenu({ spec }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const run = (fmt) => {
+    setOpen(false)
+    EXPORTERS[fmt](spec)
   }
-  const csv  = [headers, ...rows].map(r => r.map(esc).join(',')).join('\r\n')
-  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href     = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
 
-function ExportButton({ onClick }) {
   return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-brand font-semibold rounded-lg border border-gray-200 dark:border-tm-dark-border bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue hover:border-tm-teal dark:hover:text-white shadow-sm transition-colors"
-    >
-      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-        <path d="M8.5 1.5a.5.5 0 00-1 0v7.793L5.354 7.146a.5.5 0 10-.708.708l3 3a.5.5 0 00.708 0l3-3a.5.5 0 00-.708-.708L8.5 9.293V1.5z"/>
-        <path d="M2 11.5a.5.5 0 011 0v2a.5.5 0 00.5.5h9a.5.5 0 00.5-.5v-2a.5.5 0 011 0v2A1.5 1.5 0 0112.5 15.5h-9A1.5 1.5 0 012 13.5v-2z"/>
-      </svg>
-      Export CSV
-    </button>
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-brand font-semibold rounded-lg border border-gray-200 dark:border-tm-dark-border bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue hover:border-tm-teal dark:hover:text-white shadow-sm transition-colors"
+      >
+        <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+          <path d="M8.5 1.5a.5.5 0 00-1 0v7.793L5.354 7.146a.5.5 0 10-.708.708l3 3a.5.5 0 00.708 0l3-3a.5.5 0 00-.708-.708L8.5 9.293V1.5z"/>
+          <path d="M2 11.5a.5.5 0 011 0v2a.5.5 0 00.5.5h9a.5.5 0 00.5-.5v-2a.5.5 0 011 0v2A1.5 1.5 0 0112.5 15.5h-9A1.5 1.5 0 012 13.5v-2z"/>
+        </svg>
+        Export
+        <span className="text-gray-400 dark:text-tm-dark-muted text-[10px]">▾</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg min-w-[140px] py-1">
+          {[
+            { fmt: 'xlsx', label: 'Excel (.xlsx)' },
+            { fmt: 'pdf',  label: 'PDF'           },
+            { fmt: 'csv',  label: 'CSV'           },
+          ].map(({ fmt, label }) => (
+            <button
+              key={fmt}
+              onClick={() => run(fmt)}
+              className="w-full px-4 py-2 text-left text-xs font-brand font-medium text-gray-700 dark:text-tm-dark-text hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -318,20 +342,28 @@ function MetricTable({ data, locations, dateRange }) {
     { key: 'conversion', label: 'Conversion',       align: 'center' },
   ]
 
-  const exportCsv = () => {
-    const body = sorted.map(r => [r.name, r.tw, r.mw, r.ms, r.opp, r.gr, r.p_mix, r.conversion])
-    body.push(['Totals', totals.tw, totals.mw, totals.ms, totals.opp, totals.gr, totals.p_mix, totals.conversion])
-    downloadCsv(
-      `site-performance_${dateRange.start}_to_${dateRange.end}.csv`,
-      COLS.map(c => c.label),
-      body,
-    )
+  const exportSpec = {
+    filename: `site-performance_${dateRange.start}_to_${dateRange.end}`,
+    title:    'Site Performance',
+    subtitle: fmtDateRange(dateRange.start, dateRange.end),
+    columns: [
+      { label: 'Location',         type: 'text' },
+      { label: 'Total Washes',     type: 'num'  },
+      { label: 'Member Washes',    type: 'num'  },
+      { label: 'Memberships Sold', type: 'num'  },
+      { label: 'Opportunities',    type: 'num'  },
+      { label: 'Google Reviews',   type: 'num'  },
+      { label: 'P-Mix',            type: 'pmix' },
+      { label: 'Conversion',       type: 'conv' },
+    ],
+    rows: sorted.map(r => [r.name, r.tw, r.mw, r.ms, r.opp, r.gr, r.p_mix, r.conversion]),
+    totalsRow: ['Totals', totals.tw, totals.mw, totals.ms, totals.opp, totals.gr, totals.p_mix, totals.conversion],
   }
 
   return (
     <div>
       <div className="flex justify-end mb-3">
-        <ExportButton onClick={exportCsv} />
+        <ExportMenu spec={exportSpec} />
       </div>
       <div className="overflow-x-auto">
       <table className="w-full border-collapse text-xs">
@@ -511,27 +543,33 @@ function TeamMemberTable({ data, locations, dateRange }) {
     </thead>
   )
 
-  const exportCsv = () => {
-    const rows = [...allRows]
+  let totMS = 0, totGR = 0, totBetter = 0, totBest = 0, totOpp = 0
+  allRows.forEach(r => {
+    totMS += r.ms || 0; totGR += r.gr || 0
+    totBetter += r.better || 0; totBest += r.best || 0; totOpp += r.opp || 0
+  })
+  const exportSpec = {
+    filename: `team-member-sales_${dateRange.start}_to_${dateRange.end}`,
+    title:    'Team Member Sales',
+    subtitle: fmtDateRange(dateRange.start, dateRange.end),
+    columns: [
+      { label: 'Employee',       type: 'text' },
+      { label: 'Site',           type: 'text' },
+      { label: 'Memberships',    type: 'num'  },
+      { label: 'Google Reviews', type: 'num'  },
+      { label: 'P-Mix',          type: 'pmix' },
+      { label: 'Conversion',     type: 'conv' },
+    ],
+    rows: [...allRows]
       .sort((a, b) => (b.ms ?? 0) - (a.ms ?? 0))
-      .map(r => [r.name, r.site, r.ms, r.gr, r.p_mix, r.conversion])
-    let totMS = 0, totGR = 0, totBetter = 0, totBest = 0, totOpp = 0
-    allRows.forEach(r => {
-      totMS += r.ms || 0; totGR += r.gr || 0
-      totBetter += r.better || 0; totBest += r.best || 0; totOpp += r.opp || 0
-    })
-    rows.push(['Totals', '', totMS, totGR, pct(totBetter + totBest, totMS), pct(totMS, totOpp)])
-    downloadCsv(
-      `team-member-sales_${dateRange.start}_to_${dateRange.end}.csv`,
-      ['Employee', 'Site', 'Memberships', 'Google Reviews', 'P-Mix', 'Conversion'],
-      rows,
-    )
+      .map(r => [r.name, r.site, r.ms, r.gr, r.p_mix, r.conversion]),
+    totalsRow: ['Totals', '', totMS, totGR, pct(totBetter + totBest, totMS), pct(totMS, totOpp)],
   }
 
   return (
     <div>
       <div className="flex justify-end gap-2 mb-3">
-        <ExportButton onClick={exportCsv} />
+        <ExportMenu spec={exportSpec} />
         <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-tm-dark-border shadow-sm">
           {[
             { label: 'Combined', val: false },
