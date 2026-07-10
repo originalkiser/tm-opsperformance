@@ -104,6 +104,7 @@ export async function exportXlsx({ filename, title, subtitle, columns, rows, tot
       const colors = cellColors(type, values[colNumber - 1], isTotals, thresholds)
       cell.border = border
       cell.font   = { size: 10, bold: isTotals || !!colors }
+      if (type === 'num') cell.numFmt = '#,##0'
       if (colors) {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + colors.bg } }
         cell.font = { ...cell.font, color: { argb: 'FF' + colors.fg } }
@@ -148,7 +149,9 @@ export async function exportPdf({ filename, title, subtitle, columns, rows, tota
   doc.setTextColor(107, 114, 128)
   doc.text(subtitle, 40, 58)
 
-  const body = [...rows, totalsRow]
+  const body = [...rows, totalsRow].map(r =>
+    r.map((v, i) => (columns[i]?.type === 'num' && typeof v === 'number') ? v.toLocaleString('en-US') : v)
+  )
   autoTable(doc, {
     startY: 72,
     head: [columns.map(c => c.label)],

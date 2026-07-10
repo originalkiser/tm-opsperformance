@@ -13,6 +13,7 @@ import DateSelector, { computeDateRange, fmtDateRange, loadSavedDateRange, saveD
 import { employeeDeltasByDay } from '../utils/logMath'
 import { pmixCls, pmixTotalsCls, convCls, convTotalsCls, pmixHex, convHex } from '../utils/metricColors'
 import { exportCsv, exportXlsx, exportPdf } from '../utils/exportTable'
+import { fmtNum } from '../utils/format'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
@@ -327,7 +328,7 @@ function MetricTable({ data, locations, dateRange }) {
       <div className="flex-1 bg-gray-100 dark:bg-tm-dark-border rounded-full h-1.5 min-w-[40px]">
         <div className="bg-tm-teal h-1.5 rounded-full" style={{ width: max > 0 ? `${Math.min(100, value / max * 100)}%` : '0%' }} />
       </div>
-      <span className="text-xs w-8 text-right dark:text-tm-dark-text">{value}</span>
+      <span className="text-xs w-12 text-right dark:text-tm-dark-text">{fmtNum(value) || value}</span>
     </div>
   )
 
@@ -381,21 +382,21 @@ function MetricTable({ data, locations, dateRange }) {
             <tr key={r.name} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
               <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-medium font-brand dark:text-tm-dark-text">{r.name}</td>
               <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2"><MiniBar value={r.tw} max={maxWashes} /></td>
-              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.mw || ''}</td>
-              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.ms || ''}</td>
-              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.opp || ''}</td>
-              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.gr || ''}</td>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.mw)}</td>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.ms)}</td>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.opp)}</td>
+              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.gr)}</td>
               <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${pmixCls(r.p_mix)}`}>{r.p_mix}</td>
               <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${convCls(r.conversion)}`}>{r.conversion}</td>
             </tr>
           ))}
           <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
             <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">Totals</td>
-            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totals.tw || ''}</td>
-            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totals.mw || ''}</td>
-            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totals.ms || ''}</td>
-            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totals.opp || ''}</td>
-            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totals.gr || ''}</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.tw)}</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.mw)}</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.ms)}</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.opp)}</td>
+            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.gr)}</td>
             <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${pmixTotalsCls(totals.p_mix)}`}>{totals.p_mix}</td>
             <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${convTotalsCls(totals.conversion)}`}>{totals.conversion}</td>
           </tr>
@@ -426,8 +427,8 @@ function TMSalesRows({ rows, showSite, sort }) {
           {showSite && (
             <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-gray-500 dark:text-tm-dark-muted font-brand text-xs">{r.site}</td>
           )}
-          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{r.ms || ''}</td>
-          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{r.gr || ''}</td>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{fmtNum(r.ms)}</td>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{fmtNum(r.gr)}</td>
           <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${pmixCls(r.p_mix)}`}>{r.p_mix}</td>
           <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${convCls(r.conversion)}`}>{r.conversion}</td>
         </tr>
@@ -451,8 +452,8 @@ function TMSalesTotalsRow({ rows, showSite }) {
     <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
       <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">Totals</td>
       {showSite && <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2" />}
-      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totMS || ''}</td>
-      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{totGR || ''}</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totMS)}</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totGR)}</td>
       <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${pmixTotalsCls(p_mix)}`}>{p_mix}</td>
       <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${convTotalsCls(conversion)}`}>{conversion}</td>
     </tr>
@@ -638,7 +639,7 @@ const ChartTooltip = ({ active, payload, label, isPct }) => {
     <div className="bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded shadow-md px-3 py-2 text-xs font-brand">
       <p className="text-gray-500 dark:text-tm-dark-muted mb-1">{label}</p>
       <p className="font-semibold text-tm-blue dark:text-tm-teal">
-        {val != null ? (isPct ? `${val}%` : val) : '—'}
+        {val != null ? (isPct ? `${val}%` : val.toLocaleString('en-US')) : '—'}
       </p>
     </div>
   )
@@ -670,7 +671,7 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', d
             <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
               <XAxis dataKey="label" tick={{ fontSize: 9, fontFamily: 'Chakra Petch', fill: axisColor }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} tickFormatter={v => isPct ? `${v}%` : v} />
+              <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} tickFormatter={v => isPct ? `${v}%` : Number(v).toLocaleString('en-US')} />
               <Tooltip content={<ChartTooltip isPct={isPct} />} />
               <Line type="monotone" dataKey={dataKey} stroke={lineStroke} strokeWidth={2} dot={customDot} connectNulls={false} />
             </LineChart>
@@ -678,7 +679,7 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', d
             <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
               <XAxis dataKey="label" tick={{ fontSize: 9, fontFamily: 'Chakra Petch', fill: axisColor }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} />
+              <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} tickFormatter={v => Number(v).toLocaleString('en-US')} />
               <Tooltip content={<ChartTooltip isPct={isPct} />} />
               <Bar dataKey={dataKey} fill={colorFn ? undefined : color} radius={[2, 2, 0, 0]}>
                 {colorFn && data.map((entry, i) => (

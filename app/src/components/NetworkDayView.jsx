@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { shopTotals } from '../utils/logMath'
 import { pmixTextCls, convTextCls, pmixCls, convCls } from '../utils/metricColors'
+import { fmtNum } from '../utils/format'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
@@ -143,9 +144,9 @@ function HourlyTable({ rows, thresholds }) {
                 <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-brand text-xs dark:text-tm-dark-text">
                   {row.employee_name || ''}
                 </td>
-                {cell(toInt(row.google_reviews) || '')}
-                {cell(toInt(row.total_washes)   || '')}
-                {cell(toInt(row.member_washes)  || '')}
+                {cell(fmtNum(row.google_reviews))}
+                {cell(fmtNum(row.total_washes))}
+                {cell(fmtNum(row.member_washes))}
                 {cell(toInt(row.basic)          || '')}
                 {cell(toInt(row.good)           || '')}
                 {cell(toInt(row.better)         || '')}
@@ -177,10 +178,10 @@ function ShopCard({ location, rows, expanded, onToggle }) {
     : null
 
   const STATS = [
-    { label: 'Total Washes',  value: stats?.totTW  || '—' },
-    { label: 'Member Washes', value: stats?.totMW  || '—' },
-    { label: 'Memberships',   value: stats?.totMS  || '—' },
-    { label: 'Google',        value: stats?.totGR  || '—' },
+    { label: 'Total Washes',  value: fmtNum(stats?.totTW)  || '—' },
+    { label: 'Member Washes', value: fmtNum(stats?.totMW)  || '—' },
+    { label: 'Memberships',   value: fmtNum(stats?.totMS)  || '—' },
+    { label: 'Google',        value: fmtNum(stats?.totGR)  || '—' },
     { label: 'P-Mix', value: stats?.pMix ?? '—', textCls: pmixTextCls(stats?.pMix, thresholds) },
     { label: 'Conv',  value: stats?.conv ?? '—', textCls: convTextCls(stats?.conv, thresholds) },
   ]

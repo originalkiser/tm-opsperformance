@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { employeeDeltasByDay } from '../utils/logMath'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
+import { fmtNum } from '../utils/format'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
@@ -263,28 +264,28 @@ export default function EmployeeSummary({ rows = [], opportunitiesFormula = 'det
               {employees.map((emp, i) => (
                 <tr key={emp.name} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-1.5 font-medium font-brand dark:text-tm-dark-text">{emp.name}</td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{emp.gr  || ''}</td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{emp.tw  || ''}</td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{emp.mw  || ''}</td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{emp.ms  || ''}</td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{emp.opp || ''}</td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{emp.nm  || ''}</td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{emp.btr || ''}</td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{emp.bst || ''}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(emp.gr)}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(emp.tw)}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(emp.mw)}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(emp.ms)}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(emp.opp)}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(emp.nm)}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(emp.btr)}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(emp.bst)}</td>
                   <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${pmixCls(emp.p_mix, metricThresholds)}`}>{emp.p_mix}</td>
                   <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${convCls(emp.conversion, metricThresholds)}`}>{emp.conversion}</td>
                 </tr>
               ))}
               <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
                 <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-1.5 font-brand dark:text-tm-dark-text">Totals</td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{totals.gr  || ''}</td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{totals.tw  || ''}</td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{totals.mw  || ''}</td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{totals.ms  || ''}</td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{totals.opp || ''}</td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{totals.nm  || ''}</td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{totals.btr || ''}</td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{totals.bst || ''}</td>
+                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.gr)}</td>
+                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.tw)}</td>
+                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.mw)}</td>
+                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.ms)}</td>
+                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.opp)}</td>
+                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.nm)}</td>
+                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.btr)}</td>
+                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.bst)}</td>
                 <td className={`border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${pmixTotalsCls(totals.p_mix, metricThresholds)}`}>{totals.p_mix}</td>
                 <td className={`border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${convTotalsCls(totals.conversion, metricThresholds)}`}>{totals.conversion}</td>
               </tr>

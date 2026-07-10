@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { shopTotals, employeeDeltasByDay } from '../utils/logMath'
 import { pmixCls, convCls } from '../utils/metricColors'
+import { fmtNum } from '../utils/format'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 const pct   = (num, den) => den > 0 ? (num / den * 100).toFixed(1) + '%' : '—'
@@ -172,10 +173,10 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
     ctx.fillText('OVERALL PERFORMANCE', PAD + 10, s1y + PAD + SEC_TITLE_H / 2)
 
     const statItems = [
-      { label: 'Total Washes',     value: totTW  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
-      { label: 'Member Washes',    value: totMW  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
-      { label: 'Memberships Sold', value: totMS  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
-      { label: 'Google Reviews',   value: totGR  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
+      { label: 'Total Washes',     value: fmtNum(totTW)  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
+      { label: 'Member Washes',    value: fmtNum(totMW)  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
+      { label: 'Memberships Sold', value: fmtNum(totMS)  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
+      { label: 'Google Reviews',   value: fmtNum(totGR)  || '—', bg: C.tealLight,      bdr: C.tealBorder,      fg: C.tealText          },
       { label: 'Conversion',       value: totConv,        bg: convBg(totConv),  bdr: convBdr(totConv),  fg: convFg(totConv)     },
       { label: 'P-Mix',            value: totPmix,        bg: pmixBg(totPmix),  bdr: pmixBdr(totPmix),  fg: pmixFg(totPmix)    },
     ]
@@ -327,10 +328,10 @@ export default function DailySnapshot({ rows = [], date, locationName, opportuni
         </h3>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: 'Total Washes',     value: totTW  || '—' },
-            { label: 'Member Washes',    value: totMW  || '—' },
-            { label: 'Memberships Sold', value: totMS  || '—' },
-            { label: 'Google Reviews',   value: totGR  || '—' },
+            { label: 'Total Washes',     value: fmtNum(totTW)  || '—' },
+            { label: 'Member Washes',    value: fmtNum(totMW)  || '—' },
+            { label: 'Memberships Sold', value: fmtNum(totMS)  || '—' },
+            { label: 'Google Reviews',   value: fmtNum(totGR)  || '—' },
             { label: 'Conversion',       value: totConv, metricCls: convCls(totConv, metricThresholds) },
             { label: 'P-Mix',            value: totPmix, metricCls: pmixCls(totPmix, metricThresholds) },
           ].map(({ label, value, metricCls }) => (

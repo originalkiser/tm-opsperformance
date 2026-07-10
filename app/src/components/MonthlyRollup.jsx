@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
 import { shopTotals, employeeDeltasByDay } from '../utils/logMath'
 import { pmixCls, pmixTotalsCls, convCls, convTotalsCls } from '../utils/metricColors'
+import { fmtNum } from '../utils/format'
 
 const toInt = (v) => parseInt(v) || 0
 const pct   = (num, den) => den > 0 ? (num / den * 100).toFixed(1) + '%' : ''
@@ -221,19 +222,19 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
                     const val = empCellVal(dateStr, emp)
                     return (
                       <td key={emp} className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-brand dark:text-tm-dark-text">
-                        {val > 0 ? val : ''}
+                        {fmtNum(val)}
                       </td>
                     )
                   })}
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold font-brand dark:text-tm-dark-text">
-                    {shopCellVal(dateStr) > 0 ? shopCellVal(dateStr) : ''}
+                    {fmtNum(shopCellVal(dateStr))}
                   </td>
                 </tr>
               ))}
               <TotalRow
                 cells={[
-                  ...activeEmployees.map(emp => empColTotal(emp) || ''),
-                  grandTotal || '',
+                  ...activeEmployees.map(emp => fmtNum(empColTotal(emp))),
+                  fmtNum(grandTotal),
                 ]}
               />
             </tbody>

@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import EmployeeSelect from './EmployeeSelect'
 import TmLoader from './TmLoader'
 import { shopTotals } from '../utils/logMath'
+import { fmtNum } from '../utils/format'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
 
 const TIME_SLOTS = [
@@ -694,9 +695,9 @@ export default function DailyLogTable({
     const totY  = BANNER_H + HEADER_H + TIME_SLOTS.length * ROW_H
     const totVs = {
       employee_name: 'Totals', _time: '',
-      ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: totals[c.key] > 0 ? String(totals[c.key]) : '' }), {}),
-      _ms:   totComputed.memberships_sold > 0 ? String(totComputed.memberships_sold) : '',
-      _opp:  totComputed.opportunities    > 0 ? String(totComputed.opportunities)    : '',
+      ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: fmtNum(totals[c.key]) }), {}),
+      _ms:   fmtNum(totComputed.memberships_sold),
+      _opp:  fmtNum(totComputed.opportunities),
       _pmix: totComputed.p_mix       || '',
       _conv: totComputed.conversion  || '',
     }
@@ -1135,14 +1136,14 @@ export default function DailyLogTable({
                 <td className="border border-gray-300 dark:border-tm-dark-border" />
                 {orderedCols.map(col => (
                   <td key={col.key} className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-brand dark:text-tm-dark-text">
-                    {totals[col.key] > 0 ? totals[col.key] : ''}
+                    {fmtNum(totals[col.key])}
                   </td>
                 ))}
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-teal/20 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-brand">
-                  {totComputed.memberships_sold > 0 ? totComputed.memberships_sold : ''}
+                  {fmtNum(totComputed.memberships_sold)}
                 </td>
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-teal/20 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-brand">
-                  {totComputed.opportunities > 0 ? totComputed.opportunities : ''}
+                  {fmtNum(totComputed.opportunities)}
                 </td>
                 <td className={`border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${pmixTotalsCls(totComputed.p_mix, metricThresholds)}`}>
                   {totComputed.p_mix}
