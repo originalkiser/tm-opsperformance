@@ -90,6 +90,39 @@ const parsePct = (v) => parseFloat(v) || 0
 
 const thCls = 'px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide cursor-pointer select-none hover:bg-tm-navy/80 dark:hover:bg-tm-dark-border/60 transition-colors whitespace-nowrap'
 
+// ── CSV export ────────────────────────────────────────────────────────────────
+
+// Leading BOM so Excel opens the file as UTF-8.
+function downloadCsv(filename, headers, rows) {
+  const esc = (v) => {
+    const s = String(v ?? '')
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const csv  = [headers, ...rows].map(r => r.map(esc).join(',')).join('\r\n')
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function ExportButton({ onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-brand font-semibold rounded-lg border border-gray-200 dark:border-tm-dark-border bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue hover:border-tm-teal dark:hover:text-white shadow-sm transition-colors"
+    >
+      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+        <path d="M8.5 1.5a.5.5 0 00-1 0v7.793L5.354 7.146a.5.5 0 10-.708.708l3 3a.5.5 0 00.708 0l3-3a.5.5 0 00-.708-.708L8.5 9.293V1.5z"/>
+        <path d="M2 11.5a.5.5 0 011 0v2a.5.5 0 00.5.5h9a.5.5 0 00.5-.5v-2a.5.5 0 011 0v2A1.5 1.5 0 0112.5 15.5h-9A1.5 1.5 0 012 13.5v-2z"/>
+      </svg>
+      Export CSV
+    </button>
+  )
+}
+
 // ── Market multi-select ───────────────────────────────────────────────────────
 
 function MarketMultiSelect({ markets, selected, onChange }) {
@@ -238,7 +271,7 @@ function ShopMultiSelect({ locations, selected, onChange }) {
 
 // ── Site Performance table ────────────────────────────────────────────────────
 
-function MetricTable({ data, locations }) {
+function MetricTable({ data, locations, dateRange }) {
   const [sort, toggleSort] = useSortState('tw', 'desc')
 
   if (!data.length) return (
@@ -285,8 +318,22 @@ function MetricTable({ data, locations }) {
     { key: 'conversion', label: 'Conversion',       align: 'center' },
   ]
 
+  const exportCsv = () => {
+    const body = sorted.map(r => [r.name, r.tw, r.mw, r.ms, r.opp, r.gr, r.p_mix, r.conversion])
+    body.push(['Totals', totals.tw, totals.mw, totals.ms, totals.opp, totals.gr, totals.p_mix, totals.conversion])
+    downloadCsv(
+      `site-performance_${dateRange.start}_to_${dateRange.end}.csv`,
+      COLS.map(c => c.label),
+      body,
+    )
+  }
+
   return (
-    <div className="overflow-x-auto">
+    <div>
+      <div className="flex justify-end mb-3">
+        <ExportButton onClick={exportCsv} />
+      </div>
+      <div className="overflow-x-auto">
       <table className="w-full border-collapse text-xs">
         <thead>
           <tr className="bg-tm-blue dark:bg-tm-navy text-white">
@@ -322,6 +369,7 @@ function MetricTable({ data, locations }) {
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
@@ -379,7 +427,7 @@ function TMSalesTotalsRow({ rows, showSite }) {
   )
 }
 
-function TeamMemberTable({ data, locations }) {
+function TeamMemberTable({ data, locations, dateRange }) {
   const [splitByShop, setSplitByShop] = useState(false)
   const [sort, toggleSort]            = useSortState('ms', 'desc')
 
@@ -463,9 +511,27 @@ function TeamMemberTable({ data, locations }) {
     </thead>
   )
 
+  const exportCsv = () => {
+    const rows = [...allRows]
+      .sort((a, b) => (b.ms ?? 0) - (a.ms ?? 0))
+      .map(r => [r.name, r.site, r.ms, r.gr, r.p_mix, r.conversion])
+    let totMS = 0, totGR = 0, totBetter = 0, totBest = 0, totOpp = 0
+    allRows.forEach(r => {
+      totMS += r.ms || 0; totGR += r.gr || 0
+      totBetter += r.better || 0; totBest += r.best || 0; totOpp += r.opp || 0
+    })
+    rows.push(['Totals', '', totMS, totGR, pct(totBetter + totBest, totMS), pct(totMS, totOpp)])
+    downloadCsv(
+      `team-member-sales_${dateRange.start}_to_${dateRange.end}.csv`,
+      ['Employee', 'Site', 'Memberships', 'Google Reviews', 'P-Mix', 'Conversion'],
+      rows,
+    )
+  }
+
   return (
     <div>
-      <div className="flex justify-end mb-3">
+      <div className="flex justify-end gap-2 mb-3">
+        <ExportButton onClick={exportCsv} />
         <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-tm-dark-border shadow-sm">
           {[
             { label: 'Combined', val: false },
@@ -847,13 +913,13 @@ export default function Insights() {
 
             <Section badge="SITES" badgeCls="bg-tm-blue" subtitle={`Site Performance — ${rangeLabel}`}>
               <div className="mt-3">
-                <MetricTable data={filterLogs(logs)} locations={visibleLocations} />
+                <MetricTable data={filterLogs(logs)} locations={visibleLocations} dateRange={dateRange} />
               </div>
             </Section>
 
             <Section badge="TEAM" badgeCls="bg-[#1A3555]" subtitle={`Team Member Sales — ${rangeLabel}`}>
               <div className="mt-3">
-                <TeamMemberTable data={filterLogs(logs)} locations={visibleLocations} />
+                <TeamMemberTable data={filterLogs(logs)} locations={visibleLocations} dateRange={dateRange} />
               </div>
             </Section>
 
