@@ -156,6 +156,11 @@ export default function Admin() {
     fetchLocations()
   }
 
+  const updateLocationExclude = async (locId, exclude) => {
+    await supabase.from('locations').update({ exclude_from_reporting: exclude }).eq('id', locId)
+    fetchLocations()
+  }
+
   const addManagerToLocation = async (managerId, locId) => {
     if (!managerId || !locId) return
     await supabase.from('manager_locations').upsert({ manager_id: managerId, location_id: locId })
@@ -631,6 +636,7 @@ export default function Admin() {
               onAddManager={addManagerToLocation}
               onRemoveManager={removeManagerFromLocation}
               onUpdateThresholds={updateLocationThresholds}
+              onUpdateExclude={updateLocationExclude}
             />
           )}
         </div>
@@ -640,7 +646,7 @@ export default function Admin() {
 }
 
 // ── Locations tab ─────────────────────────────────────────────────────────────
-function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds }) {
+function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude }) {
   const [marketInputs,    setMarketInputs]    = useState({})
   const [addMgrOpen,      setAddMgrOpen]      = useState({})
   const [thresholdInputs, setThresholdInputs] = useState({})
@@ -723,6 +729,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
               <th className="px-3 py-2 text-left">Location</th>
               <th className="px-3 py-2 text-left">Market</th>
               <th className="px-3 py-2 text-left">Opportunities Formula</th>
+              <th className="px-3 py-2 text-center">Exclude from Reporting</th>
               <th className="px-3 py-2 text-left">Area Manager(s)</th>
               <th className="px-3 py-2 text-left">Store User(s)</th>
             </tr>
@@ -758,6 +765,26 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                       <option value="simple">Simple — TW − MW</option>
                       <option value="detailed">Detailed — TW − MW + MS</option>
                     </select>
+                  </td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center">
+                    <button
+                      role="switch"
+                      aria-checked={!!loc.exclude_from_reporting}
+                      onClick={() => onUpdateExclude(loc.id, !loc.exclude_from_reporting)}
+                      title={loc.exclude_from_reporting
+                        ? 'Excluded from reporting — click to include'
+                        : 'Included in reporting — click to exclude'}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors align-middle ${
+                        loc.exclude_from_reporting ? 'bg-red-500' : 'bg-gray-300 dark:bg-tm-dark-border'
+                      }`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                        loc.exclude_from_reporting ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                      }`} />
+                    </button>
+                    {loc.exclude_from_reporting && (
+                      <div className="text-[10px] text-red-500 font-brand font-semibold mt-0.5">Hidden</div>
+                    )}
                   </td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
                     <div className="flex flex-wrap items-center gap-1">

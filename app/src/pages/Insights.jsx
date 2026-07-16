@@ -828,7 +828,10 @@ function Section({ badge, badgeCls, subtitle, children, defaultOpen = true }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Insights() {
-  const { locations } = useAuth()
+  const { locations: allLocations } = useAuth()
+  // Shops flagged "exclude from reporting" in the Admin panel stay out of all
+  // dashboard views; they remain available for shop entry.
+  const locations = allLocations.filter(l => !l.exclude_from_reporting)
   const [dark]        = useDarkModeCtx()
   const [logs, setLogs]                     = useState([])
   const [loading, setLoading]               = useState(true)
