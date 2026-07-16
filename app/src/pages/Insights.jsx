@@ -12,7 +12,7 @@ import TmLoader from '../components/TmLoader'
 import DateSelector, { computeDateRange, fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
 import { employeeDeltasByDay } from '../utils/logMath'
 import { pmixCls, pmixTotalsCls, convCls, convTotalsCls, pmixHex, convHex } from '../utils/metricColors'
-import { exportCsv, exportXlsx, exportPdf } from '../utils/exportTable'
+import { exportCsv, exportXlsx, exportPdf, exportTrendsXlsx, exportTrendsPdf } from '../utils/exportTable'
 import { fmtNum } from '../utils/format'
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
@@ -92,11 +92,10 @@ const parsePct = (v) => parseFloat(v) || 0
 
 const thCls = 'px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide cursor-pointer select-none hover:bg-tm-navy/80 dark:hover:bg-tm-dark-border/60 transition-colors whitespace-nowrap'
 
-// ── Export menu (CSV / Excel / PDF) ───────────────────────────────────────────
+// ── Export menu ───────────────────────────────────────────────────────────────
+// items: [{ label, run }]
 
-const EXPORTERS = { csv: exportCsv, xlsx: exportXlsx, pdf: exportPdf }
-
-function ExportMenu({ spec }) {
+function ExportMenu({ items }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -107,11 +106,6 @@ function ExportMenu({ spec }) {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
-
-  const run = (fmt) => {
-    setOpen(false)
-    EXPORTERS[fmt](spec)
-  }
 
   return (
     <div ref={ref} className="relative">
@@ -128,15 +122,11 @@ function ExportMenu({ spec }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg min-w-[140px] py-1">
-          {[
-            { fmt: 'xlsx', label: 'Excel (.xlsx)' },
-            { fmt: 'pdf',  label: 'PDF'           },
-            { fmt: 'csv',  label: 'CSV'           },
-          ].map(({ fmt, label }) => (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg min-w-[170px] py-1">
+          {items.map(({ label, run }) => (
             <button
-              key={fmt}
-              onClick={() => run(fmt)}
+              key={label}
+              onClick={() => { setOpen(false); run() }}
               className="w-full px-4 py-2 text-left text-xs font-brand font-medium text-gray-700 dark:text-tm-dark-text hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors"
             >
               {label}
@@ -360,11 +350,16 @@ function MetricTable({ data, locations, dateRange }) {
     rows: sorted.map(r => [r.name, r.tw, r.mw, r.ms, r.opp, r.gr, r.p_mix, r.conversion]),
     totalsRow: ['Totals', totals.tw, totals.mw, totals.ms, totals.opp, totals.gr, totals.p_mix, totals.conversion],
   }
+  const exportItems = [
+    { label: 'Excel (.xlsx)', run: () => exportXlsx(exportSpec) },
+    { label: 'PDF',           run: () => exportPdf(exportSpec)  },
+    { label: 'CSV',           run: () => exportCsv(exportSpec)  },
+  ]
 
   return (
     <div>
       <div className="flex justify-end mb-3">
-        <ExportMenu spec={exportSpec} />
+        <ExportMenu items={exportItems} />
       </div>
       <div className="overflow-x-auto">
       <table className="w-full border-collapse text-xs">
@@ -566,11 +561,16 @@ function TeamMemberTable({ data, locations, dateRange }) {
       .map(r => [r.name, r.site, r.ms, r.gr, r.p_mix, r.conversion]),
     totalsRow: ['Totals', '', totMS, totGR, pct(totBetter + totBest, totMS), pct(totMS, totOpp)],
   }
+  const exportItems = [
+    { label: 'Excel (.xlsx)', run: () => exportXlsx(exportSpec) },
+    { label: 'PDF',           run: () => exportPdf(exportSpec)  },
+    { label: 'CSV',           run: () => exportCsv(exportSpec)  },
+  ]
 
   return (
     <div>
       <div className="flex justify-end gap-2 mb-3">
-        <ExportMenu spec={exportSpec} />
+        <ExportMenu items={exportItems} />
         <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-tm-dark-border shadow-sm">
           {[
             { label: 'Combined', val: false },
@@ -694,7 +694,7 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', d
   )
 }
 
-function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
+function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange, dateRange }) {
   // For a single location: use hourly rows as-is (last row = day total).
   // For all locations: reduce to one row per (location, date) then sum across locations.
   const chartData = (() => {
@@ -766,22 +766,61 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange }) {
   const convColorFn   = (v) => convHex(v, thresholds)
   const pmixColorFn   = (v) => pmixHex(v, thresholds)
 
+  const trendsSpec = {
+    filename: `daily-trends_${dateRange.start}_to_${dateRange.end}`,
+    title:    'Daily Trends',
+    subtitle: `${trendLocation ? trendLocation.name : 'All Shops'} — ${fmtDateRange(dateRange.start, dateRange.end)}`,
+    charts: [
+      { title: 'Daily Memberships Sold', dataKey: 'ms',         type: 'bar',  color: '#8ECFCB' },
+      { title: 'Daily Conversion %',     dataKey: 'conversion', type: 'line', isPct: true, colorFn: convColorFn },
+      { title: 'Daily Google Reviews',   dataKey: 'gr',         type: 'bar',  color: '#1A3555' },
+      { title: 'Daily Total Washes',     dataKey: 'tw',         type: 'bar',  color: '#1A3555' },
+      { title: 'Daily P-Mix %',          dataKey: 'pmix',       type: 'line', isPct: true, colorFn: pmixColorFn },
+      { title: 'Daily Member Washes',    dataKey: 'mw',         type: 'bar',  color: '#8ECFCB' },
+    ],
+    data: chartData,
+    thresholds,
+    columns: [
+      { label: 'Date',             type: 'text' },
+      { label: 'Total Washes',     type: 'num'  },
+      { label: 'Member Washes',    type: 'num'  },
+      { label: 'Memberships Sold', type: 'num'  },
+      { label: 'Google Reviews',   type: 'num'  },
+      { label: 'P-Mix',            type: 'pmix' },
+      { label: 'Conversion',       type: 'conv' },
+    ],
+    rows: chartData.map(d => [
+      d.label, d.tw, d.mw, d.ms, d.gr,
+      d.pmix       != null ? `${d.pmix}%`       : '',
+      d.conversion != null ? `${d.conversion}%` : '',
+    ]),
+  }
+  const exportItems = [
+    { label: 'Excel — charts + table', run: () => exportTrendsXlsx({ ...trendsSpec, includeTable: true  }) },
+    { label: 'Excel — charts only',    run: () => exportTrendsXlsx({ ...trendsSpec, includeTable: false }) },
+    { label: 'PDF — charts + table',   run: () => exportTrendsPdf({  ...trendsSpec, includeTable: true  }) },
+    { label: 'PDF — charts only',      run: () => exportTrendsPdf({  ...trendsSpec, includeTable: false }) },
+  ]
+
   return (
     <div>
-      {locations.length > 1 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <span className="text-sm text-gray-500 dark:text-tm-dark-muted">
-            {trendLocation ? trendLocation.name : 'All Shops'}
-          </span>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Location:</label>
-            <select value={trendLocId} onChange={e => onTrendLocChange(e.target.value)} className={selectCls}>
-              <option value="">All Shops</option>
-              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <span className="text-sm text-gray-500 dark:text-tm-dark-muted">
+          {trendLocation ? trendLocation.name : 'All Shops'}
+        </span>
+        <div className="flex items-center gap-2">
+          {locations.length > 1 && (
+            <>
+              <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Location:</label>
+              <select value={trendLocId} onChange={e => onTrendLocChange(e.target.value)} className={selectCls}>
+                <option value="">All Shops</option>
+                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </>
+          )}
+          {chartData.length > 0 && <ExportMenu items={exportItems} />}
         </div>
-      )}
+      </div>
       {!chartData.length ? (
         <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
       ) : (
@@ -977,6 +1016,7 @@ export default function Insights() {
                   locations={visibleLocations}
                   trendLocId={trendLocId}
                   onTrendLocChange={setTrendLocId}
+                  dateRange={dateRange}
                 />
               </div>
             </Section>
