@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, Cell,
@@ -830,8 +830,12 @@ function Section({ badge, badgeCls, subtitle, children, defaultOpen = true }) {
 export default function Insights() {
   const { locations: allLocations } = useAuth()
   // Shops flagged "exclude from reporting" in the Admin panel stay out of all
-  // dashboard views; they remain available for shop entry.
-  const locations = allLocations.filter(l => !l.exclude_from_reporting)
+  // dashboard views; they remain available for shop entry. Memoized so the
+  // array reference stays stable — the fetch effect depends on it.
+  const locations = useMemo(
+    () => allLocations.filter(l => !l.exclude_from_reporting),
+    [allLocations],
+  )
   const [dark]        = useDarkModeCtx()
   const [logs, setLogs]                     = useState([])
   const [loading, setLoading]               = useState(true)
