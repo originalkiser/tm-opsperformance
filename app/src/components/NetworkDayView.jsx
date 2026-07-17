@@ -46,7 +46,7 @@ function formatTime(ts) {
   return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-function shopStats(rows) {
+function shopStats(rows, formula) {
   const latest = shopTotals(rows)
   if (!latest) return null
   const totTW     = toInt(latest.total_washes)
@@ -57,7 +57,9 @@ function shopStats(rows) {
   const totBetter = toInt(latest.better)
   const totBest   = toInt(latest.best)
   const totMS     = totBasic + totGood + totBetter + totBest
-  const totOpp    = Math.max(0, totTW - totMW + totMS)
+  const totOpp    = formula === 'simple'
+    ? Math.max(0, totTW - totMW)
+    : Math.max(0, totTW - totMW + totMS)
   const pMix      = totMS  > 0 ? ((totBetter + totBest) / totMS  * 100).toFixed(1) + '%' : '—'
   const conv      = totOpp > 0 ? (totMS / totOpp * 100).toFixed(1) + '%' : '—'
   return { totTW, totMW, totMS, totGR, pMix, conv }
@@ -65,7 +67,7 @@ function shopStats(rows) {
 
 // ── Expanded read-only hourly table ──────────────────────────────────────────
 
-function HourlyTable({ rows, thresholds }) {
+function HourlyTable({ rows, thresholds, formula }) {
   const qualifying = [...rows]
     .sort((a, b) => (a.time_slot > b.time_slot ? 1 : -1))
     .filter(r => r.employee_name || [
@@ -121,7 +123,9 @@ function HourlyTable({ rows, thresholds }) {
             const tw     = toInt(row.total_washes)
             const mw     = toInt(row.member_washes)
             const ms     = basic + good + better + best
-            const opp    = Math.max(0, tw - mw + ms)
+            const opp    = formula === 'simple'
+              ? Math.max(0, tw - mw)
+              : Math.max(0, tw - mw + ms)
             const pmix   = ms  > 0 ? ((better + best) / ms  * 100).toFixed(1) + '%' : ''
             const conv   = opp > 0 ? (ms / opp * 100).toFixed(1) + '%' : ''
 
@@ -169,7 +173,7 @@ function HourlyTable({ rows, thresholds }) {
 
 function ShopCard({ location, rows, expanded, onToggle }) {
   const hasData    = rows.length > 0
-  const stats      = hasData ? shopStats(rows) : null
+  const stats      = hasData ? shopStats(rows, location.opportunities_formula) : null
   const thresholds = location.metric_thresholds
 
   const lastUpdated = stats
@@ -235,7 +239,7 @@ function ShopCard({ location, rows, expanded, onToggle }) {
       {/* Expanded hourly table */}
       {expanded && (
         <div className="border-t border-gray-100 dark:border-tm-dark-border">
-          <HourlyTable rows={rows} thresholds={thresholds} />
+          <HourlyTable rows={rows} thresholds={thresholds} formula={location.opportunities_formula} />
         </div>
       )}
     </div>

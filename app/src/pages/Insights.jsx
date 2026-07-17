@@ -496,7 +496,11 @@ function TeamMemberTable({ data, locations, dateRange }) {
 
   const allRows = Object.values(empAccum).map(e => {
     const ms  = e.basic + e.good + e.better + e.best
-    const opp = Math.max(0, e.total_washes - e.member_washes + ms)
+    // Use each shop's configured opportunities formula
+    const formula = locations.find(l => l.id === e.locationId)?.opportunities_formula
+    const opp = formula === 'simple'
+      ? Math.max(0, e.total_washes - e.member_washes)
+      : Math.max(0, e.total_washes - e.member_washes + ms)
     return {
       key:        e.key,
       name:       e.name,
