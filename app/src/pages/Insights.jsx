@@ -698,74 +698,58 @@ function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', d
   )
 }
 
-function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange, dateRange }) {
+function DailyTrends({ logs, dark, locations, selected, onSelectedChange, dateRange }) {
   // For a single location: use hourly rows as-is (last row = day total).
   // For all locations: reduce to one row per (location, date) then sum across locations.
+  // Latest row per (location, date), then sum across locations per date.
+  // Works for any selection size — one shop, a subset, or all shops.
   const chartData = (() => {
-    if (trendLocId) {
-      // Single location — existing logic
-      const dayMap = {}
-      logs.forEach(r => {
-        if (!dayMap[r.log_date]) dayMap[r.log_date] = []
-        dayMap[r.log_date].push(r)
+    const locDateMap = {}
+    logs.forEach(r => {
+      const key = `${r.location_id}::${r.log_date}`
+      if (!locDateMap[key]) locDateMap[key] = []
+      locDateMap[key].push(r)
+    })
+    const bestRows = Object.values(locDateMap).map(rows => {
+      const withData = rows.filter(r => toInt(r.total_washes) > 0 || toInt(r.memberships_sold) > 0)
+      const src = withData.length ? withData : rows
+      return src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
+    })
+    const dateMap = {}
+    bestRows.forEach(r => {
+      if (!dateMap[r.log_date]) dateMap[r.log_date] = []
+      dateMap[r.log_date].push(r)
+    })
+    return Object.entries(dateMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, rows]) => {
+        const d = new Date(date + 'T00:00:00')
+        const tw  = rows.reduce((s, r) => s + toInt(r.total_washes),    0)
+        const mw  = rows.reduce((s, r) => s + toInt(r.member_washes),   0)
+        const ms  = rows.reduce((s, r) => s + toInt(r.memberships_sold),0)
+        const opp = rows.reduce((s, r) => s + toInt(r.opportunities),   0)
+        const gr  = rows.reduce((s, r) => s + toInt(r.google_reviews),  0)
+        const btr = rows.reduce((s, r) => s + toInt(r.better),          0)
+        const bst = rows.reduce((s, r) => s + toInt(r.best),            0)
+        return {
+          label: `${d.getMonth() + 1}/${d.getDate()}`, tw, mw, ms, gr,
+          conversion: opp > 0 ? parseFloat((ms / opp * 100).toFixed(1)) : null,
+          pmix:       ms  > 0 ? parseFloat(((btr + bst) / ms * 100).toFixed(1)) : null,
+        }
       })
-      return Object.entries(dayMap)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, rows]) => {
-          const d = new Date(date + 'T00:00:00')
-          const withData = rows.filter(r => toInt(r.total_washes) > 0 || toInt(r.memberships_sold) > 0)
-          const src = withData.length ? withData : rows
-          const r = src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
-          const tw = toInt(r.total_washes), mw = toInt(r.member_washes)
-          const ms = toInt(r.memberships_sold), opp = toInt(r.opportunities)
-          const gr = toInt(r.google_reviews), btr = toInt(r.better), bst = toInt(r.best)
-          return {
-            label: `${d.getMonth() + 1}/${d.getDate()}`, tw, mw, ms, gr,
-            conversion: opp > 0 ? parseFloat((ms / opp * 100).toFixed(1)) : null,
-            pmix:       ms  > 0 ? parseFloat(((btr + bst) / ms * 100).toFixed(1)) : null,
-          }
-        })
-    } else {
-      // All locations — get latest row per (location, date) then sum across locations per date
-      const locDateMap = {}
-      logs.forEach(r => {
-        const key = `${r.location_id}::${r.log_date}`
-        if (!locDateMap[key]) locDateMap[key] = []
-        locDateMap[key].push(r)
-      })
-      const bestRows = Object.values(locDateMap).map(rows => {
-        const withData = rows.filter(r => toInt(r.total_washes) > 0 || toInt(r.memberships_sold) > 0)
-        const src = withData.length ? withData : rows
-        return src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
-      })
-      const dateMap = {}
-      bestRows.forEach(r => {
-        if (!dateMap[r.log_date]) dateMap[r.log_date] = []
-        dateMap[r.log_date].push(r)
-      })
-      return Object.entries(dateMap)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, rows]) => {
-          const d = new Date(date + 'T00:00:00')
-          const tw  = rows.reduce((s, r) => s + toInt(r.total_washes),    0)
-          const mw  = rows.reduce((s, r) => s + toInt(r.member_washes),   0)
-          const ms  = rows.reduce((s, r) => s + toInt(r.memberships_sold),0)
-          const opp = rows.reduce((s, r) => s + toInt(r.opportunities),   0)
-          const gr  = rows.reduce((s, r) => s + toInt(r.google_reviews),  0)
-          const btr = rows.reduce((s, r) => s + toInt(r.better),          0)
-          const bst = rows.reduce((s, r) => s + toInt(r.best),            0)
-          return {
-            label: `${d.getMonth() + 1}/${d.getDate()}`, tw, mw, ms, gr,
-            conversion: opp > 0 ? parseFloat((ms / opp * 100).toFixed(1)) : null,
-            pmix:       ms  > 0 ? parseFloat(((btr + bst) / ms * 100).toFixed(1)) : null,
-          }
-        })
-    }
   })()
 
-  const navyColor     = dark ? '#D6E4F0' : '#1A3555'
-  const trendLocation = locations.find(l => l.id === trendLocId)
-  const selectCls     = "border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
+  const navyColor    = dark ? '#D6E4F0' : '#1A3555'
+  const selectedLocs = selected === null
+    ? locations
+    : locations.filter(l => selected.includes(l.id))
+  // Thresholds only apply when a single shop is charted; otherwise defaults
+  const trendLocation = selectedLocs.length === 1 ? selectedLocs[0] : null
+  const shopsLabel = selectedLocs.length === locations.length
+    ? 'All Shops'
+    : selectedLocs.length === 1
+      ? selectedLocs[0].name
+      : `${selectedLocs.length} of ${locations.length} shops`
   const thresholds    = trendLocation?.metric_thresholds
   const convColorFn   = (v) => convHex(v, thresholds)
   const pmixColorFn   = (v) => pmixHex(v, thresholds)
@@ -773,7 +757,7 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange, date
   const trendsSpec = {
     filename: `daily-trends_${dateRange.start}_to_${dateRange.end}`,
     title:    'Daily Trends',
-    subtitle: `${trendLocation ? trendLocation.name : 'All Shops'} — ${fmtDateRange(dateRange.start, dateRange.end)}`,
+    subtitle: `${shopsLabel} — ${fmtDateRange(dateRange.start, dateRange.end)}`,
     charts: [
       { title: 'Daily Memberships Sold', dataKey: 'ms',         type: 'bar',  color: '#8ECFCB' },
       { title: 'Daily Conversion %',     dataKey: 'conversion', type: 'line', isPct: true, colorFn: convColorFn },
@@ -810,16 +794,13 @@ function DailyTrends({ logs, dark, locations, trendLocId, onTrendLocChange, date
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <span className="text-sm text-gray-500 dark:text-tm-dark-muted">
-          {trendLocation ? trendLocation.name : 'All Shops'}
+          {shopsLabel}
         </span>
         <div className="flex items-center gap-2">
           {locations.length > 1 && (
             <>
-              <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Location:</label>
-              <select value={trendLocId} onChange={e => onTrendLocChange(e.target.value)} className={selectCls}>
-                <option value="">All Shops</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+              <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Locations:</label>
+              <ShopMultiSelect locations={locations} selected={selected} onChange={onSelectedChange} />
             </>
           )}
           {chartData.length > 0 && <ExportMenu items={exportItems} />}
@@ -883,7 +864,7 @@ export default function Insights() {
   const [logs, setLogs]                     = useState([])
   const [loading, setLoading]               = useState(true)
   const [selectedShops, setSelectedShops]     = useState(null)
-  const [trendLocId, setTrendLocId]           = useState('') // '' = all visible locations
+  const [trendLocIds, setTrendLocIds]         = useState(null) // null = all visible locations
   const [selectedMarkets, setSelectedMarkets] = useState(() => {
     try {
       const raw = localStorage.getItem('tm_market_filter')
@@ -910,12 +891,15 @@ export default function Insights() {
   }, [selectedMarkets])
 
   useEffect(() => {
-    if (!trendLocId) return // '' = all locations, always valid
-    const visible = selectedShops === null
+    if (trendLocIds === null) return // all locations, always valid
+    const visibleIds = (selectedShops === null
       ? marketLocations
       : marketLocations.filter(l => selectedShops.includes(l.id))
-    if (!visible.find(l => l.id === trendLocId)) {
-      setTrendLocId('') // fall back to "all" when selected location leaves the visible set
+    ).map(l => l.id)
+    // Drop trend selections that left the visible set; empty → back to "all"
+    const pruned = trendLocIds.filter(id => visibleIds.includes(id))
+    if (pruned.length !== trendLocIds.length) {
+      setTrendLocIds(pruned.length ? pruned : null)
     }
   }, [selectedShops, selectedMarkets])
 
@@ -957,7 +941,9 @@ export default function Insights() {
     return allLogs.filter(r => locIds.includes(r.location_id))
   }
 
-  const trendLogs  = trendLocId ? logs.filter(r => r.location_id === trendLocId) : filterLogs(logs)
+  const trendLogs  = trendLocIds === null
+    ? filterLogs(logs)
+    : logs.filter(r => trendLocIds.includes(r.location_id))
   const rangeLabel = fmtDateRange(dateRange.start, dateRange.end)
   const cardCls    = "bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border"
 
@@ -1018,8 +1004,8 @@ export default function Insights() {
                   logs={trendLogs}
                   dark={dark}
                   locations={visibleLocations}
-                  trendLocId={trendLocId}
-                  onTrendLocChange={setTrendLocId}
+                  selected={trendLocIds}
+                  onSelectedChange={setTrendLocIds}
                   dateRange={dateRange}
                 />
               </div>
