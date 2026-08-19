@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
 import Insights from './pages/Insights'
+import Reports from './pages/Reports'
 import UpdateBanner from './components/UpdateBanner'
 import TmLoader from './components/TmLoader'
 import { useVersionCheck } from './hooks/useVersionCheck'
@@ -53,6 +54,10 @@ export default function App() {
             <Route
               path="/insights"
               element={<ProtectedRoute><Insights /></ProtectedRoute>}
+            />
+            <Route
+              path="/reports"
+              element={<ProtectedRoute><ManagerRoute><Reports /></ManagerRoute></ProtectedRoute>}
             />
             <Route
               path="/admin"

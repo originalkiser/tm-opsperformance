@@ -1,70 +1,54 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import {
-  ResponsiveContainer, BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, Tooltip, CartesianGrid, Cell,
-} from 'recharts'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
 import NetworkDayView from '../components/NetworkDayView'
 import TmLoader from '../components/TmLoader'
-import DateSelector, { computeDateRange, fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
-import { employeeDeltasByDay } from '../utils/logMath'
-import { pmixCls, pmixTotalsCls, convCls, convTotalsCls, pmixHex, convHex } from '../utils/metricColors'
-import { exportCsv, exportXlsx, exportPdf, exportTrendsXlsx, exportTrendsPdf } from '../utils/exportTable'
-import { fmtNum } from '../utils/format'
-
-const toInt = (v) => Math.max(0, parseInt(v) || 0)
+import DateSelector, { fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
+import { MarketMultiSelect, ShopMultiSelect } from '../components/FilterControls'
+import SiteMetricTable from '../components/SiteMetricTable'
+import TeamSalesTable from '../components/TeamSalesTable'
+import DailyTrendsSection from '../components/DailyTrendsSection'
+import DayOfWeekSection from '../components/DayOfWeekSection'
 
 const todayStr = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-const pct = (num, den) =>
-  den > 0 ? (num / den * 100).toFixed(1) + '%' : ''
+// ── Layout persistence ────────────────────────────────────────────────────────
 
-const pctN = (num, den) =>
-  den > 0 ? parseFloat((num / den * 100).toFixed(1)) : null
+const DEFAULT_SECTIONS = [
+  { id: 'network', label: 'Network Day View' },
+  { id: 'sites',   label: 'Sites Performance' },
+  { id: 'team',    label: 'Team Sales' },
+  { id: 'daily',   label: 'Daily Trends' },
+  { id: 'dow',     label: 'Day of Week' },
+]
 
-const agg = (rows) => {
-  const tw  = rows.reduce((s, r) => s + toInt(r.total_washes),    0)
-  const mw  = rows.reduce((s, r) => s + toInt(r.member_washes),   0)
-  const ms  = rows.reduce((s, r) => s + toInt(r.memberships_sold),0)
-  const opp = rows.reduce((s, r) => s + toInt(r.opportunities),   0)
-  const btr = rows.reduce((s, r) => s + toInt(r.better),          0)
-  const bst = rows.reduce((s, r) => s + toInt(r.best),            0)
-  const gr  = rows.reduce((s, r) => s + toInt(r.google_reviews),  0)
-  return {
-    tw, mw, ms, opp, gr,
-    p_mix:      pct(btr + bst, ms),
-    conversion: pct(ms, opp),
-    pmixN:      pctN(btr + bst, ms),
-    convN:      pctN(ms, opp),
-  }
+function loadLayout() {
+  try {
+    const raw = localStorage.getItem('tm_insights_layout')
+    if (raw) {
+      const saved = JSON.parse(raw)
+      if (Array.isArray(saved)) {
+        const savedIds = new Set(saved.map(s => s.id))
+        const newSections = DEFAULT_SECTIONS
+          .filter(d => !savedIds.has(d.id))
+          .map(d => ({ ...d, visible: true }))
+        return [...saved, ...newSections]
+      }
+    }
+  } catch {}
+  return DEFAULT_SECTIONS.map(d => ({ ...d, visible: true }))
 }
 
-// Collapse all hourly rows to one row per (location, date): the latest time_slot with data.
-const toDayTotals = (rows) => {
-  const map = {}
-  rows.forEach(r => {
-    const key = `${r.location_id}::${r.log_date}`
-    if (!map[key]) map[key] = []
-    map[key].push(r)
-  })
-  return Object.values(map).map(dayRows => {
-    const withData = dayRows.filter(r =>
-      toInt(r.total_washes) > 0 || toInt(r.member_washes) > 0 ||
-      toInt(r.memberships_sold) > 0 || toInt(r.opportunities) > 0 ||
-      toInt(r.google_reviews) > 0
-    )
-    const src = withData.length ? withData : dayRows
-    return src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
-  })
+function saveLayout(layout) {
+  localStorage.setItem('tm_insights_layout', JSON.stringify(layout))
 }
 
-// ── Shared UI pieces ──────────────────────────────────────────────────────────
+// ── Shared UI ─────────────────────────────────────────────────────────────────
 
 function ChevronIcon({ open }) {
   return (
@@ -74,762 +58,26 @@ function ChevronIcon({ open }) {
   )
 }
 
-function SortIcon({ active, dir }) {
-  if (!active) return <span className="ml-1 opacity-25 text-[10px]">↕</span>
-  return <span className="ml-1 text-[10px]">{dir === 'asc' ? '↑' : '↓'}</span>
-}
+// Collapsible section — persists open/closed state per id
+function Section({ id, badge, badgeCls, subtitle, children, defaultOpen = true }) {
+  const storageKey = `tm_section_open_${id}`
+  const [open, setOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem(storageKey)
+      return saved !== null ? saved === 'true' : defaultOpen
+    } catch { return defaultOpen }
+  })
 
-function useSortState(defaultCol, defaultDir = 'desc') {
-  const [sort, setSort] = useState({ col: defaultCol, dir: defaultDir })
-  const toggle = (col) => setSort(s => ({
-    col,
-    dir: s.col === col && s.dir === 'desc' ? 'asc' : 'desc',
-  }))
-  return [sort, toggle]
-}
-
-const parsePct = (v) => parseFloat(v) || 0
-
-const thCls = 'px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide cursor-pointer select-none hover:bg-tm-navy/80 dark:hover:bg-tm-dark-border/60 transition-colors whitespace-nowrap'
-
-// ── Export menu ───────────────────────────────────────────────────────────────
-// items: [{ label, run }]
-
-function ExportMenu({ items }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-brand font-semibold rounded-lg border border-gray-200 dark:border-tm-dark-border bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue hover:border-tm-teal dark:hover:text-white shadow-sm transition-colors"
-      >
-        <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-          <path d="M8.5 1.5a.5.5 0 00-1 0v7.793L5.354 7.146a.5.5 0 10-.708.708l3 3a.5.5 0 00.708 0l3-3a.5.5 0 00-.708-.708L8.5 9.293V1.5z"/>
-          <path d="M2 11.5a.5.5 0 011 0v2a.5.5 0 00.5.5h9a.5.5 0 00.5-.5v-2a.5.5 0 011 0v2A1.5 1.5 0 0112.5 15.5h-9A1.5 1.5 0 012 13.5v-2z"/>
-        </svg>
-        Export
-        <span className="text-gray-400 dark:text-tm-dark-muted text-[10px]">▾</span>
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg min-w-[170px] py-1">
-          {items.map(({ label, run }) => (
-            <button
-              key={label}
-              onClick={() => { setOpen(false); run() }}
-              className="w-full px-4 py-2 text-left text-xs font-brand font-medium text-gray-700 dark:text-tm-dark-text hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Market multi-select ───────────────────────────────────────────────────────
-
-function MarketMultiSelect({ markets, selected, onChange }) {
-  const [open, setOpen] = useState(false)
-  const wrapRef = useRef(null)
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  const allSelected  = selected === null || selected.length === markets.length
-  const noneSelected = selected !== null && selected.length === 0
-
-  const label = allSelected
-    ? 'All Markets'
-    : noneSelected
-      ? 'No Markets'
-      : selected.length === 1
-        ? selected[0]
-        : `${selected.length} of ${markets.length} markets`
-
-  const toggleAll = () => { allSelected ? onChange([]) : onChange(null) }
-
-  const toggle = (market) => {
-    const current = selected === null ? [...markets] : selected
-    if (current.includes(market)) {
-      onChange(current.filter(m => m !== market))
-    } else {
-      const next = [...current, market]
-      onChange(next.length === markets.length ? null : next)
-    }
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    try { localStorage.setItem(storageKey, String(next)) } catch {}
   }
 
-  return (
-    <div ref={wrapRef} className="relative">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text hover:border-tm-teal focus:outline-none focus:ring-2 focus:ring-tm-teal transition-colors font-brand"
-      >
-        <span>{label}</span>
-        <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}>
-          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd"/>
-        </svg>
-      </button>
-
-      {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg min-w-[200px] py-1">
-          <label className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors">
-            <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-tm-teal w-3.5 h-3.5" />
-            <span className="text-xs font-brand font-semibold text-gray-700 dark:text-tm-dark-text">All Markets</span>
-          </label>
-          <div className="border-t border-gray-100 dark:border-tm-dark-border my-1" />
-          {markets.map(market => (
-            <label key={market} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors">
-              <input
-                type="checkbox"
-                checked={allSelected || (selected !== null && selected.includes(market))}
-                onChange={() => toggle(market)}
-                className="accent-tm-teal w-3.5 h-3.5"
-              />
-              <span className="text-xs font-brand text-gray-700 dark:text-tm-dark-text">{market}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Shop multi-select ─────────────────────────────────────────────────────────
-
-function ShopMultiSelect({ locations, selected, onChange }) {
-  const [open, setOpen] = useState(false)
-  const wrapRef = useRef(null)
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  const allSelected  = selected === null || selected.length === locations.length
-  const noneSelected = selected !== null && selected.length === 0
-
-  const label = allSelected
-    ? 'All Shops'
-    : noneSelected
-      ? 'No Shops'
-      : selected.length === 1
-        ? locations.find(l => l.id === selected[0])?.name ?? '1 shop'
-        : `${selected.length} of ${locations.length} shops`
-
-  const toggleAll = () => { allSelected ? onChange([]) : onChange(null) }
-
-  const toggle = (id) => {
-    const current = selected === null ? locations.map(l => l.id) : selected
-    if (current.includes(id)) {
-      onChange(current.filter(s => s !== id))
-    } else {
-      const next = [...current, id]
-      onChange(next.length === locations.length ? null : next)
-    }
-  }
-
-  return (
-    <div ref={wrapRef} className="relative">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text hover:border-tm-teal focus:outline-none focus:ring-2 focus:ring-tm-teal transition-colors font-brand"
-      >
-        <span>{label}</span>
-        <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}>
-          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd"/>
-        </svg>
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg min-w-[220px] py-1">
-          <label className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors">
-            <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-tm-teal w-3.5 h-3.5" />
-            <span className="text-xs font-brand font-semibold text-gray-700 dark:text-tm-dark-text">All Shops</span>
-          </label>
-          <div className="border-t border-gray-100 dark:border-tm-dark-border my-1" />
-          {locations.map(loc => (
-            <label key={loc.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors">
-              <input
-                type="checkbox"
-                checked={allSelected || (selected !== null && selected.includes(loc.id))}
-                onChange={() => toggle(loc.id)}
-                className="accent-tm-teal w-3.5 h-3.5"
-              />
-              <span className="text-xs font-brand text-gray-700 dark:text-tm-dark-text truncate">{loc.name}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Site Performance table ────────────────────────────────────────────────────
-
-function MetricTable({ data, locations, dateRange }) {
-  const [sort, toggleSort] = useSortState('tw', 'desc')
-
-  if (!data.length) return (
-    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
-  )
-
-  const dayData = toDayTotals(data)
-  const totals  = agg(dayData)
-  const byLoc   = {}
-  dayData.forEach(r => { ;(byLoc[r.location_id] = byLoc[r.location_id] || []).push(r) })
-
-  const rows = Object.entries(byLoc).map(([locId, rows]) => ({
-    name: locations.find(l => l.id === locId)?.name || locId,
-    ...agg(rows),
-  }))
-
-  const sorted = [...rows].sort((a, b) => {
-    const dir = sort.dir === 'asc' ? 1 : -1
-    if (sort.col === 'name')       return dir * a.name.localeCompare(b.name)
-    if (sort.col === 'p_mix')      return dir * (parsePct(a.p_mix) - parsePct(b.p_mix))
-    if (sort.col === 'conversion') return dir * (parsePct(a.conversion) - parsePct(b.conversion))
-    return dir * ((a[sort.col] ?? 0) - (b[sort.col] ?? 0))
-  })
-
-  const maxWashes = Math.max(...sorted.map(r => r.tw), 1)
-
-  const MiniBar = ({ value, max }) => (
-    <div className="flex items-center gap-1">
-      <div className="flex-1 bg-gray-100 dark:bg-tm-dark-border rounded-full h-1.5 min-w-[40px]">
-        <div className="bg-tm-teal h-1.5 rounded-full" style={{ width: max > 0 ? `${Math.min(100, value / max * 100)}%` : '0%' }} />
-      </div>
-      <span className="text-xs w-12 text-right dark:text-tm-dark-text">{fmtNum(value) || value}</span>
-    </div>
-  )
-
-  const COLS = [
-    { key: 'name',       label: 'Location',        align: 'left'   },
-    { key: 'tw',         label: 'Total Washes',     align: 'left'   },
-    { key: 'mw',         label: 'Member Washes',    align: 'center' },
-    { key: 'ms',         label: 'Memberships Sold', align: 'center' },
-    { key: 'opp',        label: 'Opportunities',    align: 'center' },
-    { key: 'gr',         label: 'Google Reviews',   align: 'center' },
-    { key: 'p_mix',      label: 'P-Mix',            align: 'center' },
-    { key: 'conversion', label: 'Conversion',       align: 'center' },
-  ]
-
-  const exportSpec = {
-    filename: `site-performance_${dateRange.start}_to_${dateRange.end}`,
-    title:    'Site Performance',
-    subtitle: fmtDateRange(dateRange.start, dateRange.end),
-    columns: [
-      { label: 'Location',         type: 'text' },
-      { label: 'Total Washes',     type: 'num'  },
-      { label: 'Member Washes',    type: 'num'  },
-      { label: 'Memberships Sold', type: 'num'  },
-      { label: 'Opportunities',    type: 'num'  },
-      { label: 'Google Reviews',   type: 'num'  },
-      { label: 'P-Mix',            type: 'pmix' },
-      { label: 'Conversion',       type: 'conv' },
-    ],
-    rows: sorted.map(r => [r.name, r.tw, r.mw, r.ms, r.opp, r.gr, r.p_mix, r.conversion]),
-    totalsRow: ['Totals', totals.tw, totals.mw, totals.ms, totals.opp, totals.gr, totals.p_mix, totals.conversion],
-  }
-  const exportItems = [
-    { label: 'Excel (.xlsx)', run: () => exportXlsx(exportSpec) },
-    { label: 'PDF',           run: () => exportPdf(exportSpec)  },
-    { label: 'CSV',           run: () => exportCsv(exportSpec)  },
-  ]
-
-  return (
-    <div>
-      <div className="flex justify-end mb-3">
-        <ExportMenu items={exportItems} />
-      </div>
-      <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-xs">
-        <thead>
-          <tr className="bg-tm-blue dark:bg-tm-navy text-white">
-            {COLS.map(c => (
-              <th key={c.key} className={`${thCls} text-${c.align}`} onClick={() => toggleSort(c.key)}>
-                {c.label}<SortIcon active={sort.col === c.key} dir={sort.dir} />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((r, i) => (
-            <tr key={r.name} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
-              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-medium font-brand dark:text-tm-dark-text">{r.name}</td>
-              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2"><MiniBar value={r.tw} max={maxWashes} /></td>
-              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.mw)}</td>
-              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.ms)}</td>
-              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.opp)}</td>
-              <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.gr)}</td>
-              <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${pmixCls(r.p_mix)}`}>{r.p_mix}</td>
-              <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${convCls(r.conversion)}`}>{r.conversion}</td>
-            </tr>
-          ))}
-          <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
-            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">Totals</td>
-            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.tw)}</td>
-            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.mw)}</td>
-            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.ms)}</td>
-            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.opp)}</td>
-            <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.gr)}</td>
-            <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${pmixTotalsCls(totals.p_mix)}`}>{totals.p_mix}</td>
-            <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${convTotalsCls(totals.conversion)}`}>{totals.conversion}</td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
-    </div>
-  )
-}
-
-// ── Team Member Sales table ───────────────────────────────────────────────────
-
-function TMSalesRows({ rows, showSite, sort }) {
-  const sorted = [...rows].sort((a, b) => {
-    const dir = sort.dir === 'asc' ? 1 : -1
-    if (sort.col === 'name') return dir * a.name.localeCompare(b.name)
-    if (sort.col === 'site') return dir * (a.site ?? '').localeCompare(b.site ?? '')
-    if (sort.col === 'p_mix')      return dir * ((a.pmixN ?? -1) - (b.pmixN ?? -1))
-    if (sort.col === 'conversion') return dir * ((a.convN ?? -1) - (b.convN ?? -1))
-    return dir * ((a[sort.col] ?? 0) - (b[sort.col] ?? 0))
-  })
-
-  return (
-    <>
-      {sorted.map((r, i) => (
-        <tr key={r.key} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
-          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-medium font-brand dark:text-tm-dark-text">{r.name}</td>
-          {showSite && (
-            <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-gray-500 dark:text-tm-dark-muted font-brand text-xs">{r.site}</td>
-          )}
-          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{fmtNum(r.ms)}</td>
-          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{fmtNum(r.gr)}</td>
-          <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${pmixCls(r.p_mix)}`}>{r.p_mix}</td>
-          <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${convCls(r.conversion)}`}>{r.conversion}</td>
-        </tr>
-      ))}
-    </>
-  )
-}
-
-function TMSalesTotalsRow({ rows, showSite }) {
-  let totMS = 0, totGR = 0, totBetter = 0, totBest = 0, totOpp = 0
-  rows.forEach(r => {
-    totMS     += r.ms      || 0
-    totGR     += r.gr      || 0
-    totBetter += r.better  || 0
-    totBest   += r.best    || 0
-    totOpp    += r.opp     || 0
-  })
-  const p_mix      = pct(totBetter + totBest, totMS)
-  const conversion = pct(totMS, totOpp)
-  return (
-    <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
-      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">Totals</td>
-      {showSite && <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2" />}
-      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totMS)}</td>
-      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totGR)}</td>
-      <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${pmixTotalsCls(p_mix)}`}>{p_mix}</td>
-      <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${convTotalsCls(conversion)}`}>{conversion}</td>
-    </tr>
-  )
-}
-
-function TeamMemberTable({ data, locations, dateRange }) {
-  const [splitByShop, setSplitByShop] = useState(false)
-  const [sort, toggleSort]            = useSortState('ms', 'desc')
-
-  if (!data.length) return (
-    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
-  )
-
-  const dayMap = {}
-  data.forEach(r => {
-    const key = `${r.location_id}::${r.log_date}`
-    if (!dayMap[key]) dayMap[key] = { locationId: r.location_id, rows: [] }
-    dayMap[key].rows.push(r)
-  })
-
-  const empAccum = {}
-  Object.values(dayMap).forEach(({ locationId, rows }) => {
-    const deltas = employeeDeltasByDay(rows)
-    Object.entries(deltas).forEach(([name, d]) => {
-      const key = `${locationId}::${name.toLowerCase()}`
-      if (!empAccum[key]) {
-        empAccum[key] = {
-          key, name, locationId,
-          site: locations.find(l => l.id === locationId)?.name ?? '',
-          total_washes: 0, member_washes: 0, google_reviews: 0,
-          basic: 0, good: 0, better: 0, best: 0,
-        }
-      }
-      const e = empAccum[key]
-      e.total_washes   += d.total_washes
-      e.member_washes  += d.member_washes
-      e.google_reviews += d.google_reviews
-      e.basic          += d.basic
-      e.good           += d.good
-      e.better         += d.better
-      e.best           += d.best
-    })
-  })
-
-  const allRows = Object.values(empAccum).map(e => {
-    const ms  = e.basic + e.good + e.better + e.best
-    // Use each shop's configured opportunities formula
-    const formula = locations.find(l => l.id === e.locationId)?.opportunities_formula
-    const opp = formula === 'simple'
-      ? Math.max(0, e.total_washes - e.member_washes)
-      : Math.max(0, e.total_washes - e.member_washes + ms)
-    return {
-      key:        e.key,
-      name:       e.name,
-      locationId: e.locationId,
-      site:       e.site,
-      ms, opp,
-      gr:         e.google_reviews,
-      better:     e.better,
-      best:       e.best,
-      pmixN:      pctN(e.better + e.best, ms),
-      convN:      pctN(ms, opp),
-      p_mix:      pct(e.better + e.best, ms),
-      conversion: pct(ms, opp),
-    }
-  })
-
-  if (!allRows.length) return (
-    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No employee data entered for this period.</div>
-  )
-
-  const TM_COLS_COMBINED = [
-    { key: 'name',       label: 'Employee'       },
-    { key: 'site',       label: 'Site'           },
-    { key: 'ms',         label: 'Memberships'    },
-    { key: 'gr',         label: 'Google Reviews' },
-    { key: 'p_mix',      label: 'P-Mix'          },
-    { key: 'conversion', label: 'Conversion'     },
-  ]
-  const TM_COLS_SPLIT = TM_COLS_COMBINED.filter(c => c.key !== 'site')
-
-  const TableHead = ({ cols }) => (
-    <thead>
-      <tr className="bg-tm-blue dark:bg-tm-navy text-white">
-        {cols.map(c => (
-          <th key={c.key} className={`${thCls} text-left`} onClick={() => toggleSort(c.key)}>
-            {c.label}<SortIcon active={sort.col === c.key} dir={sort.dir} />
-          </th>
-        ))}
-      </tr>
-    </thead>
-  )
-
-  let totMS = 0, totGR = 0, totBetter = 0, totBest = 0, totOpp = 0
-  allRows.forEach(r => {
-    totMS += r.ms || 0; totGR += r.gr || 0
-    totBetter += r.better || 0; totBest += r.best || 0; totOpp += r.opp || 0
-  })
-  const exportSpec = {
-    filename: `team-member-sales_${dateRange.start}_to_${dateRange.end}`,
-    title:    'Team Member Sales',
-    subtitle: fmtDateRange(dateRange.start, dateRange.end),
-    columns: [
-      { label: 'Employee',       type: 'text' },
-      { label: 'Site',           type: 'text' },
-      { label: 'Memberships',    type: 'num'  },
-      { label: 'Google Reviews', type: 'num'  },
-      { label: 'P-Mix',          type: 'pmix' },
-      { label: 'Conversion',     type: 'conv' },
-    ],
-    rows: [...allRows]
-      .sort((a, b) => (b.ms ?? 0) - (a.ms ?? 0))
-      .map(r => [r.name, r.site, r.ms, r.gr, r.p_mix, r.conversion]),
-    totalsRow: ['Totals', '', totMS, totGR, pct(totBetter + totBest, totMS), pct(totMS, totOpp)],
-  }
-  const exportItems = [
-    { label: 'Excel (.xlsx)', run: () => exportXlsx(exportSpec) },
-    { label: 'PDF',           run: () => exportPdf(exportSpec)  },
-    { label: 'CSV',           run: () => exportCsv(exportSpec)  },
-  ]
-
-  return (
-    <div>
-      <div className="flex justify-end gap-2 mb-3">
-        <ExportMenu items={exportItems} />
-        <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-tm-dark-border shadow-sm">
-          {[
-            { label: 'Combined', val: false },
-            { label: 'By Site',  val: true  },
-          ].map(({ label, val }) => (
-            <button
-              key={label}
-              onClick={() => setSplitByShop(val)}
-              className={`px-3 py-1.5 text-xs font-brand font-semibold transition-colors border-r last:border-r-0 border-gray-200 dark:border-tm-dark-border
-                ${splitByShop === val
-                  ? 'bg-tm-blue dark:bg-tm-navy text-white'
-                  : 'bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue dark:hover:text-white'
-                }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {splitByShop ? (
-        <div className="space-y-5">
-          {locations.map(loc => {
-            const locRows = allRows.filter(r => r.locationId === loc.id)
-            if (!locRows.length) return null
-            return (
-              <div key={loc.id}>
-                <p className="text-xs font-brand font-semibold text-tm-blue dark:text-tm-teal mb-1.5 uppercase tracking-wide">{loc.name}</p>
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-xs">
-                    <TableHead cols={TM_COLS_SPLIT} />
-                    <tbody>
-                      <TMSalesRows rows={locRows} showSite={false} sort={sort} />
-                      <TMSalesTotalsRow rows={locRows} showSite={false} />
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-xs">
-            <TableHead cols={TM_COLS_COMBINED} />
-            <tbody>
-              <TMSalesRows rows={allRows} showSite sort={sort} />
-              <TMSalesTotalsRow rows={allRows} showSite />
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Daily trend charts ────────────────────────────────────────────────────────
-
-const TEAL   = '#8ECFCB'
-const ORANGE = '#ea580c'
-
-const ChartTooltip = ({ active, payload, label, isPct }) => {
-  if (!active || !payload?.length) return null
-  const val = payload[0]?.value
-  return (
-    <div className="bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded shadow-md px-3 py-2 text-xs font-brand">
-      <p className="text-gray-500 dark:text-tm-dark-muted mb-1">{label}</p>
-      <p className="font-semibold text-tm-blue dark:text-tm-teal">
-        {val != null ? (isPct ? `${val}%` : val.toLocaleString('en-US')) : '—'}
-      </p>
-    </div>
-  )
-}
-
-function MiniChart({ title, data, dataKey, color, isPct = false, type = 'bar', dark, colorFn }) {
-  const axisColor  = dark ? '#7A9BBF' : '#6B7280'
-  const gridColor  = dark ? '#1E3A5F' : '#f0f0f0'
-  const lineStroke = colorFn ? (dark ? '#4b6175' : '#9ca3af') : color
-  const hasData    = data.some(d => d[dataKey] != null && d[dataKey] > 0)
-
-  const customDot = colorFn
-    ? (props) => {
-        const { cx, cy, value } = props
-        if (value == null) return null
-        const c = colorFn(value)
-        return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={4} fill={c} stroke={c} strokeWidth={1} />
-      }
-    : { r: 3, fill: color }
-
-  return (
-    <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border shadow-sm p-4">
-      <p className="text-xs font-brand font-semibold text-gray-600 dark:text-tm-dark-muted uppercase tracking-wide mb-3">{title}</p>
-      {!hasData ? (
-        <div className="h-32 flex items-center justify-center text-gray-300 dark:text-tm-dark-muted text-xs">No data</div>
-      ) : (
-        <ResponsiveContainer width="100%" height={140}>
-          {type === 'line' ? (
-            <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fontFamily: 'Chakra Petch', fill: axisColor }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} tickFormatter={v => isPct ? `${v}%` : Number(v).toLocaleString('en-US')} />
-              <Tooltip content={<ChartTooltip isPct={isPct} />} />
-              <Line type="monotone" dataKey={dataKey} stroke={lineStroke} strokeWidth={2} dot={customDot} connectNulls={false} />
-            </LineChart>
-          ) : (
-            <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fontFamily: 'Chakra Petch', fill: axisColor }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'Chakra Petch', fill: axisColor }} tickFormatter={v => Number(v).toLocaleString('en-US')} />
-              <Tooltip content={<ChartTooltip isPct={isPct} />} />
-              <Bar dataKey={dataKey} fill={colorFn ? undefined : color} radius={[2, 2, 0, 0]}>
-                {colorFn && data.map((entry, i) => (
-                  <Cell key={i} fill={colorFn(entry[dataKey])} />
-                ))}
-              </Bar>
-            </BarChart>
-          )}
-        </ResponsiveContainer>
-      )}
-    </div>
-  )
-}
-
-function DailyTrends({ logs, dark, locations, selected, onSelectedChange, dateRange }) {
-  // For a single location: use hourly rows as-is (last row = day total).
-  // For all locations: reduce to one row per (location, date) then sum across locations.
-  // Latest row per (location, date), then sum across locations per date.
-  // Works for any selection size — one shop, a subset, or all shops.
-  const chartData = (() => {
-    const locDateMap = {}
-    logs.forEach(r => {
-      const key = `${r.location_id}::${r.log_date}`
-      if (!locDateMap[key]) locDateMap[key] = []
-      locDateMap[key].push(r)
-    })
-    const bestRows = Object.values(locDateMap).map(rows => {
-      const withData = rows.filter(r => toInt(r.total_washes) > 0 || toInt(r.memberships_sold) > 0)
-      const src = withData.length ? withData : rows
-      return src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
-    })
-    const dateMap = {}
-    bestRows.forEach(r => {
-      if (!dateMap[r.log_date]) dateMap[r.log_date] = []
-      dateMap[r.log_date].push(r)
-    })
-    return Object.entries(dateMap)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, rows]) => {
-        const d = new Date(date + 'T00:00:00')
-        const tw  = rows.reduce((s, r) => s + toInt(r.total_washes),    0)
-        const mw  = rows.reduce((s, r) => s + toInt(r.member_washes),   0)
-        const ms  = rows.reduce((s, r) => s + toInt(r.memberships_sold),0)
-        const opp = rows.reduce((s, r) => s + toInt(r.opportunities),   0)
-        const gr  = rows.reduce((s, r) => s + toInt(r.google_reviews),  0)
-        const btr = rows.reduce((s, r) => s + toInt(r.better),          0)
-        const bst = rows.reduce((s, r) => s + toInt(r.best),            0)
-        return {
-          label: `${d.getMonth() + 1}/${d.getDate()}`, tw, mw, ms, gr,
-          conversion: opp > 0 ? parseFloat((ms / opp * 100).toFixed(1)) : null,
-          pmix:       ms  > 0 ? parseFloat(((btr + bst) / ms * 100).toFixed(1)) : null,
-        }
-      })
-  })()
-
-  const navyColor    = dark ? '#D6E4F0' : '#1A3555'
-  const selectedLocs = selected === null
-    ? locations
-    : locations.filter(l => selected.includes(l.id))
-  // Thresholds only apply when a single shop is charted; otherwise defaults
-  const trendLocation = selectedLocs.length === 1 ? selectedLocs[0] : null
-  const shopsLabel = selectedLocs.length === locations.length
-    ? 'All Shops'
-    : selectedLocs.length === 1
-      ? selectedLocs[0].name
-      : `${selectedLocs.length} of ${locations.length} shops`
-  const thresholds    = trendLocation?.metric_thresholds
-  const convColorFn   = (v) => convHex(v, thresholds)
-  const pmixColorFn   = (v) => pmixHex(v, thresholds)
-
-  const trendsSpec = {
-    filename: `daily-trends_${dateRange.start}_to_${dateRange.end}`,
-    title:    'Daily Trends',
-    subtitle: `${shopsLabel} — ${fmtDateRange(dateRange.start, dateRange.end)}`,
-    charts: [
-      { title: 'Daily Memberships Sold', dataKey: 'ms',         type: 'bar',  color: '#8ECFCB' },
-      { title: 'Daily Conversion %',     dataKey: 'conversion', type: 'line', isPct: true, colorFn: convColorFn },
-      { title: 'Daily Google Reviews',   dataKey: 'gr',         type: 'bar',  color: '#1A3555' },
-      { title: 'Daily Total Washes',     dataKey: 'tw',         type: 'bar',  color: '#1A3555' },
-      { title: 'Daily P-Mix %',          dataKey: 'pmix',       type: 'line', isPct: true, colorFn: pmixColorFn },
-      { title: 'Daily Member Washes',    dataKey: 'mw',         type: 'bar',  color: '#8ECFCB' },
-    ],
-    data: chartData,
-    thresholds,
-    columns: [
-      { label: 'Date',             type: 'text' },
-      { label: 'Total Washes',     type: 'num'  },
-      { label: 'Member Washes',    type: 'num'  },
-      { label: 'Memberships Sold', type: 'num'  },
-      { label: 'Google Reviews',   type: 'num'  },
-      { label: 'P-Mix',            type: 'pmix' },
-      { label: 'Conversion',       type: 'conv' },
-    ],
-    rows: chartData.map(d => [
-      d.label, d.tw, d.mw, d.ms, d.gr,
-      d.pmix       != null ? `${d.pmix}%`       : '',
-      d.conversion != null ? `${d.conversion}%` : '',
-    ]),
-  }
-  const exportItems = [
-    { label: 'Excel — charts + table', run: () => exportTrendsXlsx({ ...trendsSpec, includeTable: true  }) },
-    { label: 'Excel — charts only',    run: () => exportTrendsXlsx({ ...trendsSpec, includeTable: false }) },
-    { label: 'PDF — charts + table',   run: () => exportTrendsPdf({  ...trendsSpec, includeTable: true  }) },
-    { label: 'PDF — charts only',      run: () => exportTrendsPdf({  ...trendsSpec, includeTable: false }) },
-  ]
-
-  return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <span className="text-sm text-gray-500 dark:text-tm-dark-muted">
-          {shopsLabel}
-        </span>
-        <div className="flex items-center gap-2">
-          {locations.length > 1 && (
-            <>
-              <label className="text-xs text-gray-500 dark:text-tm-dark-muted font-brand">Locations:</label>
-              <ShopMultiSelect locations={locations} selected={selected} onChange={onSelectedChange} />
-            </>
-          )}
-          {chartData.length > 0 && <ExportMenu items={exportItems} />}
-        </div>
-      </div>
-      {!chartData.length ? (
-        <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          <MiniChart title="Daily Memberships Sold" data={chartData} dataKey="ms"         color={TEAL}      dark={dark} />
-          <MiniChart title="Daily Conversion %"     data={chartData} dataKey="conversion" color={ORANGE}    dark={dark} type="line" isPct colorFn={convColorFn} />
-          <MiniChart title="Daily Google Reviews"   data={chartData} dataKey="gr"         color={navyColor} dark={dark} />
-          <MiniChart title="Daily Total Washes"     data={chartData} dataKey="tw"         color={navyColor} dark={dark} />
-          <MiniChart title="Daily P-Mix %"          data={chartData} dataKey="pmix"       color={ORANGE}    dark={dark} type="line" isPct colorFn={pmixColorFn} />
-          <MiniChart title="Daily Member Washes"    data={chartData} dataKey="mw"         color={TEAL}      dark={dark} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Collapsible section wrapper ───────────────────────────────────────────────
-
-function Section({ badge, badgeCls, subtitle, children, defaultOpen = true }) {
-  const [open, setOpen] = useState(defaultOpen)
   return (
     <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border overflow-hidden">
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={toggle}
         className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-tm-dark-card transition-colors"
       >
         <div className="flex items-center gap-3">
@@ -849,22 +97,130 @@ function Section({ badge, badgeCls, subtitle, children, defaultOpen = true }) {
   )
 }
 
+// ── Customize panel ───────────────────────────────────────────────────────────
+
+function CustomizePanel({ layout, onSave, onClose }) {
+  const [local, setLocal] = useState(layout.map(s => ({ ...s })))
+
+  const move = (idx, dir) => {
+    const next = [...local]
+    const swap = idx + dir
+    if (swap < 0 || swap >= next.length) return
+    ;[next[idx], next[swap]] = [next[swap], next[idx]]
+    setLocal(next)
+  }
+
+  const toggleVisible = (idx) => {
+    const next = [...local]
+    next[idx] = { ...next[idx], visible: !next[idx].visible }
+    setLocal(next)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-tm-dark-card rounded-xl shadow-2xl border border-gray-200 dark:border-tm-dark-border w-full max-w-sm mx-4 p-5"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-brand font-bold text-tm-blue dark:text-tm-teal text-base tracking-wide">Customize Dashboard</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors">
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"/>
+            </svg>
+          </button>
+        </div>
+
+        <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-4">Drag to reorder · toggle visibility</p>
+
+        <div className="space-y-2">
+          {local.map((s, idx) => (
+            <div
+              key={s.id}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors ${
+                s.visible
+                  ? 'border-gray-200 dark:border-tm-dark-border bg-gray-50 dark:bg-tm-dark-surface'
+                  : 'border-dashed border-gray-200 dark:border-tm-dark-border bg-white dark:bg-tm-dark-bg opacity-50'
+              }`}
+            >
+              {/* Visibility toggle */}
+              <button
+                onClick={() => toggleVisible(idx)}
+                className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors flex-shrink-0 ${
+                  s.visible
+                    ? 'bg-tm-teal/20 text-tm-teal hover:bg-tm-teal/30'
+                    : 'bg-gray-100 dark:bg-tm-dark-card text-gray-300 dark:text-tm-dark-muted hover:bg-gray-200'
+                }`}
+                title={s.visible ? 'Hide section' : 'Show section'}
+              >
+                {s.visible
+                  ? <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4"><path d="M10.5 8a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"/><path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8zm8 3.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/></svg>
+                  : <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4"><path d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7.028 7.028 0 00-2.79.588l.77.771A5.944 5.944 0 018 2.5c2.12 0 3.879 1.168 5.168 2.457A13.134 13.134 0 0114.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755-.165.165-.337.328-.517.486l.708.709z"/><path d="M11.297 9.176a3.5 3.5 0 00-4.474-4.474l.823.823a2.5 2.5 0 012.829 2.829l.822.822zm-2.943 1.299l.822.822a3.5 3.5 0 01-4.474-4.474l.823.823a2.5 2.5 0 002.829 2.829z"/><path d="M3.35 5.47c-.18.16-.353.322-.518.487A13.134 13.134 0 001.172 8l.195.288c.335.48.83 1.12 1.465 1.755C4.121 11.332 5.881 12.5 8 12.5c.716 0 1.39-.133 2.02-.36l.77.772A7.029 7.029 0 018 13.5C3 13.5 0 8 0 8s.939-1.721 2.641-3.238l.708.709zm10.296 8.884l-12-12 .708-.708 12 12-.708.708z"/></svg>
+                }
+              </button>
+
+              <span className="flex-1 text-sm font-brand text-gray-700 dark:text-tm-dark-text truncate">{s.label}</span>
+
+              {/* Reorder arrows */}
+              <div className="flex flex-col gap-0.5">
+                <button
+                  onClick={() => move(idx, -1)}
+                  disabled={idx === 0}
+                  className="p-0.5 rounded text-gray-400 hover:text-tm-blue dark:hover:text-tm-teal disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                  title="Move up"
+                >
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                    <path fillRule="evenodd" d="M8 3.293L3.146 8.146a.5.5 0 01-.707-.707l5-5a.5.5 0 01.707 0l5 5a.5.5 0 01-.707.707L8 3.293z" clipRule="evenodd"/>
+                  </svg>
+                </button>
+                <button
+                  onClick={() => move(idx, 1)}
+                  disabled={idx === local.length - 1}
+                  className="p-0.5 rounded text-gray-400 hover:text-tm-blue dark:hover:text-tm-teal disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                  title="Move down"
+                >
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                    <path fillRule="evenodd" d="M8 12.707l4.854-4.853a.5.5 0 01.707.707l-5 5a.5.5 0 01-.707 0l-5-5a.5.5 0 01.707-.707L8 12.707z" clipRule="evenodd"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-sm font-brand text-gray-500 dark:text-tm-dark-muted hover:text-gray-700 dark:hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => { onSave(local); onClose() }}
+            className="px-4 py-1.5 text-sm font-brand font-semibold bg-tm-teal text-tm-navy rounded-lg hover:brightness-110 transition-colors"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Insights() {
   const { locations: allLocations } = useAuth()
-  // Shops flagged "exclude from reporting" in the Admin panel stay out of all
-  // dashboard views; they remain available for shop entry. Memoized so the
-  // array reference stays stable — the fetch effect depends on it.
   const locations = useMemo(
     () => allLocations.filter(l => !l.exclude_from_reporting),
     [allLocations],
   )
-  const [dark]        = useDarkModeCtx()
-  const [logs, setLogs]                     = useState([])
-  const [loading, setLoading]               = useState(true)
+  const [dark] = useDarkModeCtx()
+
+  const [logs, setLogs]         = useState([])
+  const [loading, setLoading]   = useState(true)
   const [selectedShops, setSelectedShops]     = useState(null)
-  const [trendLocIds, setTrendLocIds]         = useState(null) // null = all visible locations
+  const [trendLocIds, setTrendLocIds]         = useState(null)
   const [selectedMarkets, setSelectedMarkets] = useState(() => {
     try {
       const raw = localStorage.getItem('tm_market_filter')
@@ -873,8 +229,9 @@ export default function Insights() {
       return Array.isArray(parsed) ? parsed : null
     } catch { return null }
   })
-
   const [dateRange, setDateRange] = useState(() => loadSavedDateRange('tm_insights_date_range'))
+  const [layout, setLayout]       = useState(loadLayout)
+  const [showCustomize, setShowCustomize] = useState(false)
 
   const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
 
@@ -886,17 +243,14 @@ export default function Insights() {
     if (locations.length) fetchData()
   }, [locations, dateRange])
 
-  useEffect(() => {
-    setSelectedShops(null)
-  }, [selectedMarkets])
+  useEffect(() => { setSelectedShops(null) }, [selectedMarkets])
 
   useEffect(() => {
-    if (trendLocIds === null) return // all locations, always valid
+    if (trendLocIds === null) return
     const visibleIds = (selectedShops === null
       ? marketLocations
       : marketLocations.filter(l => selectedShops.includes(l.id))
     ).map(l => l.id)
-    // Drop trend selections that left the visible set; empty → back to "all"
     const pruned = trendLocIds.filter(id => visibleIds.includes(id))
     if (pruned.length !== trendLocIds.length) {
       setTrendLocIds(pruned.length ? pruned : null)
@@ -906,9 +260,6 @@ export default function Insights() {
   const fetchData = async () => {
     setLoading(true)
     const locIds = locations.map(l => l.id)
-    // Supabase caps each query at 1000 rows and truncates silently. Longer date
-    // ranges (month to date across all shops) exceed that, which made whole
-    // locations disappear from the tables. Page through until a short page.
     const PAGE = 1000
     const all = []
     for (let from = 0; ; from += PAGE) {
@@ -932,6 +283,11 @@ export default function Insights() {
     saveDateRange('tm_insights_date_range', newRange)
   }
 
+  const handleLayoutSave = (newLayout) => {
+    setLayout(newLayout)
+    saveLayout(newLayout)
+  }
+
   const visibleLocations = selectedShops === null
     ? marketLocations
     : marketLocations.filter(l => selectedShops.includes(l.id))
@@ -944,17 +300,87 @@ export default function Insights() {
   const trendLogs  = trendLocIds === null
     ? filterLogs(logs)
     : logs.filter(r => trendLocIds.includes(r.location_id))
+
   const rangeLabel = fmtDateRange(dateRange.start, dateRange.end)
-  const cardCls    = "bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-5 dark:border dark:border-tm-dark-border"
+
+  const SECTION_CFG = {
+    network: {
+      badge: 'NETWORK', badgeCls: 'bg-tm-blue',
+      subtitle: 'Day view across shops',
+      content: (
+        <div className="mt-3">
+          <NetworkDayView locations={visibleLocations} date={todayStr()} />
+        </div>
+      ),
+    },
+    sites: {
+      badge: 'SITES', badgeCls: 'bg-tm-blue',
+      subtitle: `Site Performance — ${rangeLabel}`,
+      content: (
+        <div className="mt-3">
+          <SiteMetricTable data={filterLogs(logs)} locations={visibleLocations} dateRange={dateRange} />
+        </div>
+      ),
+    },
+    team: {
+      badge: 'TEAM', badgeCls: 'bg-[#1A3555]',
+      subtitle: `Team Member Sales — ${rangeLabel}`,
+      content: (
+        <div className="mt-3">
+          <TeamSalesTable data={filterLogs(logs)} locations={visibleLocations} dateRange={dateRange} />
+        </div>
+      ),
+    },
+    daily: {
+      badge: 'DAILY', badgeCls: 'bg-orange-600',
+      subtitle: `Daily Trends — ${rangeLabel}`,
+      content: (
+        <div className="mt-3">
+          <DailyTrendsSection
+            logs={trendLogs}
+            dark={dark}
+            locations={visibleLocations}
+            selected={trendLocIds}
+            onSelectedChange={setTrendLocIds}
+            dateRange={dateRange}
+          />
+        </div>
+      ),
+    },
+    dow: {
+      badge: 'DOW', badgeCls: 'bg-tm-teal text-tm-navy',
+      subtitle: `Day of Week — ${rangeLabel}`,
+      content: (
+        <div className="mt-3">
+          <DayOfWeekSection
+            logs={filterLogs(logs)}
+            locations={visibleLocations}
+            dark={dark}
+            dateRange={dateRange}
+          />
+        </div>
+      ),
+    },
+  }
 
   return (
     <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
 
-      {/* Sticky header — always visible while scrolling */}
       <div className="sticky top-0 z-30 bg-tm-cream dark:bg-tm-dark-bg border-b border-gray-200 dark:border-tm-dark-border shadow-sm">
         <div className="max-w-screen-2xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Dashboard</h1>
+            <button
+              onClick={() => setShowCustomize(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-brand font-semibold rounded-lg border border-gray-200 dark:border-tm-dark-border bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue hover:border-tm-teal dark:hover:text-white shadow-sm transition-colors"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                <path d="M9.5 13a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm0-5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm0-5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/>
+              </svg>
+              Customize
+            </button>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {markets.length > 0 && (
               <MarketMultiSelect
@@ -976,44 +402,31 @@ export default function Insights() {
 
       <div className="max-w-screen-2xl mx-auto px-4 py-6">
         {loading ? (
-          <div className={`${cardCls} p-12 flex items-center justify-center`}><TmLoader /></div>
+          <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-12 flex items-center justify-center">
+            <TmLoader />
+          </div>
         ) : (
           <div className="space-y-4">
-
-            <Section badge="NETWORK" badgeCls="bg-tm-blue" subtitle="Day view across shops">
-              <div className="mt-3">
-                <NetworkDayView locations={visibleLocations} date={todayStr()} />
-              </div>
-            </Section>
-
-            <Section badge="SITES" badgeCls="bg-tm-blue" subtitle={`Site Performance — ${rangeLabel}`}>
-              <div className="mt-3">
-                <MetricTable data={filterLogs(logs)} locations={visibleLocations} dateRange={dateRange} />
-              </div>
-            </Section>
-
-            <Section badge="TEAM" badgeCls="bg-[#1A3555]" subtitle={`Team Member Sales — ${rangeLabel}`}>
-              <div className="mt-3">
-                <TeamMemberTable data={filterLogs(logs)} locations={visibleLocations} dateRange={dateRange} />
-              </div>
-            </Section>
-
-            <Section badge="DAILY" badgeCls="bg-orange-600" subtitle={`Daily trends — ${rangeLabel}`}>
-              <div className="mt-3">
-                <DailyTrends
-                  logs={trendLogs}
-                  dark={dark}
-                  locations={visibleLocations}
-                  selected={trendLocIds}
-                  onSelectedChange={setTrendLocIds}
-                  dateRange={dateRange}
-                />
-              </div>
-            </Section>
-
+            {layout.filter(s => s.visible).map(s => {
+              const cfg = SECTION_CFG[s.id]
+              if (!cfg) return null
+              return (
+                <Section key={s.id} id={s.id} badge={cfg.badge} badgeCls={cfg.badgeCls} subtitle={cfg.subtitle}>
+                  {cfg.content}
+                </Section>
+              )
+            })}
           </div>
         )}
       </div>
+
+      {showCustomize && (
+        <CustomizePanel
+          layout={layout}
+          onSave={handleLayoutSave}
+          onClose={() => setShowCustomize(false)}
+        />
+      )}
     </div>
   )
 }

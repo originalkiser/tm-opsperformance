@@ -71,6 +71,19 @@ export default function NavBar() {
             </button>
           )}
 
+          {/* Reports — managers only */}
+          {isManager && (
+            <Link
+              to="/reports"
+              className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-blue/60 border border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white transition-colors font-brand font-semibold text-xs tracking-wide"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                <path d="M4 11a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zm5-4a1 1 0 011-1h2a1 1 0 011 1v7a1 1 0 01-1 1h-2a1 1 0 01-1-1V7zm-5 1a1 1 0 00-1 1v2a1 1 0 102 0V9a1 1 0 00-1-1z"/>
+              </svg>
+              Reports
+            </Link>
+          )}
+
           {/* Shop Entry — everyone */}
           <button
             onClick={() => navigate('/')}
