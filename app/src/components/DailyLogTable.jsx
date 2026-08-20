@@ -281,8 +281,8 @@ export default function DailyLogTable({
 }) {
   const [rows, setRows]       = useState(TIME_SLOTS.map(s => emptyRow(s.value)))
   const [employees, setEmps]  = useState([])
-  const [saving, setSaving]   = useState(new Set())
-  const [saveError, setSaveError] = useState(null)
+  const [saveStatus, setSaveStatus] = useState('idle') // 'idle' | 'saving' | 'saved'
+  const [saveError, setSaveError]   = useState(null)
   const [viewMode, setViewMode] = useState(() => {
     const saved = localStorage.getItem('tm_daily_view_mode')
     if (saved) return saved
@@ -336,7 +336,9 @@ export default function DailyLogTable({
 
   const rowsRef      = useRef(rows)
   rowsRef.current    = rows
-  const saveTimers   = useRef({})
+  const batchTimer  = useRef(null)
+  const dirtySet    = useRef(new Set())
+  const savedTimer  = useRef(null)
   const historyRef   = useRef([])
   const employeesRef = useRef(employees)
   employeesRef.current = employees
@@ -379,13 +381,11 @@ export default function DailyLogTable({
 
   useEffect(() => {
     return () => {
-      const pending = Object.keys(saveTimers.current)
-      if (!pending.length) return
-      pending.forEach(idx => {
-        clearTimeout(saveTimers.current[idx])
-        flushSave(parseInt(idx))
-      })
-      saveTimers.current = {}
+      clearTimeout(batchTimer.current)
+      clearTimeout(savedTimer.current)
+      const dirty = [...dirtySet.current]
+      dirtySet.current.clear()
+      dirty.forEach(i => flushSave(i))
     }
   }, [])
 
@@ -521,7 +521,6 @@ export default function DailyLogTable({
     }
 
     const { memberships_sold, opportunities } = compute(row, formulaRef.current)
-    setSaving(prev => new Set([...prev, index]))
     const { data: saved, error } = await supabase.from('daily_logs').upsert(
       {
         location_id:      locationIdRef.current,
@@ -553,7 +552,6 @@ export default function DailyLogTable({
         return next
       })
     }
-    setSaving(prev => { const n = new Set(prev); n.delete(index); return n })
   }, [])
 
   const flushSave = useCallback(async (index) => {
@@ -586,6 +584,21 @@ export default function DailyLogTable({
     )
   }, [])
 
+  const scheduleBatch = useCallback((indices) => {
+    indices.forEach(i => dirtySet.current.add(i))
+    clearTimeout(batchTimer.current)
+    batchTimer.current = setTimeout(async () => {
+      const toSave = [...dirtySet.current]
+      if (!toSave.length) return
+      dirtySet.current.clear()
+      setSaveStatus('saving')
+      await Promise.all(toSave.map(i => doSave(i)))
+      setSaveStatus('saved')
+      clearTimeout(savedTimer.current)
+      savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000)
+    }, 2500)
+  }, [doSave])
+
   // ── Undo ─────────────────────────────────────────────────────────────────────
 
   const undo = useCallback(() => {
@@ -601,14 +614,8 @@ export default function DailyLogTable({
     rowsRef.current = snapshot
     setRows(snapshot)
 
-    changedIndices.forEach(i => {
-      clearTimeout(saveTimers.current[i])
-      saveTimers.current[i] = setTimeout(() => {
-        delete saveTimers.current[i]
-        doSave(i)
-      }, 100)
-    })
-  }, [doSave])
+    if (changedIndices.length) scheduleBatch(changedIndices)
+  }, [scheduleBatch])
 
   useEffect(() => {
     const handler = (e) => {
@@ -633,11 +640,7 @@ export default function DailyLogTable({
     next[index] = { ...next[index], [field]: value }
     rowsRef.current = next
     setRows(next)
-    clearTimeout(saveTimers.current[index])
-    saveTimers.current[index] = setTimeout(() => {
-      delete saveTimers.current[index]
-      doSave(index)
-    }, 800)
+    scheduleBatch([index])
   }
 
   const autoAddEmployee = async (name) => {
@@ -653,9 +656,7 @@ export default function DailyLogTable({
   }
 
   const saveImmediately = (index) => {
-    clearTimeout(saveTimers.current[index])
-    delete saveTimers.current[index]
-    doSave(index)
+    scheduleBatch([index])
     const row = rowsRef.current[index]
     if (row?.employee_name?.trim()) autoAddEmployee(row.employee_name)
   }
@@ -937,10 +938,7 @@ export default function DailyLogTable({
 
     rowsRef.current = next
     setRows(next)
-    next.forEach((_, idx) => {
-      clearTimeout(saveTimers.current[idx])
-      saveTimers.current[idx] = setTimeout(() => { delete saveTimers.current[idx]; doSave(idx) }, 100)
-    })
+    scheduleBatch(next.map((_, idx) => idx))
   }
 
   // ── Column order ─────────────────────────────────────────────────────────────
@@ -1082,8 +1080,11 @@ export default function DailyLogTable({
           )}
         </div>
         <div className="flex items-center gap-3">
-          {saving.size > 0 && (
+          {saveStatus === 'saving' && (
             <span className="text-xs text-tm-teal animate-pulse font-brand">Saving…</span>
+          )}
+          {saveStatus === 'saved' && (
+            <span className="text-xs text-green-500 dark:text-green-400 font-brand transition-opacity">✓ Saved</span>
           )}
           {canEdit && historyRef.current.length > 0 && (
             <span className="text-xs text-gray-400 dark:text-tm-dark-muted font-brand select-none">
