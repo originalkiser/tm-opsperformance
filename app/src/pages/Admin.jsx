@@ -970,6 +970,19 @@ function DowntimeAdminTab({ locations }) {
   const [newType,       setNewType]       = useState('reason')
   const [loadingLogs,   setLoadingLogs]   = useState(false)
   const [showCancelled, setShowCancelled] = useState(false)
+  const [showApiKey,    setShowApiKey]    = useState(false)
+  const [keyCopied,     setKeyCopied]     = useState(false)
+
+  const sbUrl  = import.meta.env.VITE_SUPABASE_URL  || ''
+  const sbAnon = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+  const maskedKey = sbAnon ? sbAnon.slice(0, 20) + '…' + sbAnon.slice(-6) : '(not set)'
+
+  const copyKey = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setKeyCopied(true)
+      setTimeout(() => setKeyCopied(false), 2000)
+    })
+  }
 
   const enabledLocations = locations.filter(l => l.downtime_tracking_enabled)
 
@@ -1165,27 +1178,70 @@ function DowntimeAdminTab({ locations }) {
       {/* PowerBI / Data Lake guide */}
       <div className="pt-6 border-t border-gray-200 dark:border-tm-dark-border">
         <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal mb-2 tracking-wide">Data Connection — PowerBI / Data Lake</h3>
-        <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-3">Connect to Supabase REST API to pull downtime data into PowerBI or any pipeline.</p>
+        <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-4">Connect to Supabase REST API to pull downtime data into PowerBI or any pipeline.</p>
+
+        {/* API credentials */}
+        <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg p-4 mb-4 space-y-3">
+          <div>
+            <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-1">API Base URL</div>
+            <div className="flex items-center gap-2">
+              <code className="text-xs font-mono text-gray-700 dark:text-tm-dark-text break-all flex-1">{sbUrl || '(not set)'}</code>
+              {sbUrl && (
+                <button onClick={() => copyKey(sbUrl)}
+                  className="shrink-0 text-[10px] px-2 py-0.5 rounded bg-tm-blue/10 dark:bg-tm-blue/20 text-tm-blue dark:text-tm-sky hover:bg-tm-blue/20 font-brand transition-colors">
+                  Copy
+                </button>
+              )}
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted">Anon API Key</div>
+              <button
+                onClick={() => setShowApiKey(v => !v)}
+                className="text-[10px] font-brand font-semibold text-tm-teal hover:text-tm-blue dark:hover:text-tm-sky transition-colors"
+              >
+                {showApiKey ? 'Hide API Key' : 'Show API Key'}
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="text-xs font-mono text-gray-700 dark:text-tm-dark-text break-all flex-1 select-all">
+                {showApiKey ? sbAnon || '(not set)' : maskedKey}
+              </code>
+              {sbAnon && (
+                <button onClick={() => copyKey(sbAnon)}
+                  className="shrink-0 text-[10px] px-2 py-0.5 rounded bg-tm-blue/10 dark:bg-tm-blue/20 text-tm-blue dark:text-tm-sky hover:bg-tm-blue/20 font-brand transition-colors">
+                  {keyCopied ? '✓ Copied' : 'Copy'}
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-400 dark:text-tm-dark-muted font-brand mt-1">
+              Safe to share — Row Level Security enforces access. Use this key for both <code>apikey</code> and <code>Authorization: Bearer</code> headers.
+            </p>
+          </div>
+        </div>
+
+        {/* Endpoint + Power Query M */}
         <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg p-4 space-y-4 text-xs font-mono text-gray-700 dark:text-tm-dark-text overflow-x-auto">
           <div>
             <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-1">Endpoint</div>
-            <div>GET {'{SUPABASE_URL}'}/rest/v1/downtime_logs</div>
+            <div className="break-all">{sbUrl || '{SUPABASE_URL}'}/rest/v1/downtime_logs</div>
             <div className="text-gray-400 mt-0.5">?select=*,locations(name,site_code)&order=started_at.desc</div>
           </div>
           <div>
             <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-1">Required Headers</div>
-            <div>apikey: {'{SUPABASE_ANON_KEY}'}</div>
-            <div>Authorization: Bearer {'{SUPABASE_ANON_KEY}'}</div>
+            <div>apikey: {showApiKey ? sbAnon : maskedKey}</div>
+            <div>Authorization: Bearer {showApiKey ? sbAnon : maskedKey}</div>
           </div>
           <div>
             <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-1">Power Query M</div>
             <pre className="whitespace-pre-wrap text-[10px] leading-relaxed">{`let
-  url  = "{SUPABASE_URL}/rest/v1/downtime_logs"
+  url  = "${sbUrl || '{SUPABASE_URL}'}/rest/v1/downtime_logs"
        & "?select=id,location_id,started_at,ended_at,reason"
        & ",resolution_reason,resolution_notes,status,created_at"
        & ",locations(name,site_code)&order=started_at.desc",
-  hdrs = [apikey="{SUPABASE_ANON_KEY}",
-          Authorization="Bearer {SUPABASE_ANON_KEY}"],
+  hdrs = [apikey="${showApiKey ? sbAnon : '{SUPABASE_ANON_KEY}'}",
+          Authorization="Bearer ${showApiKey ? sbAnon : '{SUPABASE_ANON_KEY}'}"],
   src  = Json.Document(Web.Contents(url,[Headers=hdrs])),
   tbl  = Table.FromList(src,Splitter.SplitByNothing()),
   exp1 = Table.ExpandRecordColumn(tbl,"Column1",
@@ -1197,9 +1253,6 @@ function DowntimeAdminTab({ locations }) {
 in exp2`}</pre>
           </div>
         </div>
-        <p className="text-[11px] text-gray-400 dark:text-tm-dark-muted mt-2 font-brand">
-          Replace {'{SUPABASE_URL}'} and {'{SUPABASE_ANON_KEY}'} with values from Supabase → Project Settings → API.
-        </p>
       </div>
     </div>
   )
