@@ -448,10 +448,10 @@ export default function DailyLogTable({
     } catch {}
   }
 
-  const handleStartDowntime = async ({ started_at, reason }) => {
+  const handleStartDowntime = async ({ started_at, downtime_type, reason, details }) => {
     const { data } = await supabase
       .from('downtime_logs')
-      .insert({ location_id: locationIdRef.current, started_at, reason, status: 'active', started_by: profile?.id })
+      .insert({ location_id: locationIdRef.current, started_at, downtime_type, reason, details, status: 'active', started_by: profile?.id })
       .select()
       .single()
     if (data) {
@@ -461,11 +461,13 @@ export default function DailyLogTable({
     setShowDowntimeModal(false)
   }
 
-  const handleEndDowntime = async ({ ended_at, resolution_reason, resolution_notes }) => {
+  const handleEndDowntime = async ({ ended_at, resolution_reason, resolution_notes, corrective_action_needed, corrective_action }) => {
     await supabase.from('downtime_logs').update({
       ended_at,
-      resolution_reason: resolution_reason || null,
-      resolution_notes:  resolution_notes  || null,
+      resolution_reason:        resolution_reason        || null,
+      resolution_notes:         resolution_notes         || null,
+      corrective_action_needed: corrective_action_needed ?? null,
+      corrective_action:        corrective_action        || null,
       status:    'resolved',
       ended_by:  profile?.id,
       updated_at: new Date().toISOString(),

@@ -1143,7 +1143,7 @@ function DowntimeAdminTab({ locations }) {
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr className="bg-gray-100 dark:bg-tm-dark-card text-gray-500 dark:text-tm-dark-muted font-brand uppercase tracking-wide text-[10px]">
-                    {['Status','Started','Ended','Duration','Reason','Resolution','Notes','Actions'].map(h => (
+                    {['Status','Type','Started','Ended','Duration','Reason','Details','Resolution','Notes','CA?','Actions'].map(h => (
                       <th key={h} className="px-3 py-2 text-left whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -1152,12 +1152,19 @@ function DowntimeAdminTab({ locations }) {
                   {visibleLogs.map((log, i) => (
                     <tr key={log.id} className={`${i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-row-alt'} ${log.status === 'cancelled' ? 'opacity-60' : ''}`}>
                       <td className="px-3 py-2"><StatusBadge status={log.status} /></td>
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-tm-dark-text">{log.downtime_type || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-tm-dark-text">{fmtDt(log.started_at)}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-tm-dark-text">{fmtDt(log.ended_at)}</td>
                       <td className="px-3 py-2 font-semibold text-gray-700 dark:text-tm-dark-text whitespace-nowrap">{fmtDuration(log.started_at, log.ended_at)}</td>
                       <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-text max-w-[120px] truncate" title={log.reason}>{log.reason || '—'}</td>
+                      <td className="px-3 py-2 text-gray-500 dark:text-tm-dark-muted max-w-[140px] truncate" title={log.details}>{log.details || ''}</td>
                       <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-text max-w-[120px] truncate" title={log.resolution_reason}>{log.resolution_reason || '—'}</td>
                       <td className="px-3 py-2 text-gray-500 dark:text-tm-dark-muted max-w-[160px] truncate" title={log.resolution_notes}>{log.resolution_notes || ''}</td>
+                      <td className="px-3 py-2 text-center">
+                        {log.corrective_action_needed === true  && <span title={log.corrective_action || ''} className="text-amber-600 dark:text-amber-400 font-bold cursor-default" title="Corrective action needed">✓</span>}
+                        {log.corrective_action_needed === false && <span className="text-gray-400">—</span>}
+                        {log.corrective_action_needed == null  && <span className="text-gray-300 dark:text-tm-dark-muted text-[10px]">n/a</span>}
+                      </td>
                       <td className="px-3 py-2">
                         {log.status === 'cancelled' && (
                           <button onClick={() => restoreLog(log)}
