@@ -1221,6 +1221,18 @@ function DowntimeAdminTab({ locations }) {
           </div>
         </div>
 
+        {/* One-time setup note */}
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 mb-4">
+          <div className="text-[10px] font-brand font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1">One-time Supabase setup required</div>
+          <p className="text-xs text-amber-700 dark:text-amber-300 font-brand mb-2">
+            Run this SQL in your Supabase SQL editor once to allow the API to return data without a user login:
+          </p>
+          <pre className="text-[11px] font-mono bg-white dark:bg-tm-dark-surface border border-amber-200 dark:border-amber-900 rounded px-3 py-2 text-gray-700 dark:text-tm-dark-text select-all whitespace-pre-wrap">{`CREATE POLICY "anon_read_downtime" ON downtime_logs\n  FOR SELECT TO anon USING (true);`}</pre>
+          <p className="text-[10px] text-amber-600 dark:text-amber-400 font-brand mt-1.5">
+            This grants read-only access to anyone with the anon key. Write access remains restricted to logged-in users.
+          </p>
+        </div>
+
         {/* Endpoint + Power Query M */}
         <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg p-4 space-y-4 text-xs font-mono text-gray-700 dark:text-tm-dark-text overflow-x-auto">
           <div>
