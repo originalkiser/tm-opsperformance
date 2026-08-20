@@ -970,17 +970,17 @@ function DowntimeAdminTab({ locations }) {
   const [newType,       setNewType]       = useState('reason')
   const [loadingLogs,   setLoadingLogs]   = useState(false)
   const [showCancelled, setShowCancelled] = useState(false)
-  const [showApiKey,    setShowApiKey]    = useState(false)
-  const [keyCopied,     setKeyCopied]     = useState(false)
+  const [showApiKey,  setShowApiKey]  = useState(false)
+  const [copiedItem,  setCopiedItem]  = useState('')
 
-  const sbUrl  = import.meta.env.VITE_SUPABASE_URL  || ''
-  const sbAnon = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+  const sbUrl  = import.meta.env.VITE_SUPABASE_URL       || ''
+  const sbAnon = import.meta.env.VITE_SUPABASE_ANON_KEY  || ''
   const maskedKey = sbAnon ? sbAnon.slice(0, 20) + '…' + sbAnon.slice(-6) : '(not set)'
 
-  const copyKey = (text) => {
+  const copyText = (text, key) => {
     navigator.clipboard.writeText(text).then(() => {
-      setKeyCopied(true)
-      setTimeout(() => setKeyCopied(false), 2000)
+      setCopiedItem(key)
+      setTimeout(() => setCopiedItem(''), 2000)
     })
   }
 
@@ -1178,82 +1178,102 @@ function DowntimeAdminTab({ locations }) {
       {/* PowerBI / Data Lake guide */}
       <div className="pt-6 border-t border-gray-200 dark:border-tm-dark-border">
         <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal mb-2 tracking-wide">Data Connection — PowerBI / Data Lake</h3>
-        <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-4">Connect to Supabase REST API to pull downtime data into PowerBI or any pipeline.</p>
+        <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-4">Use the credentials and snippets below to connect PowerBI or any data pipeline to the downtime log.</p>
 
-        {/* API credentials */}
-        <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg p-4 mb-4 space-y-3">
-          <div>
-            <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-1">API Base URL</div>
-            <div className="flex items-center gap-2">
-              <code className="text-xs font-mono text-gray-700 dark:text-tm-dark-text break-all flex-1">{sbUrl || '(not set)'}</code>
-              {sbUrl && (
-                <button onClick={() => copyKey(sbUrl)}
-                  className="shrink-0 text-[10px] px-2 py-0.5 rounded bg-tm-blue/10 dark:bg-tm-blue/20 text-tm-blue dark:text-tm-sky hover:bg-tm-blue/20 font-brand transition-colors">
-                  Copy
-                </button>
-              )}
-            </div>
-          </div>
-          <div>
+        {/* Credentials card */}
+        <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg divide-y divide-gray-200 dark:divide-tm-dark-border mb-4 overflow-hidden">
+
+          {/* API Base URL */}
+          <div className="px-4 py-3">
             <div className="flex items-center justify-between mb-1">
-              <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted">Anon API Key</div>
-              <button
-                onClick={() => setShowApiKey(v => !v)}
-                className="text-[10px] font-brand font-semibold text-tm-teal hover:text-tm-blue dark:hover:text-tm-sky transition-colors"
-              >
-                {showApiKey ? 'Hide API Key' : 'Show API Key'}
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <code className="text-xs font-mono text-gray-700 dark:text-tm-dark-text break-all flex-1 select-all">
-                {showApiKey ? sbAnon || '(not set)' : maskedKey}
-              </code>
-              {sbAnon && (
-                <button onClick={() => copyKey(sbAnon)}
-                  className="shrink-0 text-[10px] px-2 py-0.5 rounded bg-tm-blue/10 dark:bg-tm-blue/20 text-tm-blue dark:text-tm-sky hover:bg-tm-blue/20 font-brand transition-colors">
-                  {keyCopied ? '✓ Copied' : 'Copy'}
+              <span className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted">API Base URL</span>
+              {sbUrl && (
+                <button onClick={() => copyText(sbUrl, 'url')}
+                  className="text-[10px] px-2 py-0.5 rounded bg-tm-blue/10 dark:bg-tm-blue/20 text-tm-blue dark:text-tm-sky hover:bg-tm-blue/20 font-brand transition-colors">
+                  {copiedItem === 'url' ? '✓ Copied' : 'Copy'}
                 </button>
               )}
             </div>
+            <code className="text-xs font-mono text-gray-700 dark:text-tm-dark-text break-all">{sbUrl || '(not set)'}</code>
+          </div>
+
+          {/* Anon key */}
+          <div className="px-4 py-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted">Anon API Key</span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowApiKey(v => !v)}
+                  className="text-[10px] font-brand font-semibold text-tm-teal hover:text-tm-blue dark:hover:text-tm-sky transition-colors">
+                  {showApiKey ? 'Hide' : 'Show'}
+                </button>
+                {sbAnon && (
+                  <button onClick={() => copyText(sbAnon, 'key')}
+                    className="text-[10px] px-2 py-0.5 rounded bg-tm-blue/10 dark:bg-tm-blue/20 text-tm-blue dark:text-tm-sky hover:bg-tm-blue/20 font-brand transition-colors">
+                    {copiedItem === 'key' ? '✓ Copied' : 'Copy'}
+                  </button>
+                )}
+              </div>
+            </div>
+            <code className="text-xs font-mono text-gray-700 dark:text-tm-dark-text break-all select-all">
+              {showApiKey ? sbAnon || '(not set)' : maskedKey}
+            </code>
             <p className="text-[10px] text-gray-400 dark:text-tm-dark-muted font-brand mt-1">
-              Safe to share — Row Level Security enforces access. Use this key for both <code>apikey</code> and <code>Authorization: Bearer</code> headers.
+              Use for both <code>apikey</code> and <code>Authorization: Bearer</code> headers. Read-only access enforced by RLS.
             </p>
           </div>
+
+          {/* Full endpoint */}
+          {(() => {
+            const endpoint = `${sbUrl}/rest/v1/downtime_logs?select=*,locations(name,site_code)&order=started_at.desc`
+            return (
+              <div className="px-4 py-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted">Full Endpoint URL</span>
+                  {sbUrl && (
+                    <button onClick={() => copyText(endpoint, 'endpoint')}
+                      className="text-[10px] px-2 py-0.5 rounded bg-tm-blue/10 dark:bg-tm-blue/20 text-tm-blue dark:text-tm-sky hover:bg-tm-blue/20 font-brand transition-colors">
+                      {copiedItem === 'endpoint' ? '✓ Copied' : 'Copy'}
+                    </button>
+                  )}
+                </div>
+                <code className="text-xs font-mono text-gray-700 dark:text-tm-dark-text break-all">{endpoint}</code>
+              </div>
+            )
+          })()}
+
+          {/* Headers */}
+          {(() => {
+            const key = showApiKey ? sbAnon : '{SUPABASE_ANON_KEY}'
+            const headersText = `apikey: ${sbAnon}\nAuthorization: Bearer ${sbAnon}`
+            return (
+              <div className="px-4 py-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted">Required Headers</span>
+                  {sbAnon && (
+                    <button onClick={() => copyText(headersText, 'headers')}
+                      className="text-[10px] px-2 py-0.5 rounded bg-tm-blue/10 dark:bg-tm-blue/20 text-tm-blue dark:text-tm-sky hover:bg-tm-blue/20 font-brand transition-colors">
+                      {copiedItem === 'headers' ? '✓ Copied' : 'Copy'}
+                    </button>
+                  )}
+                </div>
+                <div className="text-xs font-mono text-gray-700 dark:text-tm-dark-text">
+                  <div>apikey: {key}</div>
+                  <div>Authorization: Bearer {key}</div>
+                </div>
+              </div>
+            )
+          })()}
         </div>
 
-        {/* One-time setup note */}
-        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 mb-4">
-          <div className="text-[10px] font-brand font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1">One-time Supabase setup required</div>
-          <p className="text-xs text-amber-700 dark:text-amber-300 font-brand mb-2">
-            Run this SQL in your Supabase SQL editor once to allow the API to return data without a user login:
-          </p>
-          <pre className="text-[11px] font-mono bg-white dark:bg-tm-dark-surface border border-amber-200 dark:border-amber-900 rounded px-3 py-2 text-gray-700 dark:text-tm-dark-text select-all whitespace-pre-wrap">{`CREATE POLICY "anon_read_downtime" ON downtime_logs\n  FOR SELECT TO anon USING (true);`}</pre>
-          <p className="text-[10px] text-amber-600 dark:text-amber-400 font-brand mt-1.5">
-            This grants read-only access to anyone with the anon key. Write access remains restricted to logged-in users.
-          </p>
-        </div>
-
-        {/* Endpoint + Power Query M */}
-        <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg p-4 space-y-4 text-xs font-mono text-gray-700 dark:text-tm-dark-text overflow-x-auto">
-          <div>
-            <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-1">Endpoint</div>
-            <div className="break-all">{sbUrl || '{SUPABASE_URL}'}/rest/v1/downtime_logs</div>
-            <div className="text-gray-400 mt-0.5">?select=*,locations(name,site_code)&order=started_at.desc</div>
-          </div>
-          <div>
-            <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-1">Required Headers</div>
-            <div>apikey: {showApiKey ? sbAnon : maskedKey}</div>
-            <div>Authorization: Bearer {showApiKey ? sbAnon : maskedKey}</div>
-          </div>
-          <div>
-            <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-1">Power Query M</div>
-            <pre className="whitespace-pre-wrap text-[10px] leading-relaxed">{`let
-  url  = "${sbUrl || '{SUPABASE_URL}'}/rest/v1/downtime_logs"
+        {/* Power Query M */}
+        {(() => {
+          const pqm = `let
+  url  = "${sbUrl}/rest/v1/downtime_logs"
        & "?select=id,location_id,started_at,ended_at,reason"
        & ",resolution_reason,resolution_notes,status,created_at"
        & ",locations(name,site_code)&order=started_at.desc",
-  hdrs = [apikey="${showApiKey ? sbAnon : '{SUPABASE_ANON_KEY}'}",
-          Authorization="Bearer ${showApiKey ? sbAnon : '{SUPABASE_ANON_KEY}'}"],
+  hdrs = [apikey="${sbAnon}",
+          Authorization="Bearer ${sbAnon}"],
   src  = Json.Document(Web.Contents(url,[Headers=hdrs])),
   tbl  = Table.FromList(src,Splitter.SplitByNothing()),
   exp1 = Table.ExpandRecordColumn(tbl,"Column1",
@@ -1262,9 +1282,22 @@ function DowntimeAdminTab({ locations }) {
             "created_at","locations"}),
   exp2 = Table.ExpandRecordColumn(exp1,"locations",
            {"name","site_code"},{"location_name","site_code"})
-in exp2`}</pre>
-          </div>
-        </div>
+in exp2`
+          return (
+            <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-tm-dark-border">
+                <span className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted">Power Query M — paste into PowerBI</span>
+                <button onClick={() => copyText(pqm, 'pqm')}
+                  className="text-[10px] px-2 py-0.5 rounded bg-tm-blue/10 dark:bg-tm-blue/20 text-tm-blue dark:text-tm-sky hover:bg-tm-blue/20 font-brand transition-colors">
+                  {copiedItem === 'pqm' ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
+              <pre className="px-4 py-3 text-[10px] font-mono text-gray-700 dark:text-tm-dark-text whitespace-pre-wrap leading-relaxed overflow-x-auto">
+                {showApiKey ? pqm : pqm.replace(new RegExp(sbAnon.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), maskedKey)}
+              </pre>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )
