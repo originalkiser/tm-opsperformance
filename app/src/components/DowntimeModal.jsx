@@ -39,7 +39,6 @@ export default function DowntimeModal({ mode, reasons = [], activeDowntime, onSt
 
   // End fields
   const [endTime,                  setEndTime]                  = useState(fmtTimeStr(new Date()))
-  const [resolutionReason,         setResolutionReason]         = useState('')
   const [resolutionNotes,          setResolutionNotes]          = useState('')
   const [correctiveActionNeeded,   setCorrectiveActionNeeded]   = useState(null) // null | true | false
   const [correctiveAction,         setCorrectiveAction]         = useState('')
@@ -48,8 +47,7 @@ export default function DowntimeModal({ mode, reasons = [], activeDowntime, onSt
   const [saving,        setSaving]        = useState(false)
   const [error,         setError]         = useState('')
 
-  const downReasons = reasons.filter(r => r.type === 'reason'     && r.is_active)
-  const resReasons  = reasons.filter(r => r.type === 'resolution' && r.is_active)
+  const downReasons = reasons.filter(r => r.type === 'reason' && r.is_active)
 
   const handleStart = async () => {
     if (!downtimeType) { setError('Please select a type of downtime.'); return }
@@ -68,7 +66,6 @@ export default function DowntimeModal({ mode, reasons = [], activeDowntime, onSt
     setSaving(true); setError('')
     await onEnd({
       ended_at:                  localIso(endTime),
-      resolution_reason:         resolutionReason         || null,
       resolution_notes:          resolutionNotes          || null,
       corrective_action_needed:  correctiveActionNeeded   ?? null,
       corrective_action:         correctiveActionNeeded ? (correctiveAction || null) : null,
@@ -189,12 +186,6 @@ export default function DowntimeModal({ mode, reasons = [], activeDowntime, onSt
 
               {/* 6. Resolution */}
               <Field label="Resolution">
-                {resReasons.length > 0 && (
-                  <select value={resolutionReason} onChange={e => setResolutionReason(e.target.value)} className={inputCls() + ' mb-2'}>
-                    <option value="">Select how it was resolved…</option>
-                    {resReasons.map(r => <option key={r.id} value={r.label}>{r.label}</option>)}
-                  </select>
-                )}
                 <textarea
                   rows={3}
                   value={resolutionNotes}

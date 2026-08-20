@@ -461,10 +461,9 @@ export default function DailyLogTable({
     setShowDowntimeModal(false)
   }
 
-  const handleEndDowntime = async ({ ended_at, resolution_reason, resolution_notes, corrective_action_needed, corrective_action }) => {
+  const handleEndDowntime = async ({ ended_at, resolution_notes, corrective_action_needed, corrective_action }) => {
     await supabase.from('downtime_logs').update({
       ended_at,
-      resolution_reason:        resolution_reason        || null,
       resolution_notes:         resolution_notes         || null,
       corrective_action_needed: corrective_action_needed ?? null,
       corrective_action:        corrective_action        || null,

@@ -1056,7 +1056,6 @@ function DowntimeAdminTab({ locations }) {
 
   const visibleLogs = showCancelled ? logs : logs.filter(l => l.status !== 'cancelled')
   const downReasons = reasons.filter(r => r.type === 'reason')
-  const resReasons  = reasons.filter(r => r.type === 'resolution')
 
   const StatusBadge = ({ status }) => {
     if (status === 'resolved')  return <span className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full font-brand font-semibold">Resolved</span>
@@ -1076,41 +1075,28 @@ function DowntimeAdminTab({ locations }) {
         <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal mb-3 tracking-wide">Reason Categories</h3>
         <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-4">These apply across all sites and appear in the downtime modal dropdowns.</p>
         <div className="flex gap-2 items-center mb-4 flex-wrap">
-          <select value={newType} onChange={e => setNewType(e.target.value)}
-            className="border border-gray-300 dark:border-tm-dark-border rounded-md px-2 py-1.5 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand">
-            <option value="reason">Downtime Reason</option>
-            <option value="resolution">Resolution Reason</option>
-          </select>
           <input type="text" placeholder="New reason label…" value={newLabel}
             onChange={e => setNewLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && addReason()}
             className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand w-52" />
           <button onClick={addReason} className="bg-tm-blue text-white px-3 py-1.5 rounded-md text-xs font-brand font-medium hover:bg-[#0E1D33] transition-colors">Add</button>
         </div>
-        <div className="grid sm:grid-cols-2 gap-6">
-          {[
-            { type: 'reason',     label: 'Downtime Reasons',   items: downReasons },
-            { type: 'resolution', label: 'Resolution Reasons', items: resReasons  },
-          ].map(({ type, label, items }) => (
-            <div key={type}>
-              <div className="text-xs font-brand font-bold text-gray-600 dark:text-tm-dark-muted uppercase tracking-wide mb-2">{label}</div>
-              {items.length === 0
-                ? <p className="text-xs text-gray-400 dark:text-tm-dark-muted italic">None added yet.</p>
-                : <div className="space-y-1">
-                    {items.map(r => (
-                      <div key={r.id} className="flex items-center gap-2 py-1 border-b border-gray-100 dark:border-tm-dark-border">
-                        <span className={`flex-1 text-sm font-brand ${!r.is_active ? 'line-through text-gray-400 dark:text-tm-dark-muted' : 'text-gray-700 dark:text-tm-dark-text'}`}>{r.label}</span>
-                        <button onClick={() => toggleReason(r)}
-                          className={`text-[10px] px-2 py-0.5 rounded transition-colors ${r.is_active ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
-                          {r.is_active ? 'Deactivate' : 'Reactivate'}
-                        </button>
-                        <button onClick={() => deleteReason(r.id)}
-                          className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-600 hover:bg-red-200 transition-colors">Delete</button>
-                      </div>
-                    ))}
+        <div>
+          {downReasons.length === 0
+            ? <p className="text-xs text-gray-400 dark:text-tm-dark-muted italic">None added yet.</p>
+            : <div className="space-y-1">
+                {downReasons.map(r => (
+                  <div key={r.id} className="flex items-center gap-2 py-1 border-b border-gray-100 dark:border-tm-dark-border">
+                    <span className={`flex-1 text-sm font-brand ${!r.is_active ? 'line-through text-gray-400 dark:text-tm-dark-muted' : 'text-gray-700 dark:text-tm-dark-text'}`}>{r.label}</span>
+                    <button onClick={() => toggleReason(r)}
+                      className={`text-[10px] px-2 py-0.5 rounded transition-colors ${r.is_active ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
+                      {r.is_active ? 'Deactivate' : 'Reactivate'}
+                    </button>
+                    <button onClick={() => deleteReason(r.id)}
+                      className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-600 hover:bg-red-200 transition-colors">Delete</button>
                   </div>
-              }
-            </div>
-          ))}
+                ))}
+              </div>
+          }
         </div>
       </div>
 
@@ -1143,7 +1129,7 @@ function DowntimeAdminTab({ locations }) {
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr className="bg-gray-100 dark:bg-tm-dark-card text-gray-500 dark:text-tm-dark-muted font-brand uppercase tracking-wide text-[10px]">
-                    {['Status','Type','Started','Ended','Duration','Reason','Details','Resolution','Notes','CA?','Actions'].map(h => (
+                    {['Status','Type','Started','Ended','Duration','Reason','Details','Resolution Notes','CA?','Actions'].map(h => (
                       <th key={h} className="px-3 py-2 text-left whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -1158,7 +1144,6 @@ function DowntimeAdminTab({ locations }) {
                       <td className="px-3 py-2 font-semibold text-gray-700 dark:text-tm-dark-text whitespace-nowrap">{fmtDuration(log.started_at, log.ended_at)}</td>
                       <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-text max-w-[120px] truncate" title={log.reason}>{log.reason || '—'}</td>
                       <td className="px-3 py-2 text-gray-500 dark:text-tm-dark-muted max-w-[140px] truncate" title={log.details}>{log.details || ''}</td>
-                      <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-text max-w-[120px] truncate" title={log.resolution_reason}>{log.resolution_reason || '—'}</td>
                       <td className="px-3 py-2 text-gray-500 dark:text-tm-dark-muted max-w-[160px] truncate" title={log.resolution_notes}>{log.resolution_notes || ''}</td>
                       <td className="px-3 py-2 text-center">
                         {log.corrective_action_needed === true  && <span title={log.corrective_action || ''} className="text-amber-600 dark:text-amber-400 font-bold cursor-default" title="Corrective action needed">✓</span>}
@@ -1276,17 +1261,17 @@ function DowntimeAdminTab({ locations }) {
         {(() => {
           const pqm = `let
   url  = "${sbUrl}/rest/v1/downtime_logs"
-       & "?select=id,location_id,started_at,ended_at,reason"
-       & ",resolution_reason,resolution_notes,status,created_at"
-       & ",locations(name,site_code)&order=started_at.desc",
+       & "?select=id,location_id,started_at,ended_at,downtime_type,reason"
+       & ",details,resolution_notes,corrective_action_needed,corrective_action"
+       & ",status,created_at,locations(name,site_code)&order=started_at.desc",
   hdrs = [apikey="${sbAnon}",
           Authorization="Bearer ${sbAnon}"],
   src  = Json.Document(Web.Contents(url,[Headers=hdrs])),
   tbl  = Table.FromList(src,Splitter.SplitByNothing()),
   exp1 = Table.ExpandRecordColumn(tbl,"Column1",
-           {"id","location_id","started_at","ended_at","reason",
-            "resolution_reason","resolution_notes","status",
-            "created_at","locations"}),
+           {"id","location_id","started_at","ended_at","downtime_type","reason",
+            "details","resolution_notes","corrective_action_needed","corrective_action",
+            "status","created_at","locations"}),
   exp2 = Table.ExpandRecordColumn(exp1,"locations",
            {"name","site_code"},{"location_name","site_code"})
 in exp2`
