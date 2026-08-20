@@ -461,8 +461,47 @@ export default function DailyLogTable({
     setShowDowntimeModal(false)
   }
 
+  const submitToJotForm = async (resolvedLog) => {
+    const { data: cfg } = await supabase.from('app_settings').select('value').eq('key', 'jotform').maybeSingle()
+    if (!cfg?.value?.form_id || !cfg?.value?.api_key || !cfg?.value?.mappings) return
+    const { form_id, api_key, mappings } = cfg.value
+
+    const startedAt   = new Date(resolvedLog.started_at)
+    const endedAt     = new Date(resolvedLog.ended_at)
+    const durationHrs = ((endedAt - startedAt) / 3600000).toFixed(2)
+    const multiDay    = startedAt.toDateString() !== endedAt.toDateString() ? 'Yes' : 'No'
+    const fmtDate     = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    const fmtTime     = d => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+
+    const values = {
+      location_name:            locationName || '',
+      site_code:                '',
+      start_date:               fmtDate(startedAt),
+      start_time:               fmtTime(startedAt),
+      end_date:                 fmtDate(endedAt),
+      end_time:                 fmtTime(endedAt),
+      duration_hours:           durationHrs,
+      downtime_type:            resolvedLog.downtime_type            || '',
+      reason:                   resolvedLog.reason                   || '',
+      details:                  resolvedLog.details                  || '',
+      resolution_notes:         resolvedLog.resolution_notes         || '',
+      corrective_action_needed: resolvedLog.corrective_action_needed ? 'Yes' : 'No',
+      corrective_action:        resolvedLog.corrective_action        || '',
+      multi_day:                multiDay,
+    }
+
+    const body = new URLSearchParams()
+    Object.entries(mappings).forEach(([srcKey, qid]) => {
+      if (qid && values[srcKey] !== undefined) body.append(`submission[${qid}]`, values[srcKey])
+    })
+
+    try {
+      await fetch(`https://api.jotform.com/form/${form_id}/submissions?apiKey=${api_key}`, { method: 'POST', body })
+    } catch {}
+  }
+
   const handleEndDowntime = async ({ ended_at, resolution_notes, corrective_action_needed, corrective_action }) => {
-    await supabase.from('downtime_logs').update({
+    const { data: resolved } = await supabase.from('downtime_logs').update({
       ended_at,
       resolution_notes:         resolution_notes         || null,
       corrective_action_needed: corrective_action_needed ?? null,
@@ -470,11 +509,12 @@ export default function DailyLogTable({
       status:    'resolved',
       ended_by:  profile?.id,
       updated_at: new Date().toISOString(),
-    }).eq('id', activeDowntime.id)
+    }).eq('id', activeDowntime.id).select().single()
     setActiveDowntime(null)
     setDowntimeWarningVisible(false)
     downtimeWarningSeenRef.current = false
     setShowDowntimeModal(false)
+    if (resolved) submitToJotForm(resolved)
   }
 
   const handleCancelDowntime = async () => {

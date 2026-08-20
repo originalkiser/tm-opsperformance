@@ -961,6 +961,184 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
   )
 }
 
+// ── JotForm Field Mapping ─────────────────────────────────────────────────────
+const JOTFORM_SOURCE_FIELDS = [
+  { key: 'location_name',            label: 'Site / Location Name' },
+  { key: 'site_code',                label: 'Site Code' },
+  { key: 'start_date',               label: 'Start Date' },
+  { key: 'start_time',               label: 'Start Time' },
+  { key: 'end_date',                 label: 'End Date' },
+  { key: 'end_time',                 label: 'End Time' },
+  { key: 'duration_hours',           label: 'Duration (Hours)' },
+  { key: 'downtime_type',            label: 'Type of Downtime' },
+  { key: 'reason',                   label: 'Reason' },
+  { key: 'details',                  label: 'Details' },
+  { key: 'resolution_notes',         label: 'Resolution' },
+  { key: 'corrective_action_needed', label: 'Corrective Action Needed? (Yes/No)' },
+  { key: 'corrective_action',        label: 'Corrective Action' },
+  { key: 'multi_day',                label: 'Multi-Day? (Yes/No)' },
+]
+
+function JotFormSection() {
+  const [formId,     setFormId]     = useState('')
+  const [apiKey,     setApiKey]     = useState('')
+  const [showKey,    setShowKey]    = useState(false)
+  const [questions,  setQuestions]  = useState([])
+  const [mappings,   setMappings]   = useState({})
+  const [fetching,   setFetching]   = useState(false)
+  const [fetchError, setFetchError] = useState('')
+  const [saving,     setSaving]     = useState(false)
+  const [savedOk,    setSavedOk]    = useState(false)
+  const [loaded,     setLoaded]     = useState(false)
+
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key', 'jotform').maybeSingle()
+      .then(({ data }) => {
+        if (data?.value) {
+          const v = data.value
+          setFormId(v.form_id   || '')
+          setApiKey(v.api_key   || '')
+          setMappings(v.mappings || {})
+          if (v.questions?.length) setQuestions(v.questions)
+        }
+        setLoaded(true)
+      })
+  }, [])
+
+  const fetchQuestions = async () => {
+    if (!formId.trim() || !apiKey.trim()) { setFetchError('Enter Form ID and API Key first.'); return }
+    setFetching(true); setFetchError('')
+    try {
+      const res  = await fetch(`https://api.jotform.com/form/${formId.trim()}/questions?apiKey=${apiKey.trim()}`)
+      const json = await res.json()
+      if (json.responseCode !== 200) throw new Error(json.message || 'Request failed')
+      const qs = Object.values(json.content || {})
+        .filter(q => q.type !== 'control_head' && q.text)
+        .map(q => ({ qid: String(q.qid), text: q.text }))
+        .sort((a, b) => Number(a.qid) - Number(b.qid))
+      setQuestions(qs)
+      if (!qs.length) setFetchError('No questions found on that form.')
+    } catch (e) {
+      setFetchError(`Could not reach JotForm: ${e.message}`)
+    }
+    setFetching(false)
+  }
+
+  const saveConfig = async () => {
+    setSaving(true)
+    await supabase.from('app_settings').upsert(
+      { key: 'jotform', value: { form_id: formId.trim(), api_key: apiKey.trim(), mappings, questions }, updated_at: new Date().toISOString() },
+      { onConflict: 'key' }
+    )
+    setSaving(false); setSavedOk(true)
+    setTimeout(() => setSavedOk(false), 2500)
+  }
+
+  if (!loaded) return null
+
+  return (
+    <div className="pt-6 border-t border-gray-200 dark:border-tm-dark-border">
+      <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal mb-1 tracking-wide">JotForm Integration</h3>
+      <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-4">
+        When a downtime is resolved, a submission is automatically posted to your JotForm table. Map each field below to the matching JotForm question.
+      </p>
+
+      {/* Credentials */}
+      <div className="grid sm:grid-cols-2 gap-3 mb-4">
+        <div>
+          <label className="block text-[10px] font-brand font-semibold uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted mb-1">Form ID</label>
+          <input
+            type="text"
+            value={formId}
+            onChange={e => setFormId(e.target.value)}
+            placeholder="e.g. 240000001"
+            className="w-full border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
+          />
+          <p className="text-[10px] text-gray-400 dark:text-tm-dark-muted mt-0.5">From your JotForm URL: jotform.com/build/<strong>240000001</strong></p>
+        </div>
+        <div>
+          <label className="block text-[10px] font-brand font-semibold uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted mb-1">API Key</label>
+          <div className="flex gap-1">
+            <input
+              type={showKey ? 'text' : 'password'}
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder="Your JotForm API key"
+              className="flex-1 border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
+            />
+            <button onClick={() => setShowKey(s => !s)}
+              className="px-2 py-1 text-[10px] border border-gray-300 dark:border-tm-dark-border rounded-md font-brand text-gray-500 dark:text-tm-dark-muted hover:bg-gray-100 dark:hover:bg-tm-dark-surface transition-colors">
+              {showKey ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-400 dark:text-tm-dark-muted mt-0.5">JotForm → My Account → API</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 mb-5">
+        <button
+          onClick={fetchQuestions}
+          disabled={fetching}
+          className="px-3 py-1.5 text-xs bg-tm-navy dark:bg-tm-dark-nav text-white font-brand rounded-md hover:brightness-110 transition-all disabled:opacity-50"
+        >
+          {fetching ? 'Fetching…' : questions.length ? '↻ Refresh JotForm Fields' : 'Fetch JotForm Fields'}
+        </button>
+        {questions.length > 0 && !fetchError && (
+          <span className="text-[11px] text-green-600 dark:text-green-400 font-brand">✓ {questions.length} fields loaded</span>
+        )}
+        {fetchError && <span className="text-[11px] text-red-500 dark:text-red-400 font-brand">{fetchError}</span>}
+      </div>
+
+      {/* Mapping table */}
+      {questions.length > 0 && (
+        <div className="mb-5">
+          <div className="text-[10px] font-brand font-bold uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted mb-2">Field Mapping</div>
+          <div className="border border-gray-200 dark:border-tm-dark-border rounded-lg overflow-hidden">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-gray-100 dark:bg-tm-dark-card text-[10px] font-brand uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted">
+                  <th className="px-3 py-2 text-left w-1/2">OpsPerformance Field</th>
+                  <th className="px-3 py-2 text-left">→ JotForm Question</th>
+                </tr>
+              </thead>
+              <tbody>
+                {JOTFORM_SOURCE_FIELDS.map((src, i) => (
+                  <tr key={src.key} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-row-alt'}>
+                    <td className="px-3 py-1.5 font-brand text-gray-700 dark:text-tm-dark-text">{src.label}</td>
+                    <td className="px-3 py-1.5">
+                      <select
+                        value={mappings[src.key] || ''}
+                        onChange={e => setMappings(m => ({ ...m, [src.key]: e.target.value }))}
+                        className="w-full border border-gray-300 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
+                      >
+                        <option value="">— not mapped —</option>
+                        {questions.map(q => (
+                          <option key={q.qid} value={q.qid}>{q.text}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={saveConfig}
+          disabled={saving || !formId.trim()}
+          className="px-4 py-1.5 text-xs bg-tm-teal text-tm-navy font-brand font-semibold rounded-md hover:brightness-110 transition-all disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save Integration Config'}
+        </button>
+        {savedOk && <span className="text-[11px] text-green-600 dark:text-green-400 font-brand">✓ Saved</span>}
+      </div>
+    </div>
+  )
+}
+
 // ── Downtime Admin Tab ────────────────────────────────────────────────────────
 function DowntimeAdminTab({ locations }) {
   const [selectedLocId, setSelectedLocId] = useState('')
@@ -1291,6 +1469,8 @@ in exp2`
           )
         })()}
       </div>
+
+      <JotFormSection />
     </div>
   )
 }
