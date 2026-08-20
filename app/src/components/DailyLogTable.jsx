@@ -1079,12 +1079,6 @@ export default function DailyLogTable({
           )}
         </div>
         <div className="flex items-center gap-3">
-          {saveStatus === 'saving' && (
-            <span className="text-xs text-tm-teal animate-pulse font-brand">Saving…</span>
-          )}
-          {saveStatus === 'saved' && (
-            <span className="text-xs text-green-500 dark:text-green-400 font-brand transition-opacity">✓ Saved</span>
-          )}
           {canEdit && historyRef.current.length > 0 && (
             <span className="text-xs text-gray-400 dark:text-tm-dark-muted font-brand select-none">
               Ctrl+Z · {historyRef.current.length} step{historyRef.current.length !== 1 ? 's' : ''}
