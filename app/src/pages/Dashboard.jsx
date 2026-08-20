@@ -256,6 +256,7 @@ export default function Dashboard() {
                   onRowsChange={setLiveRows}
                   profile={profile}
                   metricThresholds={location?.metric_thresholds}
+                  downtimeEnabled={!!location?.downtime_tracking_enabled}
                 />
                 <div className="mt-8 pt-4 border-t border-gray-100 dark:border-tm-dark-border">
                   <EmployeeSummary

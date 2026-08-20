@@ -161,6 +161,11 @@ export default function Admin() {
     fetchLocations()
   }
 
+  const updateLocationDowntimeEnabled = async (locId, enabled) => {
+    await supabase.from('locations').update({ downtime_tracking_enabled: enabled }).eq('id', locId)
+    fetchLocations()
+  }
+
   const addManagerToLocation = async (managerId, locId) => {
     if (!managerId || !locId) return
     await supabase.from('manager_locations').upsert({ manager_id: managerId, location_id: locId })
@@ -239,7 +244,7 @@ export default function Admin() {
   )
 
   const tabs = isAdmin
-    ? ['users', 'add_user', 'employees', 'locations']
+    ? ['users', 'add_user', 'employees', 'locations', 'downtime']
     : ['users', 'employees']
 
   const tabLabel = (t) => {
@@ -637,7 +642,13 @@ export default function Admin() {
               onRemoveManager={removeManagerFromLocation}
               onUpdateThresholds={updateLocationThresholds}
               onUpdateExclude={updateLocationExclude}
+              onUpdateDowntimeEnabled={updateLocationDowntimeEnabled}
             />
+          )}
+
+          {/* ── Downtime ── */}
+          {tab === 'downtime' && (
+            <DowntimeAdminTab locations={locations} />
           )}
         </div>
       </div>
@@ -646,7 +657,7 @@ export default function Admin() {
 }
 
 // ── Locations tab ─────────────────────────────────────────────────────────────
-function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude }) {
+function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled }) {
   const [marketInputs,    setMarketInputs]    = useState({})
   const [addMgrOpen,      setAddMgrOpen]      = useState({})
   const [thresholdInputs, setThresholdInputs] = useState({})
@@ -730,6 +741,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
               <th className="px-3 py-2 text-left">Market</th>
               <th className="px-3 py-2 text-left">Opportunities Formula</th>
               <th className="px-3 py-2 text-center">Exclude from Reporting</th>
+              <th className="px-3 py-2 text-center">Downtime Tracking</th>
               <th className="px-3 py-2 text-left">Area Manager(s)</th>
               <th className="px-3 py-2 text-left">Store User(s)</th>
             </tr>
@@ -784,6 +796,24 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                     </button>
                     {loc.exclude_from_reporting && (
                       <div className="text-[10px] text-red-500 font-brand font-semibold mt-0.5">Hidden</div>
+                    )}
+                  </td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center">
+                    <button
+                      role="switch"
+                      aria-checked={!!loc.downtime_tracking_enabled}
+                      onClick={() => onUpdateDowntimeEnabled(loc.id, !loc.downtime_tracking_enabled)}
+                      title={loc.downtime_tracking_enabled ? 'Downtime tracking on — click to disable' : 'Downtime tracking off — click to enable'}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors align-middle ${
+                        loc.downtime_tracking_enabled ? 'bg-tm-teal' : 'bg-gray-300 dark:bg-tm-dark-border'
+                      }`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                        loc.downtime_tracking_enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                      }`} />
+                    </button>
+                    {loc.downtime_tracking_enabled && (
+                      <div className="text-[10px] text-tm-teal font-brand font-semibold mt-0.5">On</div>
                     )}
                   </td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
@@ -859,6 +889,9 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
         <p><strong className="text-gray-500 dark:text-tm-dark-text">Simple (TW − MW):</strong> All non-member washes count as opportunities</p>
         <p><strong className="text-gray-500 dark:text-tm-dark-text">Detailed (TW − MW + MS):</strong> Add memberships sold back — true opportunities including sold memberships</p>
       </div>
+      <div className="mt-4 pt-2 border-t border-gray-100 dark:border-tm-dark-border text-xs text-gray-400 dark:text-tm-dark-muted">
+        <p><strong className="text-gray-500 dark:text-tm-dark-text">Downtime Tracking:</strong> When enabled for a site, staff can log and time downtime events from the daily log page. Configure reasons in the Downtime tab.</p>
+      </div>
 
       {/* ── Performance Thresholds ── */}
       <div className="mt-8 pt-6 border-t border-gray-200 dark:border-tm-dark-border">
@@ -923,6 +956,250 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
             )
           })}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Downtime Admin Tab ────────────────────────────────────────────────────────
+function DowntimeAdminTab({ locations }) {
+  const [selectedLocId, setSelectedLocId] = useState('')
+  const [reasons,       setReasons]       = useState([])
+  const [logs,          setLogs]          = useState([])
+  const [newLabel,      setNewLabel]      = useState('')
+  const [newType,       setNewType]       = useState('reason')
+  const [loadingLogs,   setLoadingLogs]   = useState(false)
+  const [showCancelled, setShowCancelled] = useState(false)
+
+  const enabledLocations = locations.filter(l => l.downtime_tracking_enabled)
+
+  useEffect(() => { fetchReasons() }, [])
+
+  useEffect(() => {
+    if (!selectedLocId) { setLogs([]); return }
+    fetchLogs()
+  }, [selectedLocId])
+
+  const fetchReasons = async () => {
+    try {
+      const { data } = await supabase.from('downtime_reasons').select('*').order('sort_order')
+      setReasons(data || [])
+    } catch {}
+  }
+
+  const fetchLogs = async () => {
+    setLoadingLogs(true)
+    try {
+      const { data } = await supabase
+        .from('downtime_logs')
+        .select('*')
+        .eq('location_id', selectedLocId)
+        .order('started_at', { ascending: false })
+        .limit(200)
+      setLogs(data || [])
+    } catch {}
+    setLoadingLogs(false)
+  }
+
+  const addReason = async () => {
+    const label = newLabel.trim()
+    if (!label) return
+    const maxOrder = reasons.filter(r => r.type === newType).reduce((m, r) => Math.max(m, r.sort_order || 0), -1)
+    await supabase.from('downtime_reasons').insert({ type: newType, label, sort_order: maxOrder + 1, is_active: true })
+    setNewLabel('')
+    fetchReasons()
+  }
+
+  const toggleReason = async (r) => {
+    await supabase.from('downtime_reasons').update({ is_active: !r.is_active }).eq('id', r.id)
+    fetchReasons()
+  }
+
+  const deleteReason = async (id) => {
+    if (!window.confirm('Remove this reason?')) return
+    await supabase.from('downtime_reasons').delete().eq('id', id)
+    fetchReasons()
+  }
+
+  const restoreLog = async (log) => {
+    await supabase.from('downtime_logs').update({
+      status: 'active', cancelled_at: null, cancelled_by: null, updated_at: new Date().toISOString(),
+    }).eq('id', log.id)
+    fetchLogs()
+  }
+
+  const fmtDt = (iso) => {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  }
+
+  const fmtDuration = (start, end) => {
+    if (!start || !end) return '—'
+    const mins = Math.round((new Date(end) - new Date(start)) / 60000)
+    if (mins < 60) return `${mins}m`
+    const h = Math.floor(mins / 60); const m = mins % 60
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+
+  const visibleLogs = showCancelled ? logs : logs.filter(l => l.status !== 'cancelled')
+  const downReasons = reasons.filter(r => r.type === 'reason')
+  const resReasons  = reasons.filter(r => r.type === 'resolution')
+
+  const StatusBadge = ({ status }) => {
+    if (status === 'resolved')  return <span className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full font-brand font-semibold">Resolved</span>
+    if (status === 'active')    return <span className="text-[10px] bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 px-2 py-0.5 rounded-full font-brand font-semibold">Active</span>
+    if (status === 'cancelled') return <span className="text-[10px] bg-gray-100 text-gray-500 dark:bg-tm-dark-card dark:text-tm-dark-muted px-2 py-0.5 rounded-full font-brand font-semibold">Cancelled</span>
+    return null
+  }
+
+  return (
+    <div className="space-y-8">
+      <p className="text-xs text-gray-500 dark:text-tm-dark-muted">
+        Manage downtime reason categories, view logs, and restore cancelled events. Enable tracking per site in the Locations tab.
+      </p>
+
+      {/* Reason management */}
+      <div>
+        <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal mb-3 tracking-wide">Reason Categories</h3>
+        <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-4">These apply across all sites and appear in the downtime modal dropdowns.</p>
+        <div className="flex gap-2 items-center mb-4 flex-wrap">
+          <select value={newType} onChange={e => setNewType(e.target.value)}
+            className="border border-gray-300 dark:border-tm-dark-border rounded-md px-2 py-1.5 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand">
+            <option value="reason">Downtime Reason</option>
+            <option value="resolution">Resolution Reason</option>
+          </select>
+          <input type="text" placeholder="New reason label…" value={newLabel}
+            onChange={e => setNewLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && addReason()}
+            className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand w-52" />
+          <button onClick={addReason} className="bg-tm-blue text-white px-3 py-1.5 rounded-md text-xs font-brand font-medium hover:bg-[#0E1D33] transition-colors">Add</button>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-6">
+          {[
+            { type: 'reason',     label: 'Downtime Reasons',   items: downReasons },
+            { type: 'resolution', label: 'Resolution Reasons', items: resReasons  },
+          ].map(({ type, label, items }) => (
+            <div key={type}>
+              <div className="text-xs font-brand font-bold text-gray-600 dark:text-tm-dark-muted uppercase tracking-wide mb-2">{label}</div>
+              {items.length === 0
+                ? <p className="text-xs text-gray-400 dark:text-tm-dark-muted italic">None added yet.</p>
+                : <div className="space-y-1">
+                    {items.map(r => (
+                      <div key={r.id} className="flex items-center gap-2 py-1 border-b border-gray-100 dark:border-tm-dark-border">
+                        <span className={`flex-1 text-sm font-brand ${!r.is_active ? 'line-through text-gray-400 dark:text-tm-dark-muted' : 'text-gray-700 dark:text-tm-dark-text'}`}>{r.label}</span>
+                        <button onClick={() => toggleReason(r)}
+                          className={`text-[10px] px-2 py-0.5 rounded transition-colors ${r.is_active ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
+                          {r.is_active ? 'Deactivate' : 'Reactivate'}
+                        </button>
+                        <button onClick={() => deleteReason(r.id)}
+                          className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-600 hover:bg-red-200 transition-colors">Delete</button>
+                      </div>
+                    ))}
+                  </div>
+              }
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Downtime log */}
+      <div className="pt-6 border-t border-gray-200 dark:border-tm-dark-border">
+        <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal mb-3 tracking-wide">Downtime Log</h3>
+        <div className="flex gap-3 items-center mb-4 flex-wrap">
+          <select value={selectedLocId} onChange={e => setSelectedLocId(e.target.value)}
+            className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand">
+            <option value="">Select a site…</option>
+            {enabledLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+          {selectedLocId && (
+            <label className="flex items-center gap-2 text-xs font-brand text-gray-500 dark:text-tm-dark-muted cursor-pointer select-none">
+              <input type="checkbox" checked={showCancelled} onChange={e => setShowCancelled(e.target.checked)} className="rounded" />
+              Show cancelled
+            </label>
+          )}
+        </div>
+        {enabledLocations.length === 0 && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 font-brand">No sites have downtime tracking enabled. Enable it per site in the Locations tab.</p>
+        )}
+        {selectedLocId && (
+          loadingLogs ? (
+            <p className="text-xs text-gray-400 dark:text-tm-dark-muted font-brand py-4">Loading…</p>
+          ) : visibleLogs.length === 0 ? (
+            <p className="text-xs text-gray-400 dark:text-tm-dark-muted font-brand py-4">No downtime events recorded.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-gray-100 dark:bg-tm-dark-card text-gray-500 dark:text-tm-dark-muted font-brand uppercase tracking-wide text-[10px]">
+                    {['Status','Started','Ended','Duration','Reason','Resolution','Notes','Actions'].map(h => (
+                      <th key={h} className="px-3 py-2 text-left whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleLogs.map((log, i) => (
+                    <tr key={log.id} className={`${i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-row-alt'} ${log.status === 'cancelled' ? 'opacity-60' : ''}`}>
+                      <td className="px-3 py-2"><StatusBadge status={log.status} /></td>
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-tm-dark-text">{fmtDt(log.started_at)}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-tm-dark-text">{fmtDt(log.ended_at)}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-700 dark:text-tm-dark-text whitespace-nowrap">{fmtDuration(log.started_at, log.ended_at)}</td>
+                      <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-text max-w-[120px] truncate" title={log.reason}>{log.reason || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-text max-w-[120px] truncate" title={log.resolution_reason}>{log.resolution_reason || '—'}</td>
+                      <td className="px-3 py-2 text-gray-500 dark:text-tm-dark-muted max-w-[160px] truncate" title={log.resolution_notes}>{log.resolution_notes || ''}</td>
+                      <td className="px-3 py-2">
+                        {log.status === 'cancelled' && (
+                          <button onClick={() => restoreLog(log)}
+                            className="text-[10px] bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-0.5 rounded transition-colors font-brand">
+                            Restore
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
+      </div>
+
+      {/* PowerBI / Data Lake guide */}
+      <div className="pt-6 border-t border-gray-200 dark:border-tm-dark-border">
+        <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal mb-2 tracking-wide">Data Connection — PowerBI / Data Lake</h3>
+        <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-3">Connect to Supabase REST API to pull downtime data into PowerBI or any pipeline.</p>
+        <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg p-4 space-y-4 text-xs font-mono text-gray-700 dark:text-tm-dark-text overflow-x-auto">
+          <div>
+            <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-1">Endpoint</div>
+            <div>GET {'{SUPABASE_URL}'}/rest/v1/downtime_logs</div>
+            <div className="text-gray-400 mt-0.5">?select=*,locations(name,site_code)&order=started_at.desc</div>
+          </div>
+          <div>
+            <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-1">Required Headers</div>
+            <div>apikey: {'{SUPABASE_ANON_KEY}'}</div>
+            <div>Authorization: Bearer {'{SUPABASE_ANON_KEY}'}</div>
+          </div>
+          <div>
+            <div className="font-brand font-bold text-[10px] uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted mb-1">Power Query M</div>
+            <pre className="whitespace-pre-wrap text-[10px] leading-relaxed">{`let
+  url  = "{SUPABASE_URL}/rest/v1/downtime_logs"
+       & "?select=id,location_id,started_at,ended_at,reason"
+       & ",resolution_reason,resolution_notes,status,created_at"
+       & ",locations(name,site_code)&order=started_at.desc",
+  hdrs = [apikey="{SUPABASE_ANON_KEY}",
+          Authorization="Bearer {SUPABASE_ANON_KEY}"],
+  src  = Json.Document(Web.Contents(url,[Headers=hdrs])),
+  tbl  = Table.FromList(src,Splitter.SplitByNothing()),
+  exp1 = Table.ExpandRecordColumn(tbl,"Column1",
+           {"id","location_id","started_at","ended_at","reason",
+            "resolution_reason","resolution_notes","status",
+            "created_at","locations"}),
+  exp2 = Table.ExpandRecordColumn(exp1,"locations",
+           {"name","site_code"},{"location_name","site_code"})
+in exp2`}</pre>
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-400 dark:text-tm-dark-muted mt-2 font-brand">
+          Replace {'{SUPABASE_URL}'} and {'{SUPABASE_ANON_KEY}'} with values from Supabase → Project Settings → API.
+        </p>
       </div>
     </div>
   )

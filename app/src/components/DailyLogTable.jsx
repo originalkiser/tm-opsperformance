@@ -3,9 +3,19 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import EmployeeSelect from './EmployeeSelect'
 import TmLoader from './TmLoader'
+import DowntimeModal from './DowntimeModal'
 import { shopTotals } from '../utils/logMath'
 import { fmtNum } from '../utils/format'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
+
+function fmtElapsed(seconds) {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
 
 const TIME_SLOTS = [
   { label: '8:00 AM',  value: '08:00:00' },
@@ -267,6 +277,7 @@ export default function DailyLogTable({
   onRowsChange,
   profile,
   metricThresholds,
+  downtimeEnabled = false,
 }) {
   const [rows, setRows]       = useState(TIME_SLOTS.map(s => emptyRow(s.value)))
   const [employees, setEmps]  = useState([])
@@ -298,6 +309,15 @@ export default function DailyLogTable({
     } catch {}
     return [...ALL_KEYS]
   })
+
+  // ── Downtime state ───────────────────────────────────────────────────────────
+  const [activeDowntime,          setActiveDowntime]          = useState(null)
+  const [downtimeElapsed,         setDowntimeElapsed]         = useState(0)
+  const [downtimeReasons,         setDowntimeReasons]         = useState([])
+  const [showDowntimeModal,       setShowDowntimeModal]       = useState(false)
+  const [downtimeModalMode,       setDowntimeModalMode]       = useState('start')
+  const [downtimeWarningVisible,  setDowntimeWarningVisible]  = useState(false)
+  const downtimeWarningSeenRef    = useRef(false)
 
   const { updateProfileSettings } = useAuth()
   const profileSyncedRef = useRef(false)
@@ -339,6 +359,23 @@ export default function DailyLogTable({
     fetchEmployees()
     historyRef.current = []
   }, [locationId, selectedDate])
+
+  // Downtime: fetch active downtime + reasons when location changes
+  useEffect(() => {
+    if (!downtimeEnabled) return
+    fetchActiveDowntime()
+    fetchDowntimeReasons()
+  }, [locationId, downtimeEnabled])
+
+  // Downtime: live elapsed-time ticker
+  useEffect(() => {
+    if (!activeDowntime) { setDowntimeElapsed(0); return }
+    const startMs = new Date(activeDowntime.started_at).getTime()
+    const tick = () => setDowntimeElapsed(Math.floor((Date.now() - startMs) / 1000))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [activeDowntime])
 
   useEffect(() => {
     return () => {
@@ -383,6 +420,83 @@ export default function DailyLogTable({
         }
       })
     )
+  }
+
+  // ── Downtime helpers ─────────────────────────────────────────────────────────
+
+  const fetchActiveDowntime = async () => {
+    try {
+      const { data } = await supabase
+        .from('downtime_logs')
+        .select('*')
+        .eq('location_id', locationIdRef.current)
+        .eq('status', 'active')
+        .order('started_at', { ascending: false })
+        .limit(1)
+      setActiveDowntime(data?.[0] ?? null)
+    } catch {}
+  }
+
+  const fetchDowntimeReasons = async () => {
+    try {
+      const { data } = await supabase
+        .from('downtime_reasons')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order')
+      setDowntimeReasons(data || [])
+    } catch {}
+  }
+
+  const handleStartDowntime = async ({ started_at, reason }) => {
+    const { data } = await supabase
+      .from('downtime_logs')
+      .insert({ location_id: locationIdRef.current, started_at, reason, status: 'active', started_by: profile?.id })
+      .select()
+      .single()
+    if (data) {
+      setActiveDowntime(data)
+      downtimeWarningSeenRef.current = false
+    }
+    setShowDowntimeModal(false)
+  }
+
+  const handleEndDowntime = async ({ ended_at, resolution_reason, resolution_notes }) => {
+    await supabase.from('downtime_logs').update({
+      ended_at,
+      resolution_reason: resolution_reason || null,
+      resolution_notes:  resolution_notes  || null,
+      status:    'resolved',
+      ended_by:  profile?.id,
+      updated_at: new Date().toISOString(),
+    }).eq('id', activeDowntime.id)
+    setActiveDowntime(null)
+    setDowntimeWarningVisible(false)
+    downtimeWarningSeenRef.current = false
+    setShowDowntimeModal(false)
+  }
+
+  const handleCancelDowntime = async () => {
+    await supabase.from('downtime_logs').update({
+      status:       'cancelled',
+      cancelled_at: new Date().toISOString(),
+      cancelled_by: profile?.id,
+      updated_at:   new Date().toISOString(),
+    }).eq('id', activeDowntime.id)
+    setActiveDowntime(null)
+    setDowntimeWarningVisible(false)
+    downtimeWarningSeenRef.current = false
+    setShowDowntimeModal(false)
+  }
+
+  const openStartDowntime = () => { setDowntimeModalMode('start'); setShowDowntimeModal(true) }
+  const openEndDowntime   = () => { setDowntimeModalMode('end');   setShowDowntimeModal(true) }
+
+  const handleEditDuringDowntime = () => {
+    if (activeDowntime && !downtimeWarningSeenRef.current) {
+      downtimeWarningSeenRef.current = true
+      setDowntimeWarningVisible(true)
+    }
   }
 
   // ── Save / delete ────────────────────────────────────────────────────────────
@@ -863,6 +977,56 @@ export default function DailyLogTable({
 
   return (
     <div>
+      {/* ── Downtime active banner ───────────────────────────────────────────── */}
+      {activeDowntime && (
+        <div className="mb-3 rounded-xl bg-red-600 text-white px-4 py-2.5 flex items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="shrink-0 relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-white" />
+            </span>
+            <div className="min-w-0">
+              <div className="font-brand font-bold text-sm tracking-wide leading-none">SITE DOWN</div>
+              <div className="text-red-200 text-xs font-brand mt-0.5 truncate">
+                {activeDowntime.reason && `${activeDowntime.reason} · `}
+                Started {new Date(activeDowntime.started_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+              </div>
+            </div>
+            <div className="font-mono font-bold text-xl tracking-widest ml-2 shrink-0">
+              {fmtElapsed(downtimeElapsed)}
+            </div>
+          </div>
+          {canEdit && (
+            <button
+              onClick={openEndDowntime}
+              style={{ boxShadow: '0 0 16px 4px rgba(20,184,166,0.5)' }}
+              className="shrink-0 px-4 py-2 rounded-lg bg-tm-teal text-tm-navy font-brand font-bold text-xs tracking-wide hover:brightness-110 transition-all whitespace-nowrap"
+            >
+              End Downtime
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Downtime warning (soft, dismissable) ──────────────────────────────── */}
+      {downtimeWarningVisible && (
+        <div className="mb-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 px-4 py-3 flex items-start gap-3">
+          <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500 shrink-0 mt-0.5">
+            <path fillRule="evenodd" d="M8.485 3.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 3.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd"/>
+          </svg>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-brand font-semibold text-amber-800 dark:text-amber-300">Site downtime is active</div>
+            <div className="text-xs text-amber-700 dark:text-amber-400 font-brand mt-0.5">
+              Please end downtime before logging new data if possible. You can still edit if you need to catch up.
+            </div>
+          </div>
+          <button
+            onClick={() => setDowntimeWarningVisible(false)}
+            className="text-amber-500 hover:text-amber-700 dark:hover:text-amber-300 text-xl leading-none shrink-0 transition-colors"
+          >×</button>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2 flex-wrap">
@@ -906,6 +1070,14 @@ export default function DailyLogTable({
               ⎗ Paste Data
             </button>
           )}
+          {downtimeEnabled && canEdit && !activeDowntime && (
+            <button
+              onClick={openStartDowntime}
+              className="px-3 py-1.5 rounded-md border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 bg-white dark:bg-tm-dark-surface hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors font-brand text-xs font-semibold"
+            >
+              ▼ Start Downtime
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {saving.size > 0 && (
@@ -927,7 +1099,7 @@ export default function DailyLogTable({
 
       {/* ── Card View ─────────────────────────────────────────────────────────── */}
       {viewMode === 'card' && (
-        <div className="max-w-md mx-auto">
+        <div className={`max-w-md mx-auto transition-opacity ${activeDowntime ? 'opacity-60' : ''}`}>
           {/* Time + Employee header */}
           <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl px-3 pt-3 pb-3 mb-4">
             <div className="grid grid-cols-2 gap-3">
@@ -992,6 +1164,7 @@ export default function DailyLogTable({
                     className="w-full text-2xl font-semibold text-gray-800 dark:text-tm-dark-text bg-transparent border-none outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded transition-colors min-h-[48px] disabled:cursor-default placeholder:text-gray-300 dark:placeholder:text-tm-dark-muted/40"
                     value={cardRow[field]}
                     disabled={!canEdit}
+                    onFocus={handleEditDuringDowntime}
                     onChange={e => update(cardSlotIdx, field, e.target.value)}
                     onBlur={() => saveImmediately(cardSlotIdx)}
                   />
@@ -1026,7 +1199,7 @@ export default function DailyLogTable({
 
       {/* ── Table View ────────────────────────────────────────────────────────── */}
       {viewMode === 'table' && (
-        <div ref={tableContainerRef} className="overflow-x-auto">
+        <div ref={tableContainerRef} className={`overflow-x-auto transition-opacity ${activeDowntime ? 'opacity-60' : ''}`}>
           <table className="w-full border-collapse text-xs min-w-[1100px]">
             <thead>
               <tr className="bg-tm-blue dark:bg-tm-navy text-white">
@@ -1109,6 +1282,7 @@ export default function DailyLogTable({
                           className="w-full text-center py-1.5 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded disabled:cursor-default text-gray-800 dark:text-tm-dark-text transition-colors"
                           value={row[col.key]}
                           disabled={!canEdit}
+                          onFocus={handleEditDuringDowntime}
                           onChange={e => update(i, col.key, e.target.value)}
                           onBlur={() => saveImmediately(i)}
                           onKeyDown={e => handleCellKeyDown(e, i, colIdx)}
@@ -1171,6 +1345,19 @@ export default function DailyLogTable({
         <PasteModal
           onClose={() => setShowPasteModal(false)}
           onApply={applyPaste}
+        />
+      )}
+
+      {/* Downtime Modal */}
+      {showDowntimeModal && (
+        <DowntimeModal
+          mode={downtimeModalMode}
+          reasons={downtimeReasons}
+          activeDowntime={activeDowntime}
+          onStart={handleStartDowntime}
+          onEnd={handleEndDowntime}
+          onCancel={handleCancelDowntime}
+          onClose={() => setShowDowntimeModal(false)}
         />
       )}
     </div>
