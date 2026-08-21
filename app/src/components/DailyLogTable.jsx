@@ -493,10 +493,56 @@ export default function DailyLogTable({
       scope:                    resolvedLog.scope                    || '',
     }
 
-    // mappings = { qid: srcKey } — JotForm column QID → OpsPerformance field key
+    // mappings = { rawQid: srcKey } where rawQid may have # prefix and comma-separated sub-fields
     const body = new URLSearchParams()
-    Object.entries(mappings).forEach(([qid, srcKey]) => {
-      if (srcKey && values[srcKey] !== undefined) body.append(`submission[${qid}]`, values[srcKey])
+    Object.entries(mappings).forEach(([rawQid, srcKey]) => {
+      if (!srcKey || values[srcKey] === undefined) return
+      const val  = String(values[srcKey])
+      // Strip # and split on commas to get individual input names
+      const qids = rawQid.split(',').map(q => q.trim().replace(/^#/, '')).filter(Boolean)
+      if (!qids.length) return
+
+      if (qids.length === 1) {
+        body.append(`submission[${qids[0]}]`, val)
+        return
+      }
+
+      const hasMonth = qids.some(q => /^month_/.test(q))
+      const hasTime  = qids.some(q => /_timeInput/.test(q))
+      const isRadio  = qids.every(q => /_\d+$/.test(q))
+
+      if (hasMonth) {
+        // Date sub-fields: month_19, day_19, year_19 → input_19[month/day/year]
+        const num = (qids.find(q => /^month_/.test(q)) || '').replace('month_', '')
+        if (!num) return
+        const d = new Date(val)
+        if (isNaN(d)) return
+        body.append(`submission[input_${num}][month]`, String(d.getMonth() + 1))
+        body.append(`submission[input_${num}][day]`,   String(d.getDate()))
+        body.append(`submission[input_${num}][year]`,  String(d.getFullYear()))
+        return
+      }
+
+      if (hasTime) {
+        // Time sub-fields: input_22_timeInput, input_22_ampm → input_22[timeInput/ampm]
+        const tq   = qids.find(q => /_timeInput/.test(q)) || ''
+        const base = tq.replace('_timeInput', '')
+        const m    = val.match(/^(\d+:\d+)\s*(AM|PM)$/i)
+        if (!m) return
+        body.append(`submission[${base}][timeInput]`, m[1])
+        body.append(`submission[${base}][ampm]`,      m[2].toUpperCase())
+        return
+      }
+
+      if (isRadio) {
+        // Radio/checkbox options: input_31_0, input_31_1 → send value to base input_31
+        const base = qids[0].replace(/_\d+$/, '')
+        body.append(`submission[${base}]`, val)
+        return
+      }
+
+      // Fallback: send value to each sub-field individually
+      qids.forEach(q => body.append(`submission[${q}]`, val))
     })
 
     try {
