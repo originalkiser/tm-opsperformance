@@ -980,16 +980,17 @@ const JOTFORM_SOURCE_FIELDS = [
 ]
 
 function JotFormSection() {
-  const [formId,     setFormId]     = useState('')
-  const [apiKey,     setApiKey]     = useState('')
-  const [showKey,    setShowKey]    = useState(false)
-  const [questions,  setQuestions]  = useState([])
-  const [mappings,   setMappings]   = useState({})
-  const [fetching,   setFetching]   = useState(false)
-  const [fetchError, setFetchError] = useState('')
-  const [saving,     setSaving]     = useState(false)
-  const [savedOk,    setSavedOk]    = useState(false)
-  const [loaded,     setLoaded]     = useState(false)
+  const [formId,    setFormId]    = useState('')
+  const [apiKey,    setApiKey]    = useState('')
+  const [showKey,   setShowKey]   = useState(false)
+  // columns = [{name: 'Site', qid: '3'}, ...]  — manually defined by admin
+  const [columns,   setColumns]   = useState([])
+  const [mappings,  setMappings]  = useState({})
+  const [newName,   setNewName]   = useState('')
+  const [newQid,    setNewQid]    = useState('')
+  const [saving,    setSaving]    = useState(false)
+  const [savedOk,   setSavedOk]   = useState(false)
+  const [loaded,    setLoaded]    = useState(false)
 
   useEffect(() => {
     supabase.from('app_settings').select('value').eq('key', 'jotform').maybeSingle()
@@ -999,40 +1000,41 @@ function JotFormSection() {
           setFormId(v.form_id   || '')
           setApiKey(v.api_key   || '')
           setMappings(v.mappings || {})
-          if (v.questions?.length) setQuestions(v.questions)
+          setColumns(v.columns  || [])
         }
         setLoaded(true)
       })
   }, [])
 
-  const fetchQuestions = async () => {
-    if (!formId.trim() || !apiKey.trim()) { setFetchError('Enter Form ID and API Key first.'); return }
-    setFetching(true); setFetchError('')
-    try {
-      const res  = await fetch(`https://api.jotform.com/form/${formId.trim()}/questions?apiKey=${apiKey.trim()}`)
-      const json = await res.json()
-      if (json.responseCode !== 200) throw new Error(json.message || 'Request failed')
-      const qs = Object.values(json.content || {})
-        .filter(q => q.type !== 'control_head' && q.text)
-        .map(q => ({ qid: String(q.qid), text: q.text }))
-        .sort((a, b) => Number(a.qid) - Number(b.qid))
-      setQuestions(qs)
-      if (!qs.length) setFetchError('No questions found on that form.')
-    } catch (e) {
-      setFetchError(`Could not reach JotForm: ${e.message}`)
-    }
-    setFetching(false)
+  const addColumn = () => {
+    const name = newName.trim()
+    const qid  = newQid.trim()
+    if (!name || !qid) return
+    if (columns.some(c => c.qid === qid)) return
+    setColumns(prev => [...prev, { name, qid }])
+    setNewName(''); setNewQid('')
+  }
+
+  const removeColumn = (qid) => {
+    setColumns(prev => prev.filter(c => c.qid !== qid))
+    setMappings(prev => {
+      const next = { ...prev }
+      Object.keys(next).forEach(k => { if (next[k] === qid) delete next[k] })
+      return next
+    })
   }
 
   const saveConfig = async () => {
     setSaving(true)
     await supabase.from('app_settings').upsert(
-      { key: 'jotform', value: { form_id: formId.trim(), api_key: apiKey.trim(), mappings, questions }, updated_at: new Date().toISOString() },
+      { key: 'jotform', value: { form_id: formId.trim(), api_key: apiKey.trim(), columns, mappings }, updated_at: new Date().toISOString() },
       { onConflict: 'key' }
     )
     setSaving(false); setSavedOk(true)
     setTimeout(() => setSavedOk(false), 2500)
   }
+
+  const inputCls = 'border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand'
 
   if (!loaded) return null
 
@@ -1040,34 +1042,21 @@ function JotFormSection() {
     <div className="pt-6 border-t border-gray-200 dark:border-tm-dark-border">
       <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal mb-1 tracking-wide">JotForm Integration</h3>
       <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-4">
-        When a downtime is resolved, a submission is automatically posted to your JotForm table. Map each field below to the matching JotForm question.
+        When a downtime is resolved, a submission is automatically posted to your JotForm table. Add your JotForm columns below (including hidden fields), then map each OpsPerformance field to the matching column.
       </p>
 
       {/* Credentials */}
-      <div className="grid sm:grid-cols-2 gap-3 mb-4">
+      <div className="grid sm:grid-cols-2 gap-3 mb-5">
         <div>
           <label className="block text-[10px] font-brand font-semibold uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted mb-1">Form ID</label>
-          <input
-            type="text"
-            value={formId}
-            onChange={e => setFormId(e.target.value)}
-            placeholder="e.g. 240000001"
-            className="w-full border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
-          />
+          <input type="text" value={formId} onChange={e => setFormId(e.target.value)} placeholder="e.g. 240000001" className={`w-full ${inputCls}`} />
           <p className="text-[10px] text-gray-400 dark:text-tm-dark-muted mt-0.5">From your JotForm URL: jotform.com/build/<strong>240000001</strong></p>
         </div>
         <div>
           <label className="block text-[10px] font-brand font-semibold uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted mb-1">API Key</label>
           <div className="flex gap-1">
-            <input
-              type={showKey ? 'text' : 'password'}
-              value={apiKey}
-              onChange={e => setApiKey(e.target.value)}
-              placeholder="Your JotForm API key"
-              className="flex-1 border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
-            />
-            <button onClick={() => setShowKey(s => !s)}
-              className="px-2 py-1 text-[10px] border border-gray-300 dark:border-tm-dark-border rounded-md font-brand text-gray-500 dark:text-tm-dark-muted hover:bg-gray-100 dark:hover:bg-tm-dark-surface transition-colors">
+            <input type={showKey ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Your JotForm API key" className={`flex-1 ${inputCls}`} />
+            <button onClick={() => setShowKey(s => !s)} className="px-2 py-1 text-[10px] border border-gray-300 dark:border-tm-dark-border rounded-md font-brand text-gray-500 dark:text-tm-dark-muted hover:bg-gray-100 dark:hover:bg-tm-dark-surface transition-colors">
               {showKey ? 'Hide' : 'Show'}
             </button>
           </div>
@@ -1075,22 +1064,65 @@ function JotFormSection() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 mb-5">
-        <button
-          onClick={fetchQuestions}
-          disabled={fetching}
-          className="px-3 py-1.5 text-xs bg-tm-navy dark:bg-tm-dark-nav text-white font-brand rounded-md hover:brightness-110 transition-all disabled:opacity-50"
-        >
-          {fetching ? 'Fetching…' : questions.length ? '↻ Refresh JotForm Fields' : 'Fetch JotForm Fields'}
-        </button>
-        {questions.length > 0 && !fetchError && (
-          <span className="text-[11px] text-green-600 dark:text-green-400 font-brand">✓ {questions.length} fields loaded</span>
+      {/* JotForm Columns */}
+      <div className="mb-5">
+        <div className="text-[10px] font-brand font-bold uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted mb-1">JotForm Columns</div>
+        <p className="text-[11px] text-gray-400 dark:text-tm-dark-muted mb-3">
+          Add each column from your JotForm table (including hidden fields). Find the Question ID in JotForm form builder → right-click a field → Properties, or via JotForm API.
+        </p>
+        {columns.length > 0 && (
+          <div className="border border-gray-200 dark:border-tm-dark-border rounded-lg overflow-hidden mb-3">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-gray-100 dark:bg-tm-dark-card text-[10px] font-brand uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted">
+                  <th className="px-3 py-2 text-left">Column Name (as in JotForm Table)</th>
+                  <th className="px-3 py-2 text-left w-24">Question ID</th>
+                  <th className="px-3 py-2 w-12"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {columns.map((col, i) => (
+                  <tr key={col.qid} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-row-alt'}>
+                    <td className="px-3 py-1.5 font-brand text-gray-700 dark:text-tm-dark-text">{col.name}</td>
+                    <td className="px-3 py-1.5 font-mono text-gray-500 dark:text-tm-dark-muted">{col.qid}</td>
+                    <td className="px-3 py-1.5 text-right">
+                      <button onClick={() => removeColumn(col.qid)} className="text-[10px] text-red-500 hover:text-red-700 font-brand transition-colors">Remove</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-        {fetchError && <span className="text-[11px] text-red-500 dark:text-red-400 font-brand">{fetchError}</span>}
+        <div className="flex gap-2 items-center">
+          <input
+            type="text"
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addColumn()}
+            placeholder="Column name (e.g. Site)"
+            className={`flex-1 ${inputCls}`}
+          />
+          <input
+            type="text"
+            value={newQid}
+            onChange={e => setNewQid(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addColumn()}
+            placeholder="QID (e.g. 3)"
+            className={`w-24 ${inputCls}`}
+          />
+          <button
+            onClick={addColumn}
+            disabled={!newName.trim() || !newQid.trim()}
+            className="px-3 py-1.5 text-xs bg-tm-navy dark:bg-tm-dark-nav text-white font-brand rounded-md hover:brightness-110 transition-all disabled:opacity-40"
+          >
+            + Add
+          </button>
+        </div>
       </div>
 
-      {/* Mapping table */}
-      {questions.length > 0 && (
+      {/* Field Mapping */}
+      {columns.length > 0 && (
         <div className="mb-5">
           <div className="text-[10px] font-brand font-bold uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted mb-2">Field Mapping</div>
           <div className="border border-gray-200 dark:border-tm-dark-border rounded-lg overflow-hidden">
@@ -1098,7 +1130,7 @@ function JotFormSection() {
               <thead>
                 <tr className="bg-gray-100 dark:bg-tm-dark-card text-[10px] font-brand uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted">
                   <th className="px-3 py-2 text-left w-1/2">OpsPerformance Field</th>
-                  <th className="px-3 py-2 text-left">→ JotForm Question</th>
+                  <th className="px-3 py-2 text-left">→ JotForm Column</th>
                 </tr>
               </thead>
               <tbody>
@@ -1109,11 +1141,11 @@ function JotFormSection() {
                       <select
                         value={mappings[src.key] || ''}
                         onChange={e => setMappings(m => ({ ...m, [src.key]: e.target.value }))}
-                        className="w-full border border-gray-300 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
+                        className={`w-full ${inputCls} py-1`}
                       >
                         <option value="">— not mapped —</option>
-                        {questions.map(q => (
-                          <option key={q.qid} value={q.qid}>{q.text}</option>
+                        {columns.map(col => (
+                          <option key={col.qid} value={col.qid}>{col.name}</option>
                         ))}
                       </select>
                     </td>
