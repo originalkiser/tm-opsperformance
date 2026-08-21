@@ -271,6 +271,7 @@ function PasteModal({ onClose, onApply }) {
 export default function DailyLogTable({
   locationId,
   locationName,
+  locationEmail,
   selectedDate,
   canEdit,
   opportunitiesFormula = 'detailed',
@@ -451,7 +452,7 @@ export default function DailyLogTable({
   const handleStartDowntime = async ({ started_at, downtime_type, reason, details }) => {
     const { data } = await supabase
       .from('downtime_logs')
-      .insert({ location_id: locationIdRef.current, started_at, downtime_type, reason, details, status: 'active', started_by: profile?.id })
+      .insert({ location_id: locationIdRef.current, started_at, downtime_type, reason, details, site_email: locationEmail || null, status: 'active', started_by: profile?.id })
       .select()
       .single()
     if (data) {
@@ -476,6 +477,7 @@ export default function DailyLogTable({
     const values = {
       location_name:            locationName || '',
       site_code:                '',
+      site_email:               resolvedLog.site_email || locationEmail || '',
       start_date:               fmtDate(startedAt),
       start_time:               fmtTime(startedAt),
       end_date:                 fmtDate(endedAt),
@@ -490,9 +492,10 @@ export default function DailyLogTable({
       multi_day:                multiDay,
     }
 
+    // mappings = { qid: srcKey } — JotForm column QID → OpsPerformance field key
     const body = new URLSearchParams()
-    Object.entries(mappings).forEach(([srcKey, qid]) => {
-      if (qid && values[srcKey] !== undefined) body.append(`submission[${qid}]`, values[srcKey])
+    Object.entries(mappings).forEach(([qid, srcKey]) => {
+      if (srcKey && values[srcKey] !== undefined) body.append(`submission[${qid}]`, values[srcKey])
     })
 
     try {

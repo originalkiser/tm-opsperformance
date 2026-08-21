@@ -166,6 +166,11 @@ export default function Admin() {
     fetchLocations()
   }
 
+  const updateLocationEmail = async (locId, email) => {
+    await supabase.from('locations').update({ site_email: email || null }).eq('id', locId)
+    fetchLocations()
+  }
+
   const addManagerToLocation = async (managerId, locId) => {
     if (!managerId || !locId) return
     await supabase.from('manager_locations').upsert({ manager_id: managerId, location_id: locId })
@@ -643,6 +648,7 @@ export default function Admin() {
               onUpdateThresholds={updateLocationThresholds}
               onUpdateExclude={updateLocationExclude}
               onUpdateDowntimeEnabled={updateLocationDowntimeEnabled}
+              onUpdateEmail={updateLocationEmail}
             />
           )}
 
@@ -657,7 +663,7 @@ export default function Admin() {
 }
 
 // ── Locations tab ─────────────────────────────────────────────────────────────
-function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled }) {
+function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled, onUpdateEmail }) {
   const [marketInputs,    setMarketInputs]    = useState({})
   const [addMgrOpen,      setAddMgrOpen]      = useState({})
   const [thresholdInputs, setThresholdInputs] = useState({})
@@ -742,6 +748,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
               <th className="px-3 py-2 text-left">Opportunities Formula</th>
               <th className="px-3 py-2 text-center">Exclude from Reporting</th>
               <th className="px-3 py-2 text-center">Downtime Tracking</th>
+              <th className="px-3 py-2 text-left">Site Email</th>
               <th className="px-3 py-2 text-left">Area Manager(s)</th>
               <th className="px-3 py-2 text-left">Store User(s)</th>
             </tr>
@@ -815,6 +822,15 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                     {loc.downtime_tracking_enabled && (
                       <div className="text-[10px] text-tm-teal font-brand font-semibold mt-0.5">On</div>
                     )}
+                  </td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
+                    <input
+                      type="email"
+                      defaultValue={loc.site_email || ''}
+                      onBlur={e => { if (e.target.value !== (loc.site_email || '')) onUpdateEmail(loc.id, e.target.value) }}
+                      placeholder="site@example.com"
+                      className="w-full border border-gray-200 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-surface text-gray-700 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
+                    />
                   </td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
                     <div className="flex flex-wrap items-center gap-1">
@@ -977,6 +993,7 @@ const JOTFORM_SOURCE_FIELDS = [
   { key: 'corrective_action_needed', label: 'Corrective Action Needed? (Yes/No)' },
   { key: 'corrective_action',        label: 'Corrective Action' },
   { key: 'multi_day',                label: 'Multi-Day? (Yes/No)' },
+  { key: 'site_email',              label: 'Site Email' },
 ]
 
 function JotFormSection() {
@@ -1121,7 +1138,7 @@ function JotFormSection() {
         </div>
       </div>
 
-      {/* Field Mapping */}
+      {/* Field Mapping — rows = JotForm columns, dropdown = OpsPerformance source field */}
       {columns.length > 0 && (
         <div className="mb-5">
           <div className="text-[10px] font-brand font-bold uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted mb-2">Field Mapping</div>
@@ -1129,23 +1146,23 @@ function JotFormSection() {
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr className="bg-gray-100 dark:bg-tm-dark-card text-[10px] font-brand uppercase tracking-wide text-gray-500 dark:text-tm-dark-muted">
-                  <th className="px-3 py-2 text-left w-1/2">OpsPerformance Field</th>
-                  <th className="px-3 py-2 text-left">→ JotForm Column</th>
+                  <th className="px-3 py-2 text-left w-1/2">JotForm Column</th>
+                  <th className="px-3 py-2 text-left">← OpsPerformance Field</th>
                 </tr>
               </thead>
               <tbody>
-                {JOTFORM_SOURCE_FIELDS.map((src, i) => (
-                  <tr key={src.key} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-row-alt'}>
-                    <td className="px-3 py-1.5 font-brand text-gray-700 dark:text-tm-dark-text">{src.label}</td>
+                {columns.map((col, i) => (
+                  <tr key={col.qid} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-row-alt'}>
+                    <td className="px-3 py-1.5 font-brand text-gray-700 dark:text-tm-dark-text">{col.name}</td>
                     <td className="px-3 py-1.5">
                       <select
-                        value={mappings[src.key] || ''}
-                        onChange={e => setMappings(m => ({ ...m, [src.key]: e.target.value }))}
+                        value={mappings[col.qid] || ''}
+                        onChange={e => setMappings(m => ({ ...m, [col.qid]: e.target.value }))}
                         className={`w-full ${inputCls} py-1`}
                       >
                         <option value="">— not mapped —</option>
-                        {columns.map(col => (
-                          <option key={col.qid} value={col.qid}>{col.name}</option>
+                        {JOTFORM_SOURCE_FIELDS.map(src => (
+                          <option key={src.key} value={src.key}>{src.label}</option>
                         ))}
                       </select>
                     </td>

@@ -250,6 +250,7 @@ export default function Dashboard() {
                 <DailyLogTable
                   locationId={selectedLocationId}
                   locationName={location?.name}
+                  locationEmail={location?.site_email}
                   selectedDate={selectedDate}
                   canEdit={canEdit}
                   opportunitiesFormula={opportunitiesFormula}
