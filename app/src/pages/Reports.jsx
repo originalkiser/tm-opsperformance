@@ -13,6 +13,7 @@ import DailyTrendsSection from '../components/DailyTrendsSection'
 import DayOfWeekSection from '../components/DayOfWeekSection'
 import MonthlyRollup from '../components/MonthlyRollup'
 import DailySnapshot from '../components/DailySnapshot'
+import DowntimeSection from '../components/DowntimeSection'
 import { supabase as supabaseClient } from '../lib/supabase'
 
 const todayStr = () => {
@@ -101,6 +102,17 @@ const REPORTS = [
     filterNeeds: { date: 'range', markets: false, shops: 'single' },
     badge: { text: 'MTH', cls: 'bg-indigo-600' },
   },
+  {
+    id:    'downtime',
+    label: 'Downtime',
+    icon:  (
+      <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/>
+      </svg>
+    ),
+    filterNeeds: { date: 'range', markets: true, shops: true },
+    badge: { text: 'DOWN', cls: 'bg-red-600' },
+  },
 ]
 
 // ── Snapshot data fetcher ─────────────────────────────────────────────────────
@@ -156,8 +168,9 @@ export default function Reports() {
 
   const [activeReport, setActiveReport]   = useState(() => localStorage.getItem('tm_reports_active') || 'sites')
   const [sidebarOpen,  setSidebarOpen]    = useState(true)
-  const [logs,         setLogs]           = useState([])
-  const [loading,      setLoading]        = useState(false)
+  const [logs,          setLogs]          = useState([])
+  const [downtimeLogs,  setDowntimeLogs]  = useState([])
+  const [loading,       setLoading]       = useState(false)
 
   // Shared filters
   const [selectedShops,   setSelectedShops]   = useState(null)
@@ -192,7 +205,8 @@ export default function Reports() {
     if (!report.filterNeeds.date || report.filterNeeds.date === 'single') return
     if (report.filterNeeds.shops === 'single') return
     if (!locations.length) return
-    fetchLogs()
+    if (activeReport === 'downtime') fetchDowntimeLogs()
+    else fetchLogs()
   }, [locations, dateRange, activeReport])
 
   useEffect(() => {
@@ -217,6 +231,20 @@ export default function Reports() {
       if (!data || data.length < PAGE) break
     }
     setLogs(all)
+    setLoading(false)
+  }
+
+  const fetchDowntimeLogs = async () => {
+    setLoading(true)
+    const locIds = locations.map(l => l.id)
+    const { data } = await supabaseClient
+      .from('downtime_logs')
+      .select('*')
+      .in('location_id', locIds)
+      .gte('started_at', dateRange.start + 'T00:00:00')
+      .lte('started_at', dateRange.end   + 'T23:59:59')
+      .order('started_at', { ascending: false })
+    setDowntimeLogs(data || [])
     setLoading(false)
   }
 
@@ -429,6 +457,21 @@ export default function Reports() {
                     dateEnd={dateRange.end}
                     opportunitiesFormula={monthlyLoc?.opportunities_formula}
                     metricThresholds={monthlyLoc?.metric_thresholds}
+                  />
+                </div>
+              )
+            )}
+
+            {/* Downtime */}
+            {activeReport === 'downtime' && (
+              loading ? <div className="flex justify-center py-12"><TmLoader /></div> : (
+                <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
+                  <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-2 font-brand">{rangeLabel}</p>
+                  <DowntimeSection
+                    logs={downtimeLogs.filter(r => visibleLocations.some(l => l.id === r.location_id))}
+                    locations={visibleLocations}
+                    dark={dark}
+                    dateRange={dateRange}
                   />
                 </div>
               )

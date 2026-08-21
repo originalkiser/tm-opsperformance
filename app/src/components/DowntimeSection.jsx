@@ -356,7 +356,7 @@ export default function DowntimeSection({ logs = [], locations = [], dark }) {
                   { label: 'Reason',   col: 'reason' },
                   { label: 'Duration', col: null },
                   { label: 'Status',   col: 'status' },
-                  { label: 'CA?',      col: 'corrective_action_needed' },
+                  { label: <span>Corrective<br/>Action?</span>, col: 'corrective_action_needed' },
                 ].map(({ label, col }) => (
                   <th
                     key={label}
