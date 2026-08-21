@@ -449,10 +449,10 @@ export default function DailyLogTable({
     } catch {}
   }
 
-  const handleStartDowntime = async ({ started_at, downtime_type, reason, details }) => {
+  const handleStartDowntime = async ({ started_at, scope, downtime_type, reason, details }) => {
     const { data } = await supabase
       .from('downtime_logs')
-      .insert({ location_id: locationIdRef.current, started_at, downtime_type, reason, details, site_email: locationEmail || null, status: 'active', started_by: profile?.id })
+      .insert({ location_id: locationIdRef.current, started_at, scope: scope || null, downtime_type, reason, details, site_email: locationEmail || null, status: 'active', started_by: profile?.id })
       .select()
       .single()
     if (data) {
@@ -490,6 +490,7 @@ export default function DailyLogTable({
       corrective_action_needed: resolvedLog.corrective_action_needed ? 'Yes' : 'No',
       corrective_action:        resolvedLog.corrective_action        || '',
       multi_day:                multiDay,
+      scope:                    resolvedLog.scope                    || '',
     }
 
     // mappings = { qid: srcKey } — JotForm column QID → OpsPerformance field key
@@ -1138,7 +1139,7 @@ export default function DailyLogTable({
 
       {/* ── Card View ─────────────────────────────────────────────────────────── */}
       {viewMode === 'card' && (
-        <div className={`max-w-md mx-auto transition-opacity ${activeDowntime ? 'opacity-60' : ''}`}>
+        <div className={`max-w-md mx-auto transition-opacity ${activeDowntime && (!activeDowntime.scope || activeDowntime.scope === 'Site') ? 'opacity-60' : ''}`}>
           {/* Time + Employee header */}
           <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl px-3 pt-3 pb-3 mb-4">
             <div className="grid grid-cols-2 gap-3">
@@ -1238,7 +1239,7 @@ export default function DailyLogTable({
 
       {/* ── Table View ────────────────────────────────────────────────────────── */}
       {viewMode === 'table' && (
-        <div ref={tableContainerRef} className={`overflow-x-auto transition-opacity ${activeDowntime ? 'opacity-60' : ''}`}>
+        <div ref={tableContainerRef} className={`overflow-x-auto transition-opacity ${activeDowntime && (!activeDowntime.scope || activeDowntime.scope === 'Site') ? 'opacity-60' : ''}`}>
           <table className="w-full border-collapse text-xs min-w-[1100px]">
             <thead>
               <tr className="bg-tm-blue dark:bg-tm-navy text-white">

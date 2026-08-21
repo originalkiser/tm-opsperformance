@@ -993,7 +993,8 @@ const JOTFORM_SOURCE_FIELDS = [
   { key: 'corrective_action_needed', label: 'Corrective Action Needed? (Yes/No)' },
   { key: 'corrective_action',        label: 'Corrective Action' },
   { key: 'multi_day',                label: 'Multi-Day? (Yes/No)' },
-  { key: 'site_email',              label: 'Site Email' },
+  { key: 'site_email',               label: 'Site Email' },
+  { key: 'scope',                    label: 'Scope (Site / Lane / Vacuum)' },
 ]
 
 function JotFormSection() {
@@ -1008,6 +1009,7 @@ function JotFormSection() {
   const [saving,    setSaving]    = useState(false)
   const [savedOk,   setSavedOk]   = useState(false)
   const [loaded,    setLoaded]    = useState(false)
+  const autoSaveTimer = useRef(null)
 
   useEffect(() => {
     supabase.from('app_settings').select('value').eq('key', 'jotform').maybeSingle()
@@ -1023,6 +1025,21 @@ function JotFormSection() {
       })
   }, [])
 
+  // Auto-save 1.5s after any config change (skips initial load)
+  useEffect(() => {
+    if (!loaded) return
+    clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(async () => {
+      await supabase.from('app_settings').upsert(
+        { key: 'jotform', value: { form_id: formId.trim(), api_key: apiKey.trim(), columns, mappings }, updated_at: new Date().toISOString() },
+        { onConflict: 'key' }
+      )
+      setSavedOk(true)
+      setTimeout(() => setSavedOk(false), 2000)
+    }, 1500)
+    return () => clearTimeout(autoSaveTimer.current)
+  }, [formId, apiKey, columns, mappings, loaded])
+
   const addColumn = () => {
     const name = newName.trim()
     const qid  = newQid.trim()
@@ -1036,7 +1053,7 @@ function JotFormSection() {
     setColumns(prev => prev.filter(c => c.qid !== qid))
     setMappings(prev => {
       const next = { ...prev }
-      Object.keys(next).forEach(k => { if (next[k] === qid) delete next[k] })
+      delete next[qid]
       return next
     })
   }

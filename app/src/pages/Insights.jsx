@@ -11,6 +11,7 @@ import SiteMetricTable from '../components/SiteMetricTable'
 import TeamSalesTable from '../components/TeamSalesTable'
 import DailyTrendsSection from '../components/DailyTrendsSection'
 import DayOfWeekSection from '../components/DayOfWeekSection'
+import DowntimeSection from '../components/DowntimeSection'
 
 const todayStr = () => {
   const d = new Date()
@@ -20,11 +21,12 @@ const todayStr = () => {
 // ── Layout persistence ────────────────────────────────────────────────────────
 
 const DEFAULT_SECTIONS = [
-  { id: 'network', label: 'Network Day View' },
-  { id: 'sites',   label: 'Sites Performance' },
-  { id: 'team',    label: 'Team Sales' },
-  { id: 'daily',   label: 'Daily Trends' },
-  { id: 'dow',     label: 'Day of Week' },
+  { id: 'network',   label: 'Network Day View' },
+  { id: 'sites',     label: 'Sites Performance' },
+  { id: 'team',      label: 'Team Sales' },
+  { id: 'daily',     label: 'Daily Trends' },
+  { id: 'dow',       label: 'Day of Week' },
+  { id: 'downtime',  label: 'Downtime' },
 ]
 
 function loadLayout() {
@@ -217,8 +219,9 @@ export default function Insights() {
   )
   const [dark] = useDarkModeCtx()
 
-  const [logs, setLogs]         = useState([])
-  const [loading, setLoading]   = useState(true)
+  const [logs, setLogs]               = useState([])
+  const [downtimeLogs, setDowntimeLogs] = useState([])
+  const [loading, setLoading]         = useState(true)
   const [selectedShops, setSelectedShops]     = useState(null)
   const [trendLocIds, setTrendLocIds]         = useState(null)
   const [selectedMarkets, setSelectedMarkets] = useState(() => {
@@ -275,6 +278,17 @@ export default function Insights() {
       if (!data || data.length < PAGE) break
     }
     setLogs(all)
+
+    // Fetch downtime logs for the period
+    const { data: dt } = await supabase
+      .from('downtime_logs')
+      .select('*')
+      .in('location_id', locIds)
+      .gte('started_at', dateRange.start + 'T00:00:00')
+      .lte('started_at', dateRange.end   + 'T23:59:59')
+      .order('started_at', { ascending: false })
+    setDowntimeLogs(dt || [])
+
     setLoading(false)
   }
 
@@ -359,6 +373,18 @@ export default function Insights() {
             dateRange={dateRange}
           />
         </div>
+      ),
+    },
+    downtime: {
+      badge: 'DOWNTIME', badgeCls: 'bg-red-600',
+      subtitle: `Downtime Events — ${rangeLabel}`,
+      content: (
+        <DowntimeSection
+          logs={downtimeLogs.filter(r => visibleLocations.some(l => l.id === r.location_id))}
+          locations={visibleLocations}
+          dark={dark}
+          dateRange={dateRange}
+        />
       ),
     },
   }

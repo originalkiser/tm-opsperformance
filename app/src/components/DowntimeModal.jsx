@@ -30,9 +30,12 @@ function inputCls(accent = 'teal') {
   return `border border-gray-300 dark:border-tm-dark-border rounded-lg px-3 py-2 text-sm bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 ${ring} w-full font-brand`
 }
 
+const SCOPE_OPTIONS = ['Site', 'Lane', 'Vacuum']
+
 export default function DowntimeModal({ mode, reasons = [], activeDowntime, onStart, onEnd, onCancel, onClose }) {
   // Start fields
   const [startTime,     setStartTime]     = useState(fmtTimeStr(new Date()))
+  const [scope,         setScope]         = useState('')
   const [downtimeType,  setDowntimeType]  = useState('')
   const [reason,        setReason]        = useState('')
   const [details,       setDetails]       = useState('')
@@ -50,11 +53,13 @@ export default function DowntimeModal({ mode, reasons = [], activeDowntime, onSt
   const downReasons = reasons.filter(r => r.type === 'reason' && r.is_active)
 
   const handleStart = async () => {
+    if (!scope)        { setError('Please select what is down (Site, Lane, or Vacuum).'); return }
     if (!downtimeType) { setError('Please select a type of downtime.'); return }
     if (!reason)       { setError('Please select a reason.'); return }
     setSaving(true); setError('')
     await onStart({
       started_at:    localIso(startTime),
+      scope,
       downtime_type: downtimeType,
       reason,
       details:       details || null,
@@ -114,7 +119,32 @@ export default function DowntimeModal({ mode, reasons = [], activeDowntime, onSt
                 <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className={inputCls('red')} />
               </Field>
 
-              {/* 2. Type of Downtime */}
+              {/* 2. Site, Lane, or Vacuum Down? */}
+              <Field label="Site, Lane, or Vacuum Down?" required>
+                <div className="grid grid-cols-3 gap-2">
+                  {SCOPE_OPTIONS.map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => { setScope(s); setError('') }}
+                      className={`px-3 py-2 rounded-lg border text-xs font-brand font-semibold transition-colors ${
+                        scope === s
+                          ? 'bg-red-600 border-red-600 text-white'
+                          : 'border-gray-300 dark:border-tm-dark-border text-gray-600 dark:text-tm-dark-muted hover:border-red-400 hover:text-red-600'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                {scope && scope !== 'Site' && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 font-brand mt-1">
+                    {scope} downtime — site remains partially operational.
+                  </p>
+                )}
+              </Field>
+
+              {/* 3. Type of Downtime */}
               <Field label="Type of Downtime" required>
                 <div className="grid grid-cols-3 gap-2">
                   {DOWNTIME_TYPES.map(t => (
@@ -172,6 +202,7 @@ export default function DowntimeModal({ mode, reasons = [], activeDowntime, onSt
                   <div className="font-bold text-[10px] uppercase tracking-wide text-red-500 dark:text-red-400 mb-1">Active Downtime</div>
                   <div className="flex gap-4 flex-wrap text-gray-600 dark:text-tm-dark-text">
                     <span>Started: {activeStart}</span>
+                    {activeDowntime.scope         && <span>Scope: {activeDowntime.scope}</span>}
                     {activeDowntime.downtime_type && <span>Type: {activeDowntime.downtime_type}</span>}
                   </div>
                   {activeDowntime.reason  && <div className="text-gray-500 dark:text-tm-dark-muted">Reason: {activeDowntime.reason}</div>}
