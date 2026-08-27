@@ -87,12 +87,12 @@ export function ShopMultiSelect({ locations, selected, onChange }) {
   const noneSelected = selected !== null && selected.length === 0
 
   const label = allSelected
-    ? 'All Shops'
+    ? 'All Sites'
     : noneSelected
-      ? 'No Shops'
+      ? 'No Sites'
       : selected.length === 1
-        ? locations.find(l => l.id === selected[0])?.name ?? '1 shop'
-        : `${selected.length} of ${locations.length} shops`
+        ? locations.find(l => l.id === selected[0])?.name ?? '1 site'
+        : `${selected.length} of ${locations.length} sites`
 
   const toggleAll = () => { allSelected ? onChange([]) : onChange(null) }
 
@@ -122,7 +122,7 @@ export function ShopMultiSelect({ locations, selected, onChange }) {
         <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg min-w-[220px] py-1 max-h-64 overflow-y-auto">
           <label className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors sticky top-0 bg-white dark:bg-tm-dark-card border-b border-gray-100 dark:border-tm-dark-border">
             <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-tm-teal w-3.5 h-3.5" />
-            <span className="text-xs font-brand font-semibold text-gray-700 dark:text-tm-dark-text">All Shops</span>
+            <span className="text-xs font-brand font-semibold text-gray-700 dark:text-tm-dark-text">All Sites</span>
           </label>
           {locations.map(loc => (
             <label key={loc.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors">

@@ -148,7 +148,7 @@ function SingleShopSelect({ locations, value, onChange }) {
       onChange={e => onChange(e.target.value || null)}
       className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text hover:border-tm-teal focus:outline-none focus:ring-2 focus:ring-tm-teal transition-colors font-brand"
     >
-      <option value="">Select shop…</option>
+      <option value="">Select site…</option>
       {locations.map(l => (
         <option key={l.id} value={l.id}>{l.name}</option>
       ))}
@@ -431,7 +431,7 @@ export default function Reports() {
             {/* Daily Snapshot */}
             {activeReport === 'snapshot' && (
               snapshotLoading ? <div className="flex justify-center py-12"><TmLoader /></div> : !snapshotLocId ? (
-                <p className="text-gray-400 dark:text-tm-dark-muted text-sm py-6">Select a shop above to view the snapshot.</p>
+                <p className="text-gray-400 dark:text-tm-dark-muted text-sm py-6">Select a site above to view the snapshot.</p>
               ) : (
                 <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
                   <DailySnapshot
@@ -448,7 +448,7 @@ export default function Reports() {
             {/* Monthly Rollup */}
             {activeReport === 'monthly' && (
               !monthlyLocId ? (
-                <p className="text-gray-400 dark:text-tm-dark-muted text-sm py-6">Select a shop above to view the monthly rollup.</p>
+                <p className="text-gray-400 dark:text-tm-dark-muted text-sm py-6">Select a site above to view the monthly rollup.</p>
               ) : (
                 <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
                   <MonthlyRollup

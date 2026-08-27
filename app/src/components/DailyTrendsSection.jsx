@@ -53,10 +53,10 @@ export default function DailyTrendsSection({ logs, dark, locations, selected, on
     : locations.filter(l => selected.includes(l.id))
   const trendLocation = selectedLocs.length === 1 ? selectedLocs[0] : null
   const shopsLabel = selectedLocs.length === locations.length
-    ? 'All Shops'
+    ? 'All Sites'
     : selectedLocs.length === 1
       ? selectedLocs[0].name
-      : `${selectedLocs.length} of ${locations.length} shops`
+      : `${selectedLocs.length} of ${locations.length} sites`
   const thresholds    = trendLocation?.metric_thresholds
   const convColorFn   = (v) => convHex(v, thresholds)
   const pmixColorFn   = (v) => pmixHex(v, thresholds)

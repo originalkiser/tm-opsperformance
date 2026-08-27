@@ -320,7 +320,7 @@ export default function Insights() {
   const SECTION_CFG = {
     network: {
       badge: 'NETWORK', badgeCls: 'bg-tm-blue',
-      subtitle: 'Day view across shops',
+      subtitle: 'Day view across sites',
       content: (
         <div className="mt-3">
           <NetworkDayView locations={visibleLocations} date={todayStr()} />
