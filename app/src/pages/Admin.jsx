@@ -1009,7 +1009,8 @@ function JotFormSection() {
   const [saving,    setSaving]    = useState(false)
   const [savedOk,   setSavedOk]   = useState(false)
   const [loaded,    setLoaded]    = useState(false)
-  const autoSaveTimer = useRef(null)
+  const autoSaveTimer  = useRef(null)
+  const initialLoadRef = useRef(true)   // true until first post-load effect fires
 
   useEffect(() => {
     supabase.from('app_settings').select('value').eq('key', 'jotform').maybeSingle()
@@ -1025,9 +1026,13 @@ function JotFormSection() {
       })
   }, [])
 
-  // Auto-save 1.5s after any config change (skips initial load)
+  // Auto-save 1.5s after any user-driven config change — never on initial load
   useEffect(() => {
     if (!loaded) return
+    // Skip the save that fires immediately when data first loads
+    if (initialLoadRef.current) { initialLoadRef.current = false; return }
+    // Safety guard: never overwrite existing config with a completely empty payload
+    if (!formId.trim() && !apiKey.trim() && !columns.length) return
     clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(async () => {
       await supabase.from('app_settings').upsert(
