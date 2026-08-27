@@ -546,8 +546,11 @@ export default function DailyLogTable({
     })
 
     try {
-      await fetch(`https://api.jotform.com/form/${form_id}/submissions?apiKey=${api_key}`, { method: 'POST', body })
+      const resp = await fetch(`https://api.jotform.com/form/${form_id}/submissions?apiKey=${api_key}`, { method: 'POST', body })
+      const json = await resp.json()
+      return json?.content?.submissionID || null
     } catch {}
+    return null
   }
 
   const handleEndDowntime = async ({ ended_at, resolution_notes, corrective_action_needed, corrective_action }) => {
@@ -564,7 +567,12 @@ export default function DailyLogTable({
     setDowntimeWarningVisible(false)
     downtimeWarningSeenRef.current = false
     setShowDowntimeModal(false)
-    if (resolved) submitToJotForm(resolved)
+    if (resolved) {
+      const submissionId = await submitToJotForm(resolved)
+      if (submissionId) {
+        await supabase.from('downtime_logs').update({ jotform_submission_id: submissionId }).eq('id', resolved.id)
+      }
+    }
   }
 
   const handleCancelDowntime = async () => {

@@ -84,7 +84,7 @@ export default function NavBar() {
             </Link>
           )}
 
-          {/* Shop Entry — everyone */}
+          {/* Site Entry — everyone */}
           <button
             onClick={() => navigate('/')}
             className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-teal text-tm-navy hover:brightness-110 transition-colors font-brand font-bold text-xs tracking-wide"
@@ -92,7 +92,7 @@ export default function NavBar() {
             <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
               <path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 8h1v5a1 1 0 001 1h3v-3h2v3h3a1 1 0 001-1V8h1a.5.5 0 00.354-.854l-6-6z"/>
             </svg>
-            Shop Entry
+            Site Entry
           </button>
         </div>
 

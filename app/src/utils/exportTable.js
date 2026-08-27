@@ -375,3 +375,95 @@ export async function exportTrendsPdf(spec) {
 
   doc.save(filename + '.pdf')
 }
+
+// ── Downtime exports ──────────────────────────────────────────────────────────
+
+function fmtDt(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+    ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
+function durStr(startIso, endIso) {
+  if (!startIso || !endIso) return ''
+  const m = Math.round((new Date(endIso) - new Date(startIso)) / 60000)
+  const h = Math.floor(m / 60), mn = m % 60
+  return h > 0 ? `${h}h ${mn}m` : `${mn}m`
+}
+
+const DT_COL_DEFS = [
+  { key: 'date',       label: 'Date',                get: r => new Date(r.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
+  { key: 'location',   label: 'Location',            get: (r, lm) => lm[r.location_id] || '' },
+  { key: 'scope',      label: 'Scope',               get: r => r.scope || '' },
+  { key: 'type',       label: 'Type',                get: r => r.downtime_type || '' },
+  { key: 'reason',     label: 'Reason',              get: r => r.reason || '' },
+  { key: 'details',    label: 'Details',             get: r => r.details || '' },
+  { key: 'started',    label: 'Start Time',          get: r => fmtDt(r.started_at) },
+  { key: 'ended',      label: 'End Time',            get: r => fmtDt(r.ended_at) },
+  { key: 'duration',   label: 'Duration',            get: r => durStr(r.started_at, r.ended_at) },
+  { key: 'status',     label: 'Status',              get: r => r.status || '' },
+  { key: 'resolution', label: 'Resolution',          get: r => r.resolution_notes || '' },
+  { key: 'ca_needed',  label: 'Corrective Action?',  get: r => r.corrective_action_needed === true ? 'Yes' : r.corrective_action_needed === false ? 'No' : '' },
+  { key: 'ca',         label: 'Corrective Action',   get: r => r.corrective_action || '' },
+  { key: 'multi_day',  label: 'Multi-Day?',          get: r => { const s = r.started_at && new Date(r.started_at), e = r.ended_at && new Date(r.ended_at); return s && e && s.toDateString() !== e.toDateString() ? 'Yes' : 'No' } },
+  { key: 'site_email', label: 'Site Email',          get: r => r.site_email || '' },
+]
+
+function buildDowntimeExport(logs, locMap, visibleColKeys) {
+  const cols = DT_COL_DEFS.filter(c => visibleColKeys.includes(c.key))
+  return { cols, rows: logs.map(r => cols.map(c => c.get(r, locMap))) }
+}
+
+export async function exportDowntimeXlsx({ logs, locMap, visibleColKeys, filename = 'downtime_report' }) {
+  const ExcelJS = (await import('exceljs')).default
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet('Downtime')
+  const { cols, rows } = buildDowntimeExport(logs, locMap, visibleColKeys)
+
+  const hdrRow = ws.addRow(cols.map(c => c.label))
+  hdrRow.eachCell(cell => {
+    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A3555' } }
+    cell.font      = { color: { argb: 'FFFFFFFF' }, bold: true, size: 10, name: 'Calibri' }
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+  })
+  hdrRow.height = 28
+
+  rows.forEach((row, i) => {
+    const r = ws.addRow(row)
+    if (i % 2 === 0) r.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FFFE' } } })
+    r.eachCell(c => { c.font = { size: 10, name: 'Calibri' }; c.alignment = { wrapText: true, vertical: 'top' } })
+  })
+  ws.columns = cols.map(() => ({ width: 22 }))
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: cols.length } }
+
+  const buf  = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url  = URL.createObjectURL(blob)
+  Object.assign(document.createElement('a'), { href: url, download: filename + '.xlsx' }).click()
+  URL.revokeObjectURL(url)
+}
+
+export async function exportDowntimePdf({ logs, locMap, visibleColKeys, filename = 'downtime_report' }) {
+  const { jsPDF }  = await import('jspdf')
+  const autoTable  = (await import('jspdf-autotable')).default
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' })
+  const { cols, rows } = buildDowntimeExport(logs, locMap, visibleColKeys)
+
+  doc.setFontSize(14); doc.setTextColor(26, 53, 85)
+  doc.text('Downtime Report', 40, 40)
+  doc.setFontSize(9); doc.setTextColor(100)
+  doc.text(new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), 40, 56)
+
+  autoTable(doc, {
+    head: [cols.map(c => c.label)],
+    body: rows,
+    startY: 72,
+    styles:         { fontSize: 8, cellPadding: 4, font: 'helvetica' },
+    headStyles:     { fillColor: [26, 53, 85], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 255, 254] },
+    margin:         { left: 40, right: 40 },
+  })
+  doc.save(filename + '.pdf')
+}
+

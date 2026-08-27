@@ -212,7 +212,7 @@ function CustomizePanel({ layout, onSave, onClose }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Insights() {
-  const { locations: allLocations } = useAuth()
+  const { locations: allLocations, profile } = useAuth()
   const locations = useMemo(
     () => allLocations.filter(l => !l.exclude_from_reporting),
     [allLocations],
@@ -384,6 +384,8 @@ export default function Insights() {
           locations={visibleLocations}
           dark={dark}
           dateRange={dateRange}
+          isAdmin={profile?.role === 'admin'}
+          onRefresh={fetchData}
         />
       ),
     },

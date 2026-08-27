@@ -159,7 +159,7 @@ function SingleShopSelect({ locations, value, onChange }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Reports() {
-  const { locations: allLocations } = useAuth()
+  const { locations: allLocations, profile } = useAuth()
   const locations = useMemo(
     () => allLocations.filter(l => !l.exclude_from_reporting),
     [allLocations],
@@ -472,6 +472,8 @@ export default function Reports() {
                     locations={visibleLocations}
                     dark={dark}
                     dateRange={dateRange}
+                    isAdmin={profile?.role === 'admin'}
+                    onRefresh={fetchDowntimeLogs}
                   />
                 </div>
               )
