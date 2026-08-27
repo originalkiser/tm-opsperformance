@@ -494,7 +494,8 @@ export default function DailyLogTable({
     }
 
     // mappings = { rawQid: srcKey } where rawQid may have # prefix and comma-separated sub-fields
-    const body = new URLSearchParams()
+    // Use FormData (multipart) so bracket characters in field names are literal, not percent-encoded
+    const body = new FormData()
     Object.entries(mappings).forEach(([rawQid, srcKey]) => {
       if (!srcKey || values[srcKey] === undefined) return
       const val  = String(values[srcKey])
