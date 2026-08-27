@@ -493,8 +493,11 @@ export default function DailyLogTable({
       scope:                    resolvedLog.scope                    || '',
     }
 
-    // mappings = { rawQid: srcKey } where rawQid may have # prefix and comma-separated sub-fields
-    // Use FormData (multipart) so bracket characters in field names are literal, not percent-encoded
+    // mappings = { rawQid: srcKey } where rawQid may have # prefix and comma-separated sub-fields.
+    // JotForm's submission API keys fields by their BARE numeric question ID (submission[13]=value) —
+    // "input_13" is only the rendered form's HTML id attribute, not a valid API field name, so it
+    // must be stripped or JotForm silently drops the field (accepts the POST, leaves the row blank).
+    const stripId = q => q.replace(/^input_/, '')
     const body = new FormData()
     Object.entries(mappings).forEach(([rawQid, srcKey]) => {
       if (!srcKey || values[srcKey] === undefined) return
@@ -504,7 +507,7 @@ export default function DailyLogTable({
       if (!qids.length) return
 
       if (qids.length === 1) {
-        body.append(`submission[${qids[0]}]`, val)
+        body.append(`submission[${stripId(qids[0])}]`, val)
         return
       }
 
@@ -513,21 +516,21 @@ export default function DailyLogTable({
       const isRadio  = qids.every(q => /_\d+$/.test(q))
 
       if (hasMonth) {
-        // Date sub-fields: month_19, day_19, year_19 → input_19[month/day/year]
+        // Date sub-fields: month_19, day_19, year_19 → submission[19][month/day/year]
         const num = (qids.find(q => /^month_/.test(q)) || '').replace('month_', '')
         if (!num) return
         const d = new Date(val)
         if (isNaN(d)) return
-        body.append(`submission[input_${num}][month]`, String(d.getMonth() + 1))
-        body.append(`submission[input_${num}][day]`,   String(d.getDate()))
-        body.append(`submission[input_${num}][year]`,  String(d.getFullYear()))
+        body.append(`submission[${num}][month]`, String(d.getMonth() + 1))
+        body.append(`submission[${num}][day]`,   String(d.getDate()))
+        body.append(`submission[${num}][year]`,  String(d.getFullYear()))
         return
       }
 
       if (hasTime) {
-        // Time sub-fields: input_22_timeInput, input_22_ampm → input_22[timeInput/ampm]
+        // Time sub-fields: input_22_timeInput, input_22_ampm → submission[22][timeInput/ampm]
         const tq   = qids.find(q => /_timeInput/.test(q)) || ''
-        const base = tq.replace('_timeInput', '')
+        const base = stripId(tq.replace('_timeInput', ''))
         const m    = val.match(/^(\d+:\d+)\s*(AM|PM)$/i)
         if (!m) return
         body.append(`submission[${base}][timeInput]`, m[1])
@@ -536,14 +539,14 @@ export default function DailyLogTable({
       }
 
       if (isRadio) {
-        // Radio/checkbox options: input_31_0, input_31_1 → send value to base input_31
-        const base = qids[0].replace(/_\d+$/, '')
+        // Radio/checkbox options: input_31_0, input_31_1 → send value to base submission[31]
+        const base = stripId(qids[0].replace(/_\d+$/, ''))
         body.append(`submission[${base}]`, val)
         return
       }
 
       // Fallback: send value to each sub-field individually
-      qids.forEach(q => body.append(`submission[${q}]`, val))
+      qids.forEach(q => body.append(`submission[${stripId(q)}]`, val))
     })
 
     try {
