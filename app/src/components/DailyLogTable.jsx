@@ -1367,7 +1367,7 @@ export default function DailyLogTable({
                         <span className="px-1 text-gray-700 dark:text-tm-dark-text">{row.employee_name}</span>
                       )}
                     </td>
-                    <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-medium text-gray-500 dark:text-tm-dark-muted w-20">
+                    <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-medium text-gray-700 dark:text-tm-dark-muted w-20">
                       {slot.label}
                     </td>
                     {orderedCols.map((col, colIdx) => (
