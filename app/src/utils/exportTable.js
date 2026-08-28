@@ -5,6 +5,7 @@
 // exceljs and jspdf are loaded on demand so they stay out of the main bundle.
 
 import { DEFAULT_THRESHOLDS } from './metricColors'
+import { operatingDowntimeMinutes } from './operatingHours'
 
 // ── Palette (light-mode Tailwind hexes used by the live tables) ───────────────
 
@@ -385,23 +386,25 @@ function fmtDt(iso) {
     ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-function durStr(startIso, endIso) {
-  if (!startIso || !endIso) return ''
-  const m = Math.round((new Date(endIso) - new Date(startIso)) / 60000)
+function durStr(ms) {
+  if (!ms || ms <= 0) return '0m'
+  const m = Math.round(ms / 60000)
   const h = Math.floor(m / 60), mn = m % 60
   return h > 0 ? `${h}h ${mn}m` : `${mn}m`
 }
 
 const DT_COL_DEFS = [
   { key: 'date',       label: 'Date',                get: r => new Date(r.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
-  { key: 'location',   label: 'Location',            get: (r, lm) => lm[r.location_id] || '' },
+  { key: 'location',   label: 'Location',            get: (r, ctx) => ctx.locMap[r.location_id] || '' },
   { key: 'scope',      label: 'Scope',               get: r => r.scope || '' },
   { key: 'type',       label: 'Type',                get: r => r.downtime_type || '' },
   { key: 'reason',     label: 'Reason',              get: r => r.reason || '' },
   { key: 'details',    label: 'Details',             get: r => r.details || '' },
   { key: 'started',    label: 'Start Time',          get: r => fmtDt(r.started_at) },
   { key: 'ended',      label: 'End Time',            get: r => fmtDt(r.ended_at) },
-  { key: 'duration',   label: 'Duration',            get: r => durStr(r.started_at, r.ended_at) },
+  { key: 'duration',   label: 'Duration (op. hrs)',  get: (r, ctx) => r.started_at && r.ended_at
+      ? durStr(operatingDowntimeMinutes(r, ctx.locById?.[r.location_id], ctx.globalHours) * 60000)
+      : '' },
   { key: 'status',     label: 'Status',              get: r => r.status || '' },
   { key: 'resolution', label: 'Resolution',          get: r => r.resolution_notes || '' },
   { key: 'ca_needed',  label: 'Corrective Action?',  get: r => r.corrective_action_needed === true ? 'Yes' : r.corrective_action_needed === false ? 'No' : '' },
@@ -410,16 +413,16 @@ const DT_COL_DEFS = [
   { key: 'site_email', label: 'Site Email',          get: r => r.site_email || '' },
 ]
 
-function buildDowntimeExport(logs, locMap, visibleColKeys) {
+function buildDowntimeExport(logs, ctx, visibleColKeys) {
   const cols = DT_COL_DEFS.filter(c => visibleColKeys.includes(c.key))
-  return { cols, rows: logs.map(r => cols.map(c => c.get(r, locMap))) }
+  return { cols, rows: logs.map(r => cols.map(c => c.get(r, ctx))) }
 }
 
-export async function exportDowntimeXlsx({ logs, locMap, visibleColKeys, filename = 'downtime_report' }) {
+export async function exportDowntimeXlsx({ logs, locMap, locById, globalHours, visibleColKeys, filename = 'downtime_report' }) {
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Downtime')
-  const { cols, rows } = buildDowntimeExport(logs, locMap, visibleColKeys)
+  const { cols, rows } = buildDowntimeExport(logs, { locMap, locById, globalHours }, visibleColKeys)
 
   const hdrRow = ws.addRow(cols.map(c => c.label))
   hdrRow.eachCell(cell => {
@@ -444,11 +447,11 @@ export async function exportDowntimeXlsx({ logs, locMap, visibleColKeys, filenam
   URL.revokeObjectURL(url)
 }
 
-export async function exportDowntimePdf({ logs, locMap, visibleColKeys, filename = 'downtime_report' }) {
+export async function exportDowntimePdf({ logs, locMap, locById, globalHours, visibleColKeys, filename = 'downtime_report' }) {
   const { jsPDF }  = await import('jspdf')
   const autoTable  = (await import('jspdf-autotable')).default
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' })
-  const { cols, rows } = buildDowntimeExport(logs, locMap, visibleColKeys)
+  const { cols, rows } = buildDowntimeExport(logs, { locMap, locById, globalHours }, visibleColKeys)
 
   doc.setFontSize(14); doc.setTextColor(26, 53, 85)
   doc.text('Downtime Report', 40, 40)

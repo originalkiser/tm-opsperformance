@@ -7,6 +7,7 @@ import DowntimeModal from './DowntimeModal'
 import { shopTotals } from '../utils/logMath'
 import { fmtNum } from '../utils/format'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
+import { operatingDowntimeMinutes } from '../utils/operatingHours'
 
 function fmtElapsed(seconds) {
   const h = Math.floor(seconds / 3600)
@@ -272,6 +273,8 @@ export default function DailyLogTable({
   locationId,
   locationName,
   locationEmail,
+  locationTimezone,
+  locationHoursOverride,
   selectedDate,
   canEdit,
   opportunitiesFormula = 'detailed',
@@ -463,13 +466,20 @@ export default function DailyLogTable({
   }
 
   const submitToJotForm = async (resolvedLog) => {
-    const { data: cfg } = await supabase.from('app_settings').select('value').eq('key', 'jotform').maybeSingle()
+    const [{ data: cfg }, { data: hoursCfg }] = await Promise.all([
+      supabase.from('app_settings').select('value').eq('key', 'jotform').maybeSingle(),
+      supabase.from('app_settings').select('value').eq('key', 'operating_hours').maybeSingle(),
+    ])
     if (!cfg?.value?.form_id || !cfg?.value?.api_key || !cfg?.value?.mappings) return
     const { form_id, api_key, mappings } = cfg.value
 
     const startedAt   = new Date(resolvedLog.started_at)
     const endedAt     = new Date(resolvedLog.ended_at)
-    const durationHrs = ((endedAt - startedAt) / 3600000).toFixed(2)
+    const durationHrs = (operatingDowntimeMinutes(
+      resolvedLog,
+      { timezone: locationTimezone, operating_hours_override: locationHoursOverride },
+      hoursCfg?.value
+    ) / 60).toFixed(2)
     const multiDay    = startedAt.toDateString() !== endedAt.toDateString() ? 'Yes' : 'No'
     const fmtDate     = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     const fmtTime     = d => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })

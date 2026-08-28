@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
 import TmLoader from '../components/TmLoader'
 import { DEFAULT_THRESHOLDS } from '../utils/metricColors'
+import { DEFAULT_STANDARD_HOURS, DEFAULT_WINTER_HOURS, TIMEZONE_OPTIONS } from '../utils/operatingHours'
 
 function generatePassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
@@ -168,6 +169,16 @@ export default function Admin() {
 
   const updateLocationEmail = async (locId, email) => {
     await supabase.from('locations').update({ site_email: email || null }).eq('id', locId)
+    fetchLocations()
+  }
+
+  const updateLocationTimezone = async (locId, timezone) => {
+    await supabase.from('locations').update({ timezone }).eq('id', locId)
+    fetchLocations()
+  }
+
+  const updateLocationHoursOverride = async (locId, override) => {
+    await supabase.from('locations').update({ operating_hours_override: override }).eq('id', locId)
     fetchLocations()
   }
 
@@ -649,6 +660,8 @@ export default function Admin() {
               onUpdateExclude={updateLocationExclude}
               onUpdateDowntimeEnabled={updateLocationDowntimeEnabled}
               onUpdateEmail={updateLocationEmail}
+              onUpdateTimezone={updateLocationTimezone}
+              onUpdateHoursOverride={updateLocationHoursOverride}
             />
           )}
 
@@ -663,7 +676,7 @@ export default function Admin() {
 }
 
 // ── Locations tab ─────────────────────────────────────────────────────────────
-function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled, onUpdateEmail }) {
+function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled, onUpdateEmail, onUpdateTimezone, onUpdateHoursOverride }) {
   const [marketInputs,    setMarketInputs]    = useState({})
   const [addMgrOpen,      setAddMgrOpen]      = useState({})
   const [thresholdInputs, setThresholdInputs] = useState({})
@@ -748,6 +761,8 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
               <th className="px-3 py-2 text-left">Opportunities Formula</th>
               <th className="px-3 py-2 text-center">Exclude from Reporting</th>
               <th className="px-3 py-2 text-center">Downtime Tracking</th>
+              <th className="px-3 py-2 text-left">Time Zone</th>
+              <th className="px-3 py-2 text-left">Hours Override</th>
               <th className="px-3 py-2 text-left">Site Email</th>
               <th className="px-3 py-2 text-left">Area Manager(s)</th>
               <th className="px-3 py-2 text-left">Store User(s)</th>
@@ -822,6 +837,20 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                     {loc.downtime_tracking_enabled && (
                       <div className="text-[10px] text-tm-teal font-brand font-semibold mt-0.5">On</div>
                     )}
+                  </td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
+                    <select
+                      value={loc.timezone || 'America/Chicago'}
+                      onChange={e => onUpdateTimezone(loc.id, e.target.value)}
+                      className="border border-gray-200 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-surface text-gray-700 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
+                    >
+                      {TIMEZONE_OPTIONS.map(tz => (
+                        <option key={tz.value} value={tz.value}>{tz.label}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
+                    <HoursOverrideButton location={loc} onUpdate={onUpdateHoursOverride} />
                   </td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
                     <input
@@ -996,6 +1025,156 @@ const JOTFORM_SOURCE_FIELDS = [
   { key: 'site_email',               label: 'Site Email' },
   { key: 'scope',                    label: 'Scope (Site / Lane / Vacuum)' },
 ]
+
+// ── Operating Hours (global default schedule) ──────────────────────────────────
+
+function HourRow({ label, value, onChange }) {
+  const inputCls = 'border border-gray-300 dark:border-tm-dark-border rounded-md px-2 py-1 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand'
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs font-brand text-gray-500 dark:text-tm-dark-muted w-16 shrink-0">{label}</span>
+      <input type="time" value={value?.open || ''} onChange={e => onChange({ ...value, open: e.target.value })} className={inputCls} />
+      <span className="text-xs text-gray-400 dark:text-tm-dark-muted">to</span>
+      <input type="time" value={value?.close || ''} onChange={e => onChange({ ...value, close: e.target.value })} className={inputCls} />
+    </div>
+  )
+}
+
+function ScheduleEditor({ title, schedule, onChange }) {
+  return (
+    <div className="bg-gray-50 dark:bg-tm-dark-surface rounded-lg p-3 border border-gray-100 dark:border-tm-dark-border space-y-2">
+      <div className="text-xs font-brand font-bold text-gray-600 dark:text-tm-dark-text uppercase tracking-wide mb-1">{title}</div>
+      <HourRow label="Mon–Sat" value={schedule.monSat} onChange={v => onChange({ ...schedule, monSat: v })} />
+      <HourRow label="Sunday"  value={schedule.sun}    onChange={v => onChange({ ...schedule, sun: v })} />
+    </div>
+  )
+}
+
+function OperatingHoursSection() {
+  const [standard, setStandard] = useState(DEFAULT_STANDARD_HOURS)
+  const [winter,   setWinter]   = useState(DEFAULT_WINTER_HOURS)
+  const [active,   setActive]   = useState('standard')
+  const [loaded,   setLoaded]   = useState(false)
+  const [savedOk,  setSavedOk]  = useState(false)
+  const autoSaveTimer  = useRef(null)
+  const initialLoadRef = useRef(true)
+
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key', 'operating_hours').maybeSingle()
+      .then(({ data }) => {
+        if (data?.value) {
+          setStandard(data.value.standard || DEFAULT_STANDARD_HOURS)
+          setWinter(data.value.winter     || DEFAULT_WINTER_HOURS)
+          setActive(data.value.active     || 'standard')
+        }
+        setLoaded(true)
+      })
+  }, [])
+
+  useEffect(() => {
+    if (!loaded) return
+    if (initialLoadRef.current) { initialLoadRef.current = false; return }
+    clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(async () => {
+      await supabase.from('app_settings').upsert(
+        { key: 'operating_hours', value: { standard, winter, active }, updated_at: new Date().toISOString() },
+        { onConflict: 'key' }
+      )
+      setSavedOk(true)
+      setTimeout(() => setSavedOk(false), 2000)
+    }, 1200)
+    return () => clearTimeout(autoSaveTimer.current)
+  }, [standard, winter, active, loaded])
+
+  if (!loaded) return null
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Operating Hours</h3>
+        {savedOk && <span className="text-[10px] text-green-600 dark:text-green-400 font-brand">Saved ✓</span>}
+      </div>
+      <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-4">
+        Downtime duration reported across the app (dashboard, reports, exports, JotForm) only counts minutes that fall
+        inside these hours. Locations convert correctly using their own Time Zone (set per-site in the Locations tab).
+        A location can override these hours individually there too.
+      </p>
+
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-xs font-brand font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide">Active Schedule:</span>
+        {['standard', 'winter'].map(s => (
+          <button key={s} type="button" onClick={() => setActive(s)}
+            className={`px-3 py-1 rounded-full text-xs font-brand font-semibold capitalize transition-colors ${
+              active === s ? 'bg-tm-blue text-white' : 'border border-gray-300 dark:border-tm-dark-border text-gray-500 dark:text-tm-dark-muted hover:border-tm-teal'
+            }`}>
+            {s}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <ScheduleEditor title="Standard Hours" schedule={standard} onChange={setStandard} />
+        <ScheduleEditor title="Winter Hours"   schedule={winter}   onChange={setWinter} />
+      </div>
+    </div>
+  )
+}
+
+function HoursOverrideButton({ location, onUpdate }) {
+  const [open, setOpen] = useState(false)
+  const [standard, setStandard] = useState(location.operating_hours_override?.standard || DEFAULT_STANDARD_HOURS)
+  const [winter,   setWinter]   = useState(location.operating_hours_override?.winter   || DEFAULT_WINTER_HOURS)
+  const hasOverride = !!location.operating_hours_override
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const save = () => { onUpdate(location.id, { standard, winter }); setOpen(false) }
+  const clear = () => {
+    onUpdate(location.id, null)
+    setStandard(DEFAULT_STANDARD_HOURS)
+    setWinter(DEFAULT_WINTER_HOURS)
+    setOpen(false)
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`text-xs px-2 py-1 rounded font-brand font-semibold transition-colors ${
+          hasOverride ? 'bg-tm-teal/20 text-tm-blue dark:text-tm-teal' : 'bg-gray-100 dark:bg-tm-dark-card text-gray-400 dark:text-tm-dark-muted hover:text-tm-blue dark:hover:text-tm-teal'
+        }`}
+      >
+        {hasOverride ? 'Custom' : 'Default'}
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 w-80 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl shadow-xl p-3 space-y-3">
+          <div className="text-[10px] font-brand font-bold uppercase tracking-wide text-gray-400 dark:text-tm-dark-muted">
+            Override for {location.name}
+          </div>
+          <ScheduleEditor title="Standard Hours" schedule={standard} onChange={setStandard} />
+          <ScheduleEditor title="Winter Hours"   schedule={winter}   onChange={setWinter} />
+          <div className="flex gap-2 pt-1">
+            <button onClick={save} className="flex-1 py-1.5 rounded-lg bg-tm-teal text-tm-navy text-xs font-brand font-bold hover:brightness-110 transition-colors">
+              Save Override
+            </button>
+            {hasOverride && (
+              <button onClick={clear} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-tm-dark-border text-gray-500 dark:text-tm-dark-muted text-xs font-brand hover:bg-gray-50 dark:hover:bg-tm-dark-surface transition-colors">
+                Use Default
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function JotFormSection() {
   const [formId,    setFormId]    = useState('')
@@ -1319,8 +1498,10 @@ function DowntimeAdminTab({ locations }) {
         Manage downtime reason categories, view logs, and restore cancelled events. Enable tracking per site in the Locations tab.
       </p>
 
+      <OperatingHoursSection />
+
       {/* Reason management */}
-      <div>
+      <div className="pt-6 border-t border-gray-200 dark:border-tm-dark-border">
         <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal mb-3 tracking-wide">Reason Categories</h3>
         <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-4">These apply across all sites and appear in the downtime modal dropdowns.</p>
         <div className="flex gap-2 items-center mb-4 flex-wrap">

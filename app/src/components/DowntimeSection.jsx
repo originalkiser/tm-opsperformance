@@ -6,6 +6,7 @@ import {
 import { supabase } from '../lib/supabase'
 import ExportMenu from './ExportMenu'
 import { exportDowntimeXlsx, exportDowntimePdf } from '../utils/exportTable'
+import { operatingDowntimeMinutes } from '../utils/operatingHours'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ const ALL_COLS = [
   { key: 'details',    label: 'Details',             defaultHidden: false },
   { key: 'started',    label: 'Start Time',          defaultHidden: false },
   { key: 'ended',      label: 'End Time',            defaultHidden: false },
-  { key: 'duration',   label: 'Duration',            defaultHidden: false },
+  { key: 'duration',   label: 'Duration (op. hrs)',  defaultHidden: false },
   { key: 'status',     label: 'Status',              defaultHidden: false },
   { key: 'resolution', label: 'Resolution',          defaultHidden: false },
   { key: 'ca_needed',  label: 'Corrective Action?',  defaultHidden: false },
@@ -163,7 +164,7 @@ function ColPicker({ hiddenCols, onChange, onClose }) {
 
 // ── Detail / Edit / Delete Modal ───────────────────────────────────────────────
 
-function DetailModal({ record, locMap, isAdmin, onClose, onSaved, onDeleted }) {
+function DetailModal({ record, locMap, location, globalHours, isAdmin, onClose, onSaved, onDeleted }) {
   const [mode, setMode]               = useState('view')  // 'view' | 'edit' | 'delete'
   const [deleteText, setDeleteText]   = useState('')
   const [deleting, setDeleting]       = useState(false)
@@ -185,7 +186,7 @@ function DetailModal({ record, locMap, isAdmin, onClose, onSaved, onDeleted }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const dur = record.started_at && record.ended_at
-    ? fmtDuration(new Date(record.ended_at) - new Date(record.started_at))
+    ? fmtDuration(operatingDowntimeMinutes(record, location, globalHours) * 60000)
     : null
 
   const handleSave = async () => {
@@ -404,7 +405,14 @@ function DetailModal({ record, locMap, isAdmin, onClose, onSaved, onDeleted }) {
                 <Detail label="Reason">    {record.reason     || '—'}</Detail>
                 <Detail label="Start">     {fmtDateTime(record.started_at)}</Detail>
                 <Detail label="End">       {fmtDateTime(record.ended_at)}</Detail>
-                <Detail label="Duration">  {dur || '—'}</Detail>
+                <Detail label="Duration (operating hours)">
+                  {dur || '—'}
+                  {record.started_at && record.ended_at && (
+                    <div className="text-[10px] font-normal text-gray-400 dark:text-tm-dark-muted mt-0.5">
+                      {fmtDuration(new Date(record.ended_at) - new Date(record.started_at))} calendar elapsed
+                    </div>
+                  )}
+                </Detail>
               </div>
 
               {record.details && (
@@ -483,11 +491,17 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
   const [selectedRow,   setSelectedRow]   = useState(null)
   const [deletedLogs,   setDeletedLogs]   = useState([])
   const [showDeleted,   setShowDeleted]   = useState(false)
+  const [globalHours,   setGlobalHours]   = useState(null)
   const colPickerRef = useRef(null)
 
-  const locMap = useMemo(() => Object.fromEntries(locations.map(l => [l.id, l.name])), [locations])
+  const locMap  = useMemo(() => Object.fromEntries(locations.map(l => [l.id, l.name])), [locations])
+  const locById = useMemo(() => Object.fromEntries(locations.map(l => [l.id, l])), [locations])
   const visibleColKeys = ALL_COLS.map(c => c.key).filter(k => !hiddenCols.has(k))
   const hiddenCount = hiddenCols.size
+
+  // Duration (ms) of a downtime row, counting only minutes inside the location's operating hours
+  const durationMsFor = (row) =>
+    operatingDowntimeMinutes(row, locById[row.location_id], globalHours) * 60000
 
   // Fetch deleted logs for this section's location set
   useEffect(() => {
@@ -499,6 +513,12 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
       .order('deleted_at', { ascending: false })
       .then(({ data }) => setDeletedLogs(data || []))
   }, [locations, logs])
+
+  // Fetch the network-wide operating-hours schedule (standard/winter + active toggle)
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key', 'operating_hours').maybeSingle()
+      .then(({ data }) => setGlobalHours(data?.value || null))
+  }, [])
 
   const handleHiddenColsChange = (next) => {
     setHiddenCols(next)
@@ -516,19 +536,13 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
     const total  = filtered.length
     const active = filtered.filter(r => r.status === 'active').length
     const res    = filtered.filter(r => r.status === 'resolved' && r.started_at && r.ended_at)
-    const durs   = res.map(r => new Date(r.ended_at) - new Date(r.started_at))
+    const durs   = res.map(durationMsFor)
     const totalMs = durs.reduce((a, b) => a + b, 0)
     const avgMs   = durs.length ? totalMs / durs.length : 0
     return { total, active, totalMs, avgMs }
-  }, [filtered])
+  }, [filtered, locById, globalHours])
 
   const chartData = useMemo(() => {
-    const makeEntry = (label, r) => ({
-      label,
-      count:      0,
-      durationMs: 0,
-      _add(rec) { this.count++; if (rec.ended_at && rec.started_at) this.durationMs += new Date(rec.ended_at) - new Date(rec.started_at) },
-    })
     const map = {}
 
     filtered.forEach(r => {
@@ -540,13 +554,13 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
       if (!key) return
       if (!map[key]) map[key] = { label: groupBy === 'day' ? new Date(key + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : key, count: 0, durationMs: 0 }
       map[key].count++
-      if (r.ended_at && r.started_at) map[key].durationMs += new Date(r.ended_at) - new Date(r.started_at)
+      if (r.ended_at && r.started_at) map[key].durationMs += durationMsFor(r)
     })
 
     return Object.entries(map)
       .map(([, v]) => ({ label: v.label, value: metric === 'count' ? v.count : Math.round(v.durationMs / 60000) }))
       .sort(groupBy === 'day' ? (a, b) => 0 : (a, b) => b.value - a.value)
-  }, [filtered, groupBy, metric, locMap])
+  }, [filtered, groupBy, metric, locMap, locById, globalHours])
 
   const tableRows = useMemo(() => {
     const copy = [...filtered]
@@ -617,7 +631,7 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
       case 'details':    return <span className="truncate max-w-[140px] block" title={row.details}>{row.details || '—'}</span>
       case 'started':    return start ? <><div>{fmtDate(row.started_at)}</div><div className="text-[10px] text-gray-400 dark:text-tm-dark-muted">{fmtTime(row.started_at)}</div></> : '—'
       case 'ended':      return end   ? <><div>{fmtDate(row.ended_at)}</div><div className="text-[10px] text-gray-400 dark:text-tm-dark-muted">{fmtTime(row.ended_at)}</div></>   : '—'
-      case 'duration':   return row.status === 'active' ? <span className="text-red-500 font-semibold animate-pulse text-[10px]">Active</span> : (start && end ? fmtDuration(end - start) : '—')
+      case 'duration':   return row.status === 'active' ? <span className="text-red-500 font-semibold animate-pulse text-[10px]">Active</span> : (start && end ? fmtDuration(durationMsFor(row)) : '—')
       case 'status':     return <StatusBadge status={row.status} />
       case 'resolution': return <span className="truncate max-w-[160px] block" title={row.resolution_notes}>{row.resolution_notes || '—'}</span>
       case 'ca_needed':  return row.corrective_action_needed === true ? <span className="text-amber-500 font-bold">✓ Yes</span> : row.corrective_action_needed === false ? <span className="text-gray-400">No</span> : <span className="text-gray-300 dark:text-tm-dark-border text-[10px]">n/a</span>
@@ -635,8 +649,8 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
       {filtered.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatTile label="Total Events"    value={stats.total}  sub={stats.active ? `${stats.active} active` : 'none active'} />
-          <StatTile label="Total Downtime"  value={fmtDuration(stats.totalMs)} sub="resolved events" />
-          <StatTile label="Avg Duration"    value={fmtDuration(stats.avgMs)}   sub="per resolved event" />
+          <StatTile label="Total Downtime"  value={fmtDuration(stats.totalMs)} sub="operating hours, resolved events" />
+          <StatTile label="Avg Duration"    value={fmtDuration(stats.avgMs)}   sub="operating hours, per event" />
           <StatTile label="Showing"         value={filtered.length} sub={`of ${logs.length} events`} />
         </div>
       )}
@@ -729,8 +743,8 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
 
           {/* Export */}
           <ExportMenu items={[
-            { label: 'Excel — table data', run: () => exportDowntimeXlsx({ logs: filtered, locMap, visibleColKeys, filename: 'downtime_report' }) },
-            { label: 'PDF — table data',   run: () => exportDowntimePdf({  logs: filtered, locMap, visibleColKeys, filename: 'downtime_report' }) },
+            { label: 'Excel — table data', run: () => exportDowntimeXlsx({ logs: filtered, locMap, locById, globalHours, visibleColKeys, filename: 'downtime_report' }) },
+            { label: 'PDF — table data',   run: () => exportDowntimePdf({  logs: filtered, locMap, locById, globalHours, visibleColKeys, filename: 'downtime_report' }) },
           ]} />
         </div>
       </div>
@@ -830,6 +844,8 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
         <DetailModal
           record={selectedRow}
           locMap={locMap}
+          location={locById[selectedRow.location_id]}
+          globalHours={globalHours}
           isAdmin={isAdmin}
           onClose={() => setSelectedRow(null)}
           onSaved={() => { setSelectedRow(null); if (onRefresh) onRefresh() }}
