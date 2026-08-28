@@ -1351,7 +1351,7 @@ export default function DailyLogTable({
               {TIME_SLOTS.map((slot, i) => {
                 const row = rows[i]
                 const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
-                const dim = dirtySet.current.has(i) ? 'opacity-60' : ''
+                const dim = dirtySet.current.has(i) ? 'opacity-90' : ''
 
                 return (
                   <tr key={slot.value} className={`${rowBg(i)} ${dim}`}>
