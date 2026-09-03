@@ -8,6 +8,7 @@ import { shopTotals } from '../utils/logMath'
 import { fmtNum } from '../utils/format'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
 import { operatingDowntimeMinutes } from '../utils/operatingHours'
+import { getJotformSiteName } from '../utils/jotformSiteNames'
 
 function fmtElapsed(seconds) {
   const h = Math.floor(seconds / 3600)
@@ -485,7 +486,7 @@ export default function DailyLogTable({
     const fmtTime     = d => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
 
     const values = {
-      location_name:            locationName || '',
+      location_name:            getJotformSiteName(locationName),
       site_code:                '',
       site_email:               resolvedLog.site_email || locationEmail || '',
       start_date:               fmtDate(startedAt),
