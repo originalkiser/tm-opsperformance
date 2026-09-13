@@ -4,7 +4,7 @@ import TmLoader from './TmLoader'
 import {
   toDateStr, firstOfMonth, monthProgress,
   yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus,
-  mtdMembershipActualFromLogs, computeScore, rankByScore, pct1,
+  computeScore, rankByScore, pct1,
 } from '../utils/budgetMath'
 
 const todayStr = () => toDateStr(new Date())
@@ -36,7 +36,6 @@ function BonusBadge({ tier }) {
 function Leaderboard({ locations }) {
   const [targets, setTargets]     = useState([])
   const [dailyEntries, setDailyEntries] = useState([])
-  const [monthLogs, setMonthLogs] = useState([])
   const [loading, setLoading]     = useState(true)
 
   const currentMonth = firstOfMonth(todayStr())
@@ -48,18 +47,15 @@ function Leaderboard({ locations }) {
     const locIds = locations.map(l => l.id)
     if (!locIds.length) { setLoading(false); return }
 
-    const [{ data: t }, { data: de }, { data: ml }] = await Promise.all([
+    const [{ data: t }, { data: de }] = await Promise.all([
       supabase.from('budget_targets').select('*').in('location_id', locIds).eq('target_month', currentMonth),
       supabase.from('budget_daily_entries').select('*').in('location_id', locIds).order('entry_date', { ascending: false }),
-      supabase.from('daily_logs').select('location_id, log_date, time_slot, net_members, total_washes, member_washes, google_reviews, basic, good, better, best')
-        .in('location_id', locIds).gte('log_date', currentMonth).lte('log_date', todayStr()),
     ])
     setTargets(t || [])
     // Keep only the latest entry per location
     const latestByLoc = {}
     ;(de || []).forEach(row => { if (!latestByLoc[row.location_id]) latestByLoc[row.location_id] = row })
     setDailyEntries(Object.values(latestByLoc))
-    setMonthLogs(ml || [])
     setLoading(false)
   }
 
@@ -71,9 +67,7 @@ function Leaderboard({ locations }) {
       const yst    = yesterdayMetrics(entry)
       const mtd    = mtdMetrics(entry)
       const rev    = revenuePace(entry?.mtd_revenue_actual, target?.revenue_goal, progress)
-      const locLogs = monthLogs.filter(r => r.location_id === loc.id)
-      const membershipActual = mtdMembershipActualFromLogs(locLogs)
-      const mem    = membershipStatus(membershipActual, target?.membership_goal, todayStr())
+      const mem    = membershipStatus(entry?.mtd_membership_actual, target?.membership_goal, todayStr())
       const score  = computeScore({
         yesterdayConv: yst.conversion, mtdConv: mtd.conversion, mtdPmix: mtd.pmix,
         membershipProgressRatio: mem.progressRatio, currentRating: entry?.current_rating,
@@ -147,7 +141,7 @@ const MTD_FIELDS = [
 
 function emptyDailyForm() {
   return Object.fromEntries([...YESTERDAY_FIELDS, ...MTD_FIELDS].map(f => [f.key, ''])
-    .concat([['mtd_revenue_actual', ''], ['current_rating', ''], ['current_reviews', '']]))
+    .concat([['mtd_revenue_actual', ''], ['mtd_membership_actual', ''], ['current_rating', ''], ['current_reviews', '']]))
 }
 
 function DailyEntryTab({ locations, profile }) {
@@ -155,7 +149,6 @@ function DailyEntryTab({ locations, profile }) {
   const [entry, setEntry]   = useState(null)
   const [form, setForm]     = useState(emptyDailyForm())
   const [target, setTarget] = useState(null)
-  const [monthLogs, setMonthLogs] = useState([])
   const [loading, setLoading]     = useState(true)
   const [saving, setSaving]       = useState(false)
 
@@ -168,16 +161,13 @@ function DailyEntryTab({ locations, profile }) {
   const fetchData = async () => {
     setLoading(true)
     const currentMonth = firstOfMonth(todayStr())
-    const [{ data: entries }, { data: t }, { data: logs }] = await Promise.all([
+    const [{ data: entries }, { data: t }] = await Promise.all([
       supabase.from('budget_daily_entries').select('*').eq('location_id', selectedLocId).eq('entry_date', todayStr()).maybeSingle(),
       supabase.from('budget_targets').select('*').eq('location_id', selectedLocId).eq('target_month', currentMonth).maybeSingle(),
-      supabase.from('daily_logs').select('log_date, time_slot, net_members, total_washes, member_washes')
-        .eq('location_id', selectedLocId).gte('log_date', currentMonth).lte('log_date', todayStr()),
     ])
     const todays = entries || null
     setEntry(todays)
     setTarget(t || null)
-    setMonthLogs(logs || [])
     setForm(todays ? Object.fromEntries(Object.keys(emptyDailyForm()).map(k => [k, todays[k] ?? ''])) : emptyDailyForm())
     setLoading(false)
   }
@@ -200,10 +190,9 @@ function DailyEntryTab({ locations, profile }) {
 
   const yst = yesterdayMetrics(form)
   const mtd = mtdMetrics(form)
-  const membershipActual = mtdMembershipActualFromLogs(monthLogs)
   const progress = monthProgress(todayStr())
   const rev = revenuePace(form.mtd_revenue_actual, target?.revenue_goal, progress)
-  const mem = membershipStatus(membershipActual, target?.membership_goal, todayStr())
+  const mem = membershipStatus(form.mtd_membership_actual, target?.membership_goal, todayStr())
 
   const inputCls = 'w-full border border-gray-300 dark:border-tm-dark-border rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal font-brand placeholder:text-gray-300'
 
@@ -267,6 +256,10 @@ function DailyEntryTab({ locations, profile }) {
                 <input type="number" min="0" step="0.01" placeholder="0" value={form.mtd_revenue_actual} onChange={e => set('mtd_revenue_actual', e.target.value)} className={inputCls} />
               </div>
               <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">MTD Membership Actual</label>
+                <input type="number" min="0" placeholder="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={inputCls} />
+              </div>
+              <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Current Rating</label>
                 <input type="number" min="0" max="5" step="0.01" placeholder="4.85" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={inputCls} />
               </div>
@@ -292,8 +285,8 @@ function DailyEntryTab({ locations, profile }) {
             </div>
             <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border p-4">
               <div className="text-[10px] font-brand font-semibold text-gray-400 uppercase tracking-wide mb-1">MTD Membership Actual</div>
-              <div className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal">{membershipActual}</div>
-              <div className="text-[10px] text-gray-400 mt-0.5">goal {target?.membership_goal ?? '—'} · auto-calculated from daily logs</div>
+              <div className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal">{form.mtd_membership_actual || 0}</div>
+              <div className="text-[10px] text-gray-400 mt-0.5">goal {target?.membership_goal ?? '—'}</div>
             </div>
             <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border p-4">
               <div className="text-[10px] font-brand font-semibold text-gray-400 uppercase tracking-wide mb-1">Membership Bonus</div>

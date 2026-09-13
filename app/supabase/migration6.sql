@@ -3,7 +3,22 @@
 -- Adds Budget Tracking, Ownership Log, and Ownership Scorecard — all hidden
 -- per-location until enabled via Admin → Locations.
 
--- ── 0. Per-location feature toggles ────────────────────────────────────────────
+-- ── 0a. Manager-only location check (admin, or the assigned area manager —
+--     NOT plain store users). Used to gate Targets and the Scorecard, which
+--     only admins/area managers should be able to set. Must be defined before
+--     any policy below references it.
+create or replace function user_can_manage_location(loc_id uuid)
+returns boolean language sql security definer stable as $$
+  select exists (
+    select 1 from user_profiles
+    where id = auth.uid() and role = 'admin'
+    union all
+    select 1 from manager_locations
+    where manager_id = auth.uid() and location_id = loc_id
+  );
+$$;
+
+-- ── 0b. Per-location feature toggles ────────────────────────────────────────────
 alter table locations
   add column if not exists show_budget_tracking boolean not null default false;
 
@@ -61,12 +76,17 @@ create table if not exists budget_daily_entries (
   mtd_better          integer,
   mtd_best            integer,
   mtd_revenue_actual  numeric,
+  mtd_membership_actual integer,
   current_rating      numeric,
   current_reviews     integer,
   entered_by          uuid references user_profiles(id),
   updated_at          timestamptz not null default now(),
   unique (location_id, entry_date)
 );
+
+-- Safety net in case an earlier partial run already created this table
+-- without the column (e.g. the first attempt failed partway through).
+alter table budget_daily_entries add column if not exists mtd_membership_actual integer;
 
 alter table budget_daily_entries enable row level security;
 
@@ -133,17 +153,3 @@ create policy "ownership_scorecard_write" on ownership_scorecard_entries
   for all to authenticated
   using (user_can_manage_location(location_id))
   with check (user_can_manage_location(location_id));
-
--- ── 5. Manager-only location check (admin, or the assigned area manager —
---    NOT plain store users). Used to gate Targets and the Scorecard, which
---    only admins/area managers should be able to set.
-create or replace function user_can_manage_location(loc_id uuid)
-returns boolean language sql security definer stable as $$
-  select exists (
-    select 1 from user_profiles
-    where id = auth.uid() and role = 'admin'
-    union all
-    select 1 from manager_locations
-    where manager_id = auth.uid() and location_id = loc_id
-  );
-$$;

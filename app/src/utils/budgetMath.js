@@ -4,11 +4,9 @@
 // Field model (per calendar day, per location):
 //   "Yesterday" fields  — raw counts for the single prior day
 //   "MTD" fields        — running totals for the month so far
-// Both are typed in directly each day (not derived from prior rows), matching
-// the source workbook. MTD Membership Actual is the one exception — the app
-// derives it from daily_logs (net_members) rather than a typed field.
-
-import { shopTotals } from './logMath'
+// All fields, including MTD Membership Actual, are typed in directly each
+// day (not derived from prior rows or from other app data), matching the
+// source workbook.
 
 const toNum = (v) => (v === '' || v == null ? 0 : Number(v) || 0)
 
@@ -94,20 +92,6 @@ export function membershipStatus(mtdMembershipActual, membershipGoal, dateStr) {
   }
   const progressRatio = goal > 0 ? Math.min(1.5, actual / goal) : 0
   return { tier, progressRatio, actual, goal }
-}
-
-// MTD Membership Actual, auto-derived: sum each day's net_members (the day's
-// final cumulative row, via shopTotals) across every day so far this month.
-export function mtdMembershipActualFromLogs(monthLogs) {
-  const byDay = {}
-  monthLogs.forEach(r => {
-    if (!byDay[r.log_date]) byDay[r.log_date] = []
-    byDay[r.log_date].push(r)
-  })
-  return Object.values(byDay).reduce((sum, rows) => {
-    const day = shopTotals(rows)
-    return sum + (day ? toNum(day.net_members) : 0)
-  }, 0)
 }
 
 // ── Composite score & rank ────────────────────────────────────────────────────
