@@ -12,6 +12,7 @@ import TeamSalesTable from '../components/TeamSalesTable'
 import DailyTrendsSection from '../components/DailyTrendsSection'
 import DayOfWeekSection from '../components/DayOfWeekSection'
 import DowntimeSection from '../components/DowntimeSection'
+import AreaManagerOverview from '../components/AreaManagerOverview'
 
 const todayStr = () => {
   const d = new Date()
@@ -21,6 +22,7 @@ const todayStr = () => {
 // ── Layout persistence ────────────────────────────────────────────────────────
 
 const DEFAULT_SECTIONS = [
+  { id: 'site_health', label: 'Site Health' },
   { id: 'network',   label: 'Network Day View' },
   { id: 'sites',     label: 'Sites Performance' },
   { id: 'team',      label: 'Team Sales' },
@@ -317,7 +319,20 @@ export default function Insights() {
 
   const rangeLabel = fmtDateRange(dateRange.start, dateRange.end)
 
+  const isManager = ['admin', 'area_manager'].includes(profile?.role)
+
   const SECTION_CFG = {
+    ...(isManager ? {
+      site_health: {
+        badge: 'SITE HEALTH', badgeCls: 'bg-red-600',
+        subtitle: 'Budget entries, ownership posts, and hourly updates that need attention',
+        content: (
+          <div className="mt-3">
+            <AreaManagerOverview locations={visibleLocations} />
+          </div>
+        ),
+      },
+    } : {}),
     network: {
       badge: 'NETWORK', badgeCls: 'bg-tm-blue',
       subtitle: 'Day view across sites',

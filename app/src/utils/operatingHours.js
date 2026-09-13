@@ -114,3 +114,15 @@ export function operatingDowntimeMinutes(row, location, globalSettings) {
   const schedule = getEffectiveSchedule(globalSettings, location)
   return operatingMinutesBetween(row.started_at, row.ended_at, location?.timezone, schedule)
 }
+
+// Is this location open for business right now, in its own local time?
+export function isCurrentlyOpen(location, globalSettings, now = new Date()) {
+  const schedule = getEffectiveSchedule(globalSettings, location)
+  const tz = location?.timezone || DEFAULT_TIMEZONE
+  const parts = toZonedParts(now, tz)
+  const weekdayIdx = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay() // 0=Sun..6=Sat
+  const window = weekdayIdx === 0 ? schedule.sun : schedule.monSat
+  if (!window?.open || !window?.close) return false
+  const nowMin = parts.hour * 60 + parts.minute
+  return nowMin >= parseHM(window.open) && nowMin < parseHM(window.close)
+}

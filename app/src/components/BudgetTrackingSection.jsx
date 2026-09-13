@@ -461,12 +461,15 @@ function TargetsTab({ locations, allLocations }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function BudgetTrackingSection({ locations, allLocations, profile }) {
-  const [tab, setTab] = useState('leaderboard')
+export default function BudgetTrackingSection({ locations, allLocations, profile, initialTab }) {
+  // A single-site leaderboard (ranked against itself) isn't useful — skip it
+  // when there's only one location, e.g. embedded on the Site Entry page.
+  const showLeaderboard = locations.length > 1
+  const [tab, setTab] = useState(initialTab || (showLeaderboard ? 'leaderboard' : 'daily'))
   const canManageTargets = profile?.role === 'admin' || profile?.role === 'area_manager'
 
   const TABS = [
-    { id: 'leaderboard', label: 'Leaderboard' },
+    ...(showLeaderboard ? [{ id: 'leaderboard', label: 'Leaderboard' }] : []),
     { id: 'daily',       label: 'Daily Entry' },
     ...(canManageTargets ? [{ id: 'targets', label: 'Targets' }] : []),
   ]
@@ -491,7 +494,7 @@ export default function BudgetTrackingSection({ locations, allLocations, profile
         ))}
       </div>
 
-      {tab === 'leaderboard' && <Leaderboard locations={locations} />}
+      {tab === 'leaderboard' && showLeaderboard && <Leaderboard locations={locations} />}
       {tab === 'daily'       && <DailyEntryTab locations={locations} profile={profile} />}
       {tab === 'targets' && canManageTargets && <TargetsTab locations={locations} allLocations={allLocations} />}
     </div>

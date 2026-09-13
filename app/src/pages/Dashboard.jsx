@@ -7,6 +7,8 @@ import DailyLogTable from '../components/DailyLogTable'
 import EmployeeSummary from '../components/EmployeeSummary'
 import MonthlyRollup from '../components/MonthlyRollup'
 import DailySnapshot from '../components/DailySnapshot'
+import BudgetTrackingSection from '../components/BudgetTrackingSection'
+import OwnershipLogSection from '../components/OwnershipLogSection'
 import { shopTotals } from '../utils/logMath'
 
 const formatTimeSlot = (ts) => {
@@ -226,9 +228,11 @@ export default function Dashboard() {
             {/* Tabs */}
             <div className="flex border-b border-gray-200 dark:border-tm-dark-border bg-gray-50 dark:bg-tm-dark-bg">
               {[
-                { key: 'daily',    label: 'Daily Log'  },
-                { key: 'snapshot', label: 'Snapshot'   },
-                { key: 'monthly',  label: 'Rollup'     },
+                { key: 'daily',     label: 'Daily Log'       },
+                { key: 'snapshot',  label: 'Snapshot'        },
+                { key: 'monthly',   label: 'Rollup'          },
+                ...(location?.show_budget_tracking ? [{ key: 'budget',    label: 'Budget Tracking' }] : []),
+                ...(location?.show_ownership_tools ? [{ key: 'ownership', label: 'Ownership Log'   }] : []),
               ].map(({ key, label }) => (
                 <button
                   key={key}
@@ -291,6 +295,26 @@ export default function Dashboard() {
                   metricThresholds={location?.metric_thresholds}
                 />
               </div>
+
+              {location?.show_budget_tracking && (
+                <div className={activeTab === 'budget' ? 'block' : 'hidden'}>
+                  <BudgetTrackingSection
+                    locations={location ? [location] : []}
+                    allLocations={location ? [location] : []}
+                    profile={profile}
+                    initialTab="daily"
+                  />
+                </div>
+              )}
+
+              {location?.show_ownership_tools && (
+                <div className={activeTab === 'ownership' ? 'block' : 'hidden'}>
+                  <OwnershipLogSection
+                    locations={location ? [location] : []}
+                    profile={profile}
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
