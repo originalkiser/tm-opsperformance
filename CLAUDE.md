@@ -89,11 +89,26 @@ Because cumulative rows can have **different employees per time slot** (shift ch
 
 ### Supabase Tables
 
-- `locations` — site metadata: `name`, `site_code`, `market`, `opportunities_formula`
+- `locations` — site metadata: `name`, `site_code`, `market`, `opportunities_formula`, `exclude_from_reporting`, `show_budget_tracking`, `show_ownership_tools`, `ownership_log_cutoff_time`
 - `user_profiles` — extends Supabase auth: `role`, `location_id`, `email`, `name`, `settings`
 - `manager_locations` — many-to-many: `manager_id` × `location_id`
 - `employees` — per-location employee roster: `name`, `is_active`, `location_id`
 - `daily_logs` — the hourly data rows: `location_id`, `log_date`, `time_slot`, all metric columns
+- `budget_targets` — monthly goals per site (`target_month`, `revenue_goal`, `membership_goal`, `desired_rating`, two labor-hour goals)
+- `budget_daily_entries` — daily Yesterday + MTD figures per site, one row per `(location_id, entry_date)`
+- `ownership_log_entries` — the daily Ownership Log post, one row per `(location_id, log_date)`
+- `ownership_scorecard_entries` — monthly 10-category manager rating, one row per `(location_id, score_month)`
+
+Schema changes live in `app/supabase/migration*.sql`, applied by hand in the Supabase SQL Editor (there's no migration runner — each file is idempotent and safe to re-run).
+
+### Budget Tracking, Ownership Log & Scorecard
+
+Three related features, all hidden per-location until an admin turns them on in **Admin → Locations** (`show_budget_tracking`, `show_ownership_tools`). They live under **Reports** as sidebar items that only appear once at least one visible location has the toggle on.
+
+- **Budget Tracking** (`BudgetTrackingSection.jsx`, `budgetMath.js`): ported from the MSMO budget workbook. Managers type in "Yesterday" and "MTD" (month-to-date) figures daily — nothing carries forward, each new calendar day starts blank (`budget_daily_entries`, one row per site per day). Monthly goals (`budget_targets`) are set separately by admins/area managers via the Targets tab, with a warning flow for setting targets on a site outside one's own assignments. MTD Membership Actual is **not** typed in — it's derived from `daily_logs.net_members` (summed via `shopTotals()` per day) rather than manually entered, unlike the source spreadsheet. The Leaderboard tab ranks sites by a weighted score (Yesterday Conv 25%, MTD Conv 25%, MTD P-Mix 15%, membership progress 25%, rating 10%) — this intentionally does not reproduce a bug in the source workbook's live formula.
+- **Ownership Log** (`OwnershipLogSection.jsx`, `ownershipLog.js`): daily post (biggest challenge, what you did, plan for today) per site. Replaces the source spreadsheet's plain Complete/Incomplete flag with a time-based status — Pending before the site's cutoff time, Overdue after — computed from `ownership_log_cutoff_time` (per-location, admin-configurable) rather than a fixed global time.
+- **Ownership Scorecard** (`OwnershipScorecardSection.jsx`): monthly 10-category manager rating, editable by admins/area managers only.
+- **"Set targets" reminders** (`targetsNotifications.js`, `useMissingTargets.js`, `TargetsBanner.jsx`, `TargetsBell.jsx`): flags any admin/area-manager-visible site missing a `budget_targets` row for the current month, or (starting 7 days before month-end) missing next month's row. Surfaced as a dismissible top banner (reappears after 12h or after the user's been away from the tab a while, whichever comes first) and a NavBar bell with a per-site dropdown.
 
 ### State Persistence
 

@@ -6,6 +6,7 @@ import NavBar from '../components/NavBar'
 import TmLoader from '../components/TmLoader'
 import { DEFAULT_THRESHOLDS } from '../utils/metricColors'
 import { DEFAULT_STANDARD_HOURS, DEFAULT_WINTER_HOURS, TIMEZONE_OPTIONS } from '../utils/operatingHours'
+import { DEFAULT_OWNERSHIP_CUTOFF } from '../utils/ownershipLog'
 
 function generatePassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
@@ -179,6 +180,21 @@ export default function Admin() {
 
   const updateLocationHoursOverride = async (locId, override) => {
     await supabase.from('locations').update({ operating_hours_override: override }).eq('id', locId)
+    fetchLocations()
+  }
+
+  const updateLocationBudgetTracking = async (locId, enabled) => {
+    await supabase.from('locations').update({ show_budget_tracking: enabled }).eq('id', locId)
+    fetchLocations()
+  }
+
+  const updateLocationOwnershipTools = async (locId, enabled) => {
+    await supabase.from('locations').update({ show_ownership_tools: enabled }).eq('id', locId)
+    fetchLocations()
+  }
+
+  const updateLocationOwnershipCutoff = async (locId, cutoffTime) => {
+    await supabase.from('locations').update({ ownership_log_cutoff_time: cutoffTime || null }).eq('id', locId)
     fetchLocations()
   }
 
@@ -662,6 +678,9 @@ export default function Admin() {
               onUpdateEmail={updateLocationEmail}
               onUpdateTimezone={updateLocationTimezone}
               onUpdateHoursOverride={updateLocationHoursOverride}
+              onUpdateBudgetTracking={updateLocationBudgetTracking}
+              onUpdateOwnershipTools={updateLocationOwnershipTools}
+              onUpdateOwnershipCutoff={updateLocationOwnershipCutoff}
             />
           )}
 
@@ -676,7 +695,7 @@ export default function Admin() {
 }
 
 // ── Locations tab ─────────────────────────────────────────────────────────────
-function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled, onUpdateEmail, onUpdateTimezone, onUpdateHoursOverride }) {
+function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled, onUpdateEmail, onUpdateTimezone, onUpdateHoursOverride, onUpdateBudgetTracking, onUpdateOwnershipTools, onUpdateOwnershipCutoff }) {
   const [marketInputs,    setMarketInputs]    = useState({})
   const [addMgrOpen,      setAddMgrOpen]      = useState({})
   const [thresholdInputs, setThresholdInputs] = useState({})
@@ -761,6 +780,8 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
               <th className="px-3 py-2 text-left">Opportunities Formula</th>
               <th className="px-3 py-2 text-center">Exclude from Reporting</th>
               <th className="px-3 py-2 text-center">Downtime Tracking</th>
+              <th className="px-3 py-2 text-center">Budget Tracking</th>
+              <th className="px-3 py-2 text-center">Ownership Tools</th>
               <th className="px-3 py-2 text-left">Time Zone</th>
               <th className="px-3 py-2 text-left">Hours Override</th>
               <th className="px-3 py-2 text-left">Site Email</th>
@@ -836,6 +857,47 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                     </button>
                     {loc.downtime_tracking_enabled && (
                       <div className="text-[10px] text-tm-teal font-brand font-semibold mt-0.5">On</div>
+                    )}
+                  </td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center">
+                    <button
+                      role="switch"
+                      aria-checked={!!loc.show_budget_tracking}
+                      onClick={() => onUpdateBudgetTracking(loc.id, !loc.show_budget_tracking)}
+                      title={loc.show_budget_tracking ? 'Budget Tracking visible — click to hide' : 'Budget Tracking hidden — click to show'}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors align-middle ${
+                        loc.show_budget_tracking ? 'bg-tm-teal' : 'bg-gray-300 dark:bg-tm-dark-border'
+                      }`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                        loc.show_budget_tracking ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                      }`} />
+                    </button>
+                  </td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center">
+                    <button
+                      role="switch"
+                      aria-checked={!!loc.show_ownership_tools}
+                      onClick={() => onUpdateOwnershipTools(loc.id, !loc.show_ownership_tools)}
+                      title={loc.show_ownership_tools ? 'Ownership Log + Scorecard visible — click to hide' : 'Ownership Log + Scorecard hidden — click to show'}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors align-middle ${
+                        loc.show_ownership_tools ? 'bg-tm-teal' : 'bg-gray-300 dark:bg-tm-dark-border'
+                      }`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                        loc.show_ownership_tools ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                      }`} />
+                    </button>
+                    {loc.show_ownership_tools && (
+                      <div className="mt-1">
+                        <input
+                          type="time"
+                          defaultValue={loc.ownership_log_cutoff_time || DEFAULT_OWNERSHIP_CUTOFF}
+                          onBlur={e => { if (e.target.value !== (loc.ownership_log_cutoff_time || DEFAULT_OWNERSHIP_CUTOFF)) onUpdateOwnershipCutoff(loc.id, e.target.value) }}
+                          title="Ownership Log warning cutoff time"
+                          className="w-full border border-gray-200 dark:border-tm-dark-border rounded px-1.5 py-0.5 text-[10px] bg-white dark:bg-tm-dark-surface text-gray-700 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
+                        />
+                      </div>
                     )}
                   </td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
@@ -936,6 +998,10 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
       </div>
       <div className="mt-4 pt-2 border-t border-gray-100 dark:border-tm-dark-border text-xs text-gray-400 dark:text-tm-dark-muted">
         <p><strong className="text-gray-500 dark:text-tm-dark-text">Downtime Tracking:</strong> When enabled for a site, staff can log and time downtime events from the daily log page. Configure reasons in the Downtime tab.</p>
+      </div>
+      <div className="mt-4 pt-2 border-t border-gray-100 dark:border-tm-dark-border text-xs text-gray-400 dark:text-tm-dark-muted space-y-1">
+        <p><strong className="text-gray-500 dark:text-tm-dark-text">Budget Tracking:</strong> Adds Yesterday/MTD performance vs. monthly goals, revenue &amp; membership pace, and a site leaderboard to Reports.</p>
+        <p><strong className="text-gray-500 dark:text-tm-dark-text">Ownership Tools:</strong> Adds the daily Ownership Log post and the monthly Ownership Scorecard. The cutoff time controls when an unposted log turns from "Pending" to "Overdue" for that day.</p>
       </div>
 
       {/* ── Performance Thresholds ── */}

@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import SettingsModal from './SettingsModal'
+import TargetsBell from './TargetsBell'
 
 function CogIcon() {
   return (
@@ -111,6 +112,9 @@ export default function NavBar() {
               {profile?.role === 'admin' ? 'Admin' : 'Manager'}
             </Link>
           )}
+
+          {/* Budget targets bell — admins/area managers only, appears when a site needs targets set */}
+          {isManager && <TargetsBell />}
 
           {/* Dark mode toggle */}
           <button

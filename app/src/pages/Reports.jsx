@@ -14,6 +14,9 @@ import DayOfWeekSection from '../components/DayOfWeekSection'
 import MonthlyRollup from '../components/MonthlyRollup'
 import DailySnapshot from '../components/DailySnapshot'
 import DowntimeSection from '../components/DowntimeSection'
+import BudgetTrackingSection from '../components/BudgetTrackingSection'
+import OwnershipLogSection from '../components/OwnershipLogSection'
+import OwnershipScorecardSection from '../components/OwnershipScorecardSection'
 import { supabase as supabaseClient } from '../lib/supabase'
 
 const todayStr = () => {
@@ -113,6 +116,43 @@ const REPORTS = [
     filterNeeds: { date: 'range', markets: true, shops: true },
     badge: { text: 'DOWN', cls: 'bg-red-600' },
   },
+  {
+    id:    'budget',
+    label: 'Budget Tracking',
+    icon:  (
+      <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+        <path d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm0 2h12v2H4V6zm0 4h12v4H4v-4z"/>
+        <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
+      </svg>
+    ),
+    requiresToggle: 'show_budget_tracking',
+    filterNeeds: { date: false, markets: false, shops: false },
+    badge: { text: 'BUDGET', cls: 'bg-emerald-600' },
+  },
+  {
+    id:    'ownership_log',
+    label: 'Ownership Log',
+    icon:  (
+      <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm6 5a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L10 12.586V9z" clipRule="evenodd"/>
+      </svg>
+    ),
+    requiresToggle: 'show_ownership_tools',
+    filterNeeds: { date: false, markets: false, shops: false },
+    badge: { text: 'OWN LOG', cls: 'bg-purple-700' },
+  },
+  {
+    id:    'ownership_scorecard',
+    label: 'Ownership Scorecard',
+    icon:  (
+      <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.958a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.367 2.446a1 1 0 00-.363 1.118l1.287 3.957c.3.922-.755 1.688-1.538 1.118l-3.367-2.446a1 1 0 00-1.176 0l-3.367 2.446c-.783.57-1.838-.196-1.538-1.118l1.287-3.957a1 1 0 00-.363-1.118L2.075 9.385c-.783-.57-.38-1.81.588-1.81h4.163a1 1 0 00.95-.69l1.286-3.958z"/>
+      </svg>
+    ),
+    requiresToggle: 'show_ownership_tools',
+    filterNeeds: { date: false, markets: false, shops: false },
+    badge: { text: 'SCORE', cls: 'bg-purple-700' },
+  },
 ]
 
 // ── Snapshot data fetcher ─────────────────────────────────────────────────────
@@ -189,8 +229,25 @@ export default function Reports() {
   const [monthlyLocId,   setMonthlyLocId]   = useState(() => locations[0]?.id || null)
   const [trendLocIds,    setTrendLocIds]    = useState(null)
 
-  const report = REPORTS.find(r => r.id === activeReport) || REPORTS[0]
+  // Hide toggle-gated sidebar items unless at least one visible location has them enabled
+  const visibleReports = REPORTS.filter(r => !r.requiresToggle || locations.some(l => l[r.requiresToggle]))
+  const report = visibleReports.find(r => r.id === activeReport) || visibleReports[0] || REPORTS[0]
   const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
+
+  // Budget-Tracking / Ownership-Tools scoped location lists
+  const budgetLocations    = locations.filter(l => l.show_budget_tracking)
+  const ownershipLocations = locations.filter(l => l.show_ownership_tools)
+
+  // For area managers wanting to set targets outside their assigned sites —
+  // admins already see every location via `locations`, so this only matters
+  // for area_manager. Fetched once, network-wide.
+  const [networkLocations, setNetworkLocations] = useState([])
+  useEffect(() => {
+    if (profile?.role !== 'area_manager') return
+    supabaseClient.from('locations').select('*').eq('show_budget_tracking', true).order('site_code')
+      .then(({ data }) => setNetworkLocations(data || []))
+  }, [profile?.role])
+  const allBudgetLocations = profile?.role === 'admin' ? budgetLocations : networkLocations
 
   const marketLocations = selectedMarkets === null
     ? locations
@@ -299,7 +356,7 @@ export default function Reports() {
           </button>
 
           <nav className="flex-1 py-2 overflow-y-auto">
-            {REPORTS.map(r => (
+            {visibleReports.map(r => (
               <button
                 key={r.id}
                 onClick={() => handleReportChange(r.id)}
@@ -477,6 +534,24 @@ export default function Reports() {
                   />
                 </div>
               )
+            )}
+
+            {/* Budget Tracking */}
+            {activeReport === 'budget' && (
+              <BudgetTrackingSection locations={budgetLocations} allLocations={allBudgetLocations} profile={profile} />
+            )}
+
+            {/* Ownership Log */}
+            {activeReport === 'ownership_log' && (
+              <OwnershipLogSection locations={ownershipLocations} profile={profile} />
+            )}
+
+            {/* Ownership Scorecard */}
+            {activeReport === 'ownership_scorecard' && (
+              <OwnershipScorecardSection
+                locations={ownershipLocations}
+                canManage={profile?.role === 'admin' || profile?.role === 'area_manager'}
+              />
             )}
           </div>
         </main>
