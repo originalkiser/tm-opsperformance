@@ -324,13 +324,7 @@ export default function Insights() {
   const SECTION_CFG = {
     ...(isManager ? {
       site_health: {
-        badge: 'SITE HEALTH', badgeCls: 'bg-red-600',
-        subtitle: 'Budget entries, ownership posts, and hourly updates that need attention',
-        content: (
-          <div className="mt-3">
-            <AreaManagerOverview locations={visibleLocations} />
-          </div>
-        ),
+        content: <AreaManagerOverview locations={visibleLocations} />,
       },
     } : {}),
     network: {
@@ -453,6 +447,10 @@ export default function Insights() {
             {layout.filter(s => s.visible).map(s => {
               const cfg = SECTION_CFG[s.id]
               if (!cfg) return null
+              // Site Health manages its own collapsible card (default closed,
+              // with an always-visible summary line), so it skips the generic
+              // Section wrapper.
+              if (s.id === 'site_health') return <div key={s.id}>{cfg.content}</div>
               return (
                 <Section key={s.id} id={s.id} badge={cfg.badge} badgeCls={cfg.badgeCls} subtitle={cfg.subtitle}>
                   {cfg.content}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
@@ -206,15 +207,23 @@ export default function Reports() {
   )
   const [dark] = useDarkModeCtx()
 
-  const [activeReport, setActiveReport]   = useState(() => localStorage.getItem('tm_reports_active') || 'sites')
+  // A "go to this report" link (e.g. from the Site Health card) arrives as
+  // router state — { report, locationId } — and wins over the last-viewed
+  // report/filter saved in localStorage.
+  const routerLocation = useLocation()
+  const jumpTo = routerLocation.state || null
+
+  const [activeReport, setActiveReport]   = useState(() => jumpTo?.report || localStorage.getItem('tm_reports_active') || 'sites')
   const [sidebarOpen,  setSidebarOpen]    = useState(true)
   const [logs,          setLogs]          = useState([])
   const [downtimeLogs,  setDowntimeLogs]  = useState([])
   const [loading,       setLoading]       = useState(false)
 
   // Shared filters
-  const [selectedShops,   setSelectedShops]   = useState(null)
+  const [selectedShops,   setSelectedShops]   = useState(() => jumpTo?.locationId ? [jumpTo.locationId] : null)
   const [selectedMarkets, setSelectedMarkets] = useState(() => {
+    // Jumping to a specific site should never be hidden by a stale market filter.
+    if (jumpTo?.locationId) return null
     try {
       const raw = localStorage.getItem('tm_reports_market_filter')
       if (!raw) return null

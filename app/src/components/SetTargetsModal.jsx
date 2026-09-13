@@ -157,10 +157,16 @@ function BulkFlow({ items, onDone }) {
 export default function SetTargetsModal({ missing, onClose }) {
   const [mode, setMode] = useState('sequential')
 
+  // Bulk mode needs room for a 7-column table; sequential is a single form.
+  // Prefer a comfortable fixed width, but never exceed the viewport.
+  const widthCls = mode === 'bulk'
+    ? 'w-[min(1100px,calc(100vw-2rem))]'
+    : 'w-full max-w-xl mx-4'
+
   return (
     <div className="fixed inset-0 z-[400] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white dark:bg-tm-dark-card rounded-2xl shadow-2xl z-10 w-full max-w-xl mx-4 max-h-[90vh] flex flex-col">
+      <div className={`relative bg-white dark:bg-tm-dark-card rounded-2xl shadow-2xl z-10 max-h-[90vh] flex flex-col ${widthCls}`}>
         <div className="bg-tm-navy dark:bg-tm-dark-nav text-white px-5 py-3.5 rounded-t-2xl flex items-center justify-between shrink-0">
           <div>
             <div className="font-brand font-bold text-sm">Set Budget Targets</div>
@@ -172,8 +178,13 @@ export default function SetTargetsModal({ missing, onClose }) {
         <div className="px-5 pt-3 shrink-0">
           <button
             onClick={() => setMode(m => m === 'sequential' ? 'bulk' : 'sequential')}
-            className="text-xs text-tm-teal hover:text-tm-blue dark:hover:text-white font-semibold underline transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-brand font-semibold rounded-lg border border-gray-200 dark:border-tm-dark-border bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue hover:border-tm-teal dark:hover:text-white shadow-sm transition-colors"
           >
+            <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+              {mode === 'sequential'
+                ? <path d="M2 4a1 1 0 011-1h10a1 1 0 011 1v1a1 1 0 01-1 1H3a1 1 0 01-1-1V4zm0 5a1 1 0 011-1h10a1 1 0 011 1v1a1 1 0 01-1 1H3a1 1 0 01-1-1V9zm0 5a1 1 0 011-1h6a1 1 0 010 2H3a1 1 0 01-1-1v-1z"/>
+                : <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd"/>}
+            </svg>
             {mode === 'sequential' ? `Enter all ${missing.length} sites in a table instead` : 'Switch to one-site-at-a-time'}
           </button>
         </div>
