@@ -10,9 +10,6 @@ import {
 
 const todayStr = () => toDateStr(new Date())
 
-const monthLabel = (monthStr) =>
-  new Date(monthStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-
 function EditIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
@@ -43,10 +40,6 @@ function emptyDailyForm() {
   return Object.fromEntries([...YESTERDAY_FIELDS, ...MTD_FIELDS].map(f => [f.key, ''])
     .concat([['mtd_revenue_actual', ''], ['mtd_membership_actual', ''], ['current_rating', ''], ['current_reviews', '']]))
 }
-function emptyTargetForm() {
-  return { revenue_goal: '', membership_goal: '', desired_rating: '4.85', labor_hours_non_salary: '', labor_hours_with_salary: '' }
-}
-
 function DailyEntryPane({ location }) {
   const [form, setForm]     = useState(emptyDailyForm())
   const [entry, setEntry]   = useState(null)
@@ -117,95 +110,7 @@ function DailyEntryPane({ location }) {
   )
 }
 
-function TargetsPane({ location }) {
-  const [month, setMonth]       = useState(() => firstOfMonth(todayStr()))
-  const [form, setForm]         = useState(emptyTargetForm())
-  const [existing, setExisting] = useState(null)
-  const [loading, setLoading]   = useState(true)
-  const [saving, setSaving]     = useState(false)
-
-  useEffect(() => { fetchTarget() }, [location.id, month])
-
-  const fetchTarget = async () => {
-    setLoading(true)
-    const { data } = await supabase.from('budget_targets').select('*')
-      .eq('location_id', location.id).eq('target_month', month).maybeSingle()
-    setExisting(data || null)
-    setForm(data ? {
-      revenue_goal: data.revenue_goal ?? '',
-      membership_goal: data.membership_goal ?? '',
-      desired_rating: data.desired_rating ?? '4.85',
-      labor_hours_non_salary: data.labor_hours_non_salary ?? '',
-      labor_hours_with_salary: data.labor_hours_with_salary ?? '',
-    } : emptyTargetForm())
-    setLoading(false)
-  }
-
-  const handleSave = async () => {
-    setSaving(true)
-    const numOrZero = (v) => v === '' ? 0 : Number(v)
-    await supabase.from('budget_targets').upsert({
-      location_id: location.id,
-      target_month: month,
-      revenue_goal: numOrZero(form.revenue_goal),
-      membership_goal: numOrZero(form.membership_goal),
-      desired_rating: numOrZero(form.desired_rating),
-      labor_hours_non_salary: numOrZero(form.labor_hours_non_salary),
-      labor_hours_with_salary: numOrZero(form.labor_hours_with_salary),
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'location_id,target_month' })
-    setSaving(false)
-    fetchTarget()
-  }
-
-  const shiftMonth = (n) => {
-    const d = new Date(month + 'T00:00:00')
-    setMonth(firstOfMonth(`${d.getFullYear()}-${String(d.getMonth() + 1 + n).padStart(2, '0')}-01`))
-  }
-
-  const inputCls = 'w-full border border-gray-300 dark:border-tm-dark-border rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal font-brand'
-
-  if (loading) return <div className="flex justify-center py-8"><TmLoader size={56} /></div>
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-center gap-2">
-        <button onClick={() => shiftMonth(-1)} className="px-2 py-1 rounded border border-gray-200 dark:border-tm-dark-border text-gray-500 hover:text-tm-blue dark:hover:text-tm-teal transition-colors">‹</button>
-        <span className="font-brand font-semibold text-tm-blue dark:text-tm-teal text-sm w-32 text-center">{monthLabel(month)}</span>
-        <button onClick={() => shiftMonth(1)} className="px-2 py-1 rounded border border-gray-200 dark:border-tm-dark-border text-gray-500 hover:text-tm-blue dark:hover:text-tm-teal transition-colors">›</button>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">Revenue Goal ($)</label>
-          <input type="number" min="0" step="0.01" value={form.revenue_goal} onChange={e => setForm(f => ({ ...f, revenue_goal: e.target.value }))} className={inputCls} />
-        </div>
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">Membership Goal</label>
-          <input type="number" min="0" value={form.membership_goal} onChange={e => setForm(f => ({ ...f, membership_goal: e.target.value }))} className={inputCls} />
-        </div>
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">Desired Rating</label>
-          <input type="number" min="0" max="5" step="0.01" value={form.desired_rating} onChange={e => setForm(f => ({ ...f, desired_rating: e.target.value }))} className={inputCls} />
-        </div>
-        <div />
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">Labor — Regular Hours</label>
-          <input type="number" min="0" value={form.labor_hours_non_salary} onChange={e => setForm(f => ({ ...f, labor_hours_non_salary: e.target.value }))} className={inputCls} />
-        </div>
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">Labor — With Salary</label>
-          <input type="number" min="0" value={form.labor_hours_with_salary} onChange={e => setForm(f => ({ ...f, labor_hours_with_salary: e.target.value }))} className={inputCls} />
-        </div>
-      </div>
-      <button onClick={handleSave} disabled={saving} className="px-4 py-2 rounded-lg bg-tm-teal text-tm-navy font-bold text-xs hover:brightness-110 transition-colors disabled:opacity-50">
-        {saving ? 'Saving…' : existing ? 'Update Targets' : 'Save Targets'}
-      </button>
-    </div>
-  )
-}
-
-function EditModal({ location, canManageTargets, onClose }) {
-  const [pane, setPane] = useState('daily')
+function EditModal({ location, onClose }) {
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -214,20 +119,11 @@ function EditModal({ location, canManageTargets, onClose }) {
           <div className="font-brand font-bold text-sm">{location.name}</div>
           <button onClick={onClose} className="text-white/60 hover:text-white text-xl">×</button>
         </div>
-        {canManageTargets && (
-          <div className="flex border-b border-gray-100 dark:border-tm-dark-border shrink-0">
-            {[{ id: 'daily', label: 'Daily Entry' }, { id: 'targets', label: 'Targets' }].map(t => (
-              <button key={t.id} onClick={() => setPane(t.id)}
-                className={`flex-1 py-2.5 text-xs font-brand font-semibold transition-colors border-b-2 ${
-                  pane === t.id ? 'border-tm-blue dark:border-tm-teal text-tm-blue dark:text-tm-teal' : 'border-transparent text-gray-400 dark:text-tm-dark-muted'
-                }`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
         <div className="overflow-y-auto flex-1 p-5">
-          {pane === 'daily' ? <DailyEntryPane location={location} /> : <TargetsPane location={location} />}
+          <p className="text-[10px] text-gray-400 dark:text-tm-dark-muted mb-3">
+            Editing today's daily entry — monthly targets are managed on the <strong>AM Entry</strong> page.
+          </p>
+          <DailyEntryPane location={location} />
         </div>
       </div>
     </div>
@@ -236,7 +132,7 @@ function EditModal({ location, canManageTargets, onClose }) {
 
 // ── Main report ───────────────────────────────────────────────────────────────
 
-export default function BudgetTrackingReport({ locations, canManageTargets }) {
+export default function BudgetTrackingReport({ locations }) {
   const [targets, setTargets]     = useState([])
   const [dailyEntries, setDailyEntries] = useState([])
   const [loading, setLoading]     = useState(true)
@@ -330,7 +226,7 @@ export default function BudgetTrackingReport({ locations, canManageTargets }) {
       </div>
 
       {editingLoc && (
-        <EditModal location={editingLoc} canManageTargets={canManageTargets} onClose={() => { setEditingLoc(null); fetchAll() }} />
+        <EditModal location={editingLoc} onClose={() => { setEditingLoc(null); fetchAll() }} />
       )}
     </div>
   )

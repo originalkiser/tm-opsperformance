@@ -85,6 +85,19 @@ export default function NavBar() {
             </Link>
           )}
 
+          {/* AM Entry — admins/area managers only */}
+          {isManager && (
+            <Link
+              to="/am-entry"
+              className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-blue/60 border border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white transition-colors font-brand font-semibold text-xs tracking-wide"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M8 8a3 3 0 100-6 3 3 0 000 6zm2 1a1 1 0 011 1v.5c0 1.5-1.5 3-3 3s-3-1.5-3-3V10a1 1 0 011-1h4zm3.5-2a1.5 1.5 0 10-.001-3.001A1.5 1.5 0 0013.5 7zm-11 0a1.5 1.5 0 10-.001-3.001A1.5 1.5 0 002.5 7zM16 9.5a1 1 0 00-1-1h-1.35c.222.418.35.895.35 1.4v.6a2.97 2.97 0 01-.5 1.65 3.5 3.5 0 002.5-3.35v-.3zM0 9.8c0 1.457.964 2.693 2.5 3.35A2.97 2.97 0 012 11.5v-.6c0-.505.128-.982.35-1.4H1a1 1 0 00-1 1v.3z" clipRule="evenodd"/>
+              </svg>
+              AM Entry
+            </Link>
+          )}
+
           {/* Site Entry — everyone */}
           <button
             onClick={() => navigate('/')}

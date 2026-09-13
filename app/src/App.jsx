@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
 import Insights from './pages/Insights'
 import Reports from './pages/Reports'
+import AmEntry from './pages/AmEntry'
 import UpdateBanner from './components/UpdateBanner'
 import TargetsBanner from './components/TargetsBanner'
 import TmLoader from './components/TmLoader'
@@ -64,6 +65,10 @@ export default function App() {
             <Route
               path="/admin"
               element={<ProtectedRoute><ManagerRoute><Admin /></ManagerRoute></ProtectedRoute>}
+            />
+            <Route
+              path="/am-entry"
+              element={<ProtectedRoute><ManagerRoute><AmEntry /></ManagerRoute></ProtectedRoute>}
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

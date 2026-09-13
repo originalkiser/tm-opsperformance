@@ -537,7 +537,7 @@ export default function Reports() {
 
             {/* Budget Tracking */}
             {activeReport === 'budget' && (
-              <BudgetTrackingReport locations={budgetLocations} canManageTargets={canManageTargets} />
+              <BudgetTrackingReport locations={budgetLocations} />
             )}
 
             {/* Ownership Log */}
@@ -547,10 +547,17 @@ export default function Reports() {
 
             {/* Ownership Scorecard */}
             {activeReport === 'ownership_scorecard' && (
-              <OwnershipScorecardSection
-                locations={ownershipLocations}
-                canManage={canManageTargets}
-              />
+              <div>
+                {canManageTargets && (
+                  <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-3">
+                    View only here — scores are entered on the <strong>AM Entry</strong> page.
+                  </p>
+                )}
+                <OwnershipScorecardSection
+                  locations={ownershipLocations}
+                  canManage={false}
+                />
+              </div>
             )}
           </div>
         </main>

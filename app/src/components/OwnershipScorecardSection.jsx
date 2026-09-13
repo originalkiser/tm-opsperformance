@@ -1,21 +1,28 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
 import { firstOfMonth } from '../utils/budgetMath'
+import { logEdit } from '../utils/auditLog'
 
+// `lines` gives each header exactly the 2 lines it should wrap to (full words
+// only) — set explicitly rather than relying on CSS wrap, since some labels
+// are 1 word and some are 3. All category columns share one fixed width sized
+// to fit "Dependability", the longest single word among them.
 const CATEGORIES = [
-  { key: 'problem_solving',     label: 'Problem Solving' },
-  { key: 'consistency',         label: 'Consistency / Dependability' },
-  { key: 'stay_open_mentality', label: 'Stay Open Mentality' },
-  { key: 'team_leadership',     label: 'Team Leadership' },
-  { key: 'compliance',          label: 'Compliance' },
-  { key: 'communication',       label: 'Communication' },
-  { key: 'car_wash_knowledge',  label: 'Car Wash Knowledge' },
-  { key: 'kpi_targeting',       label: 'KPI Targeting' },
-  { key: 'team_player',         label: 'Team Player' },
-  { key: 'site_management',     label: 'Site Management' },
+  { key: 'problem_solving',     lines: ['Problem', 'Solving']       },
+  { key: 'consistency',         lines: ['Consistency', 'Dependability'] },
+  { key: 'stay_open_mentality', lines: ['Stay Open', 'Mentality']   },
+  { key: 'team_leadership',     lines: ['Team', 'Leadership']       },
+  { key: 'compliance',          lines: ['Compliance']               },
+  { key: 'communication',       lines: ['Communication']            },
+  { key: 'car_wash_knowledge',  lines: ['Car Wash', 'Knowledge']    },
+  { key: 'kpi_targeting',       lines: ['KPI', 'Targeting']         },
+  { key: 'team_player',         lines: ['Team', 'Player']           },
+  { key: 'site_management',     lines: ['Site', 'Management']       },
 ]
+const CATEGORY_LABEL = Object.fromEntries(CATEGORIES.map(c => [c.key, c.lines.join(' ')]))
 const MAX_TOTAL = CATEGORIES.length * 10 // 100 — each category is out of 10
+const COL_W = 'w-20' // fits "Dependability" at this font size in 2 lines
 
 const todayStr = () => {
   const d = new Date()
@@ -28,11 +35,23 @@ const monthLabel = (monthStr) =>
 const emptyForm = () => ({ manager_name: '', ...Object.fromEntries(CATEGORIES.map(c => [c.key, ''])) })
 
 const totalScore = (row) => CATEGORIES.reduce((s, c) => s + (Number(row?.[c.key]) || 0), 0)
-const pctLabel = (row) => row ? `${Math.round(totalScore(row) / MAX_TOTAL * 100)}%` : '—'
+const pctOf = (row) => row ? Math.round(totalScore(row) / MAX_TOTAL * 100) : null
+const pctLabel = (row) => { const p = pctOf(row); return p == null ? '—' : `${p}%` }
+
+// The category a site scored highest / lowest on, among ones that were scored at all.
+function categoryExtremes(row) {
+  const scored = CATEGORIES
+    .map(c => ({ key: c.key, label: c.lines.join(' '), value: row?.[c.key] }))
+    .filter(c => c.value != null)
+  if (!scored.length) return null
+  const best  = scored.reduce((a, b) => (b.value > a.value ? b : a))
+  const worst = scored.reduce((a, b) => (b.value < a.value ? b : a))
+  return { best, worst }
+}
 
 // ── Edit modal ────────────────────────────────────────────────────────────────
 
-function ScoreModal({ location, month, existing, onClose, onSaved }) {
+function ScoreModal({ location, month, existing, profile, onClose, onSaved }) {
   const [form, setForm] = useState(() => existing
     ? { manager_name: existing.manager_name || '', ...Object.fromEntries(CATEGORIES.map(c => [c.key, existing[c.key] ?? ''])) }
     : emptyForm())
@@ -43,14 +62,27 @@ function ScoreModal({ location, month, existing, onClose, onSaved }) {
 
   const handleSave = async () => {
     setSaving(true)
-    const payload = {
-      location_id: location.id,
-      score_month: month,
+    const newValues = {
       manager_name: form.manager_name || null,
       ...Object.fromEntries(CATEGORIES.map(c => [c.key, form[c.key] === '' ? null : parseInt(form[c.key])])),
-      updated_at: new Date().toISOString(),
     }
-    await supabase.from('ownership_scorecard_entries').upsert(payload, { onConflict: 'location_id,score_month' })
+    await supabase.from('ownership_scorecard_entries').upsert({
+      location_id: location.id,
+      score_month: month,
+      ...newValues,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'location_id,score_month' })
+
+    await logEdit({
+      tableName: 'ownership_scorecard_entries',
+      locationId: location.id,
+      period: month,
+      profile,
+      oldValues: existing || {},
+      newValues,
+      fieldLabels: { manager_name: 'Manager', ...CATEGORY_LABEL },
+    })
+
     setSaving(false)
     onSaved()
   }
@@ -79,7 +111,7 @@ function ScoreModal({ location, month, existing, onClose, onSaved }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {CATEGORIES.map(c => (
               <div key={c.key} className="flex items-center justify-between gap-2">
-                <label className="text-xs text-gray-600 dark:text-tm-dark-text">{c.label}</label>
+                <label className="text-xs text-gray-600 dark:text-tm-dark-text">{c.lines.join(' ')}</label>
                 <input type="number" min="0" max="10" placeholder="0" value={form[c.key]}
                   onChange={e => setForm(f => ({ ...f, [c.key]: e.target.value }))}
                   className={inputCls} />
@@ -107,13 +139,56 @@ function ScoreModal({ location, month, existing, onClose, onSaved }) {
   )
 }
 
+// ── Top / Bottom performers summary ───────────────────────────────────────────
+
+function PerformerList({ title, badgeCls, rows, tone, onToggle, expandedId }) {
+  return (
+    <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className={`text-white text-[10px] font-brand font-bold px-2 py-0.5 rounded tracking-widest ${badgeCls}`}>{title}</span>
+      </div>
+      <div className="space-y-1.5">
+        {rows.map((r, i) => {
+          const extremes = categoryExtremes(r.entry)
+          const callout = tone === 'top' ? extremes?.best : extremes?.worst
+          const expanded = expandedId === r.loc.id
+          return (
+            <div key={r.loc.id}>
+              <button
+                onClick={() => onToggle(r.loc.id)}
+                className="w-full flex items-center justify-between text-xs py-1 hover:text-tm-blue dark:hover:text-tm-teal transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="text-gray-400 dark:text-tm-dark-muted w-4 text-right">{i + 1}.</span>
+                  <span className="font-semibold text-gray-700 dark:text-tm-dark-text">{r.loc.name}</span>
+                </span>
+                <span className="font-bold text-tm-blue dark:text-tm-teal">{pctLabel(r.entry)}</span>
+              </button>
+              {expanded && callout && (
+                <div className={`ml-6 mb-1 text-[10px] px-2 py-1 rounded-lg ${
+                  tone === 'top' ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                                 : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400'
+                }`}>
+                  {tone === 'top' ? 'Strongest' : 'Needs improvement'}: {callout.label} ({callout.value}/10)
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {!rows.length && <div className="text-xs text-gray-300 dark:text-tm-dark-muted italic py-2">Not enough scored sites yet.</div>}
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function OwnershipScorecardSection({ locations, canManage }) {
+export default function OwnershipScorecardSection({ locations, canManage, profile, onSaved }) {
   const [month, setMonth]     = useState(() => firstOfMonth(todayStr()))
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [editingLoc, setEditingLoc] = useState(null)
+  const [expandedId, setExpandedId] = useState(null)
 
   useEffect(() => { fetchEntries() }, [locations, month])
 
@@ -135,6 +210,18 @@ export default function OwnershipScorecardSection({ locations, canManage }) {
     setMonth(firstOfMonth(`${d.getFullYear()}-${String(d.getMonth() + 1 + n).padStart(2, '0')}-01`))
   }
 
+  const scored = useMemo(() => {
+    return locations
+      .map(loc => ({ loc, entry: entries.find(e => e.location_id === loc.id) }))
+      .filter(r => r.entry)
+      .sort((a, b) => totalScore(b.entry) - totalScore(a.entry))
+  }, [locations, entries])
+
+  const top5    = scored.slice(0, 5)
+  const bottom5 = [...scored].slice(-5).reverse()
+
+  const toggleExpanded = (id) => setExpandedId(cur => cur === id ? null : id)
+
   if (!locations.length) {
     return <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-10 text-center">No sites have Ownership Tools enabled yet. Turn it on in Admin → Locations.</div>
   }
@@ -153,44 +240,55 @@ export default function OwnershipScorecardSection({ locations, canManage }) {
       {loading ? (
         <div className="flex justify-center py-8"><TmLoader size={56} /></div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-tm-dark-border">
-          <table className="w-full text-xs font-brand border-collapse">
-            <thead>
-              <tr className="bg-tm-blue dark:bg-tm-navy text-white">
-                <th className="px-3 py-2 text-left">Site</th>
-                <th className="px-3 py-2 text-left">Manager</th>
-                {CATEGORIES.map(c => (
-                  <th key={c.key} className="px-2 py-2 text-center whitespace-nowrap" title={c.label}>{c.label}</th>
-                ))}
-                <th className="px-3 py-2 text-center">Overall</th>
-                {canManage && <th className="px-2 py-2" />}
-              </tr>
-            </thead>
-            <tbody>
-              {locations.map((loc, i) => {
-                const existing = entries.find(e => e.location_id === loc.id)
-                return (
-                  <tr key={loc.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-card'}>
-                    <td className="px-3 py-2 font-semibold text-tm-blue dark:text-tm-teal whitespace-nowrap">{loc.name}</td>
-                    <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-text">{existing?.manager_name || '—'}</td>
-                    {CATEGORIES.map(c => (
-                      <td key={c.key} className="px-1 py-2 text-center text-gray-600 dark:text-tm-dark-text">{existing?.[c.key] ?? '—'}</td>
-                    ))}
-                    <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{pctLabel(existing)}</td>
-                    {canManage && (
-                      <td className="px-2 py-2 text-center whitespace-nowrap">
-                        <button onClick={() => setEditingLoc(loc)}
-                          className="text-[10px] font-semibold text-tm-teal hover:text-tm-blue dark:hover:text-white transition-colors uppercase tracking-wide">
-                          {existing ? 'Edit' : 'Score'}
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {scored.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <PerformerList title="TOP PERFORMERS"    badgeCls="bg-green-600" rows={top5}    tone="top"    onToggle={toggleExpanded} expandedId={expandedId} />
+              <PerformerList title="BOTTOM PERFORMERS" badgeCls="bg-amber-600" rows={bottom5} tone="bottom" onToggle={toggleExpanded} expandedId={expandedId} />
+            </div>
+          )}
+
+          <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-tm-dark-border">
+            <table className="w-full text-xs font-brand border-collapse table-fixed">
+              <thead>
+                <tr className="bg-tm-blue dark:bg-tm-navy text-white">
+                  <th className="px-3 py-2 text-left w-28">Site</th>
+                  <th className="px-3 py-2 text-left w-24">Manager</th>
+                  {CATEGORIES.map(c => (
+                    <th key={c.key} className={`px-1 py-2 text-center align-bottom leading-tight ${COL_W}`}>
+                      {c.lines.map(line => <div key={line}>{line}</div>)}
+                    </th>
+                  ))}
+                  <th className="px-3 py-2 text-center w-16">Overall</th>
+                  {canManage && <th className="px-2 py-2 w-12" />}
+                </tr>
+              </thead>
+              <tbody>
+                {locations.map((loc, i) => {
+                  const existing = entries.find(e => e.location_id === loc.id)
+                  return (
+                    <tr key={loc.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-card'}>
+                      <td className="px-3 py-2 font-semibold text-tm-blue dark:text-tm-teal truncate">{loc.name}</td>
+                      <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-text truncate">{existing?.manager_name || '—'}</td>
+                      {CATEGORIES.map(c => (
+                        <td key={c.key} className="px-1 py-2 text-center text-gray-600 dark:text-tm-dark-text">{existing?.[c.key] ?? '—'}</td>
+                      ))}
+                      <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{pctLabel(existing)}</td>
+                      {canManage && (
+                        <td className="px-2 py-2 text-center whitespace-nowrap">
+                          <button onClick={() => setEditingLoc(loc)}
+                            className="text-[10px] font-semibold text-tm-teal hover:text-tm-blue dark:hover:text-white transition-colors uppercase tracking-wide">
+                            {existing ? 'Edit' : 'Score'}
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {editingLoc && (
@@ -198,8 +296,9 @@ export default function OwnershipScorecardSection({ locations, canManage }) {
           location={editingLoc}
           month={month}
           existing={entries.find(e => e.location_id === editingLoc.id)}
+          profile={profile}
           onClose={() => setEditingLoc(null)}
-          onSaved={() => { setEditingLoc(null); fetchEntries() }}
+          onSaved={() => { setEditingLoc(null); fetchEntries(); onSaved?.() }}
         />
       )}
     </div>
