@@ -1,11 +1,20 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
-import { ownershipLogStatus, STATUS_LABEL, DEFAULT_OWNERSHIP_CUTOFF } from '../utils/ownershipLog'
+import { ownershipLogStatus, STATUS_LABEL } from '../utils/ownershipLog'
 
 const todayStr = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// How many days back a submitted post can still be edited.
+const EDIT_WINDOW_DAYS = 3
+
+function daysAgo(logDate) {
+  const a = new Date(todayStr() + 'T00:00:00')
+  const b = new Date(logDate + 'T00:00:00')
+  return Math.round((a - b) / 86400000)
 }
 
 function fmtDate(iso) {
@@ -17,16 +26,36 @@ function StatusBadge({ status }) {
     ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
     : status === 'overdue'
     ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 animate-pulse'
-    : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+    : status === 'pending'
+    ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
+    : 'bg-gray-100 text-gray-500 dark:bg-tm-dark-card dark:text-tm-dark-muted'
   return <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${cls}`}>{STATUS_LABEL[status]}</span>
+}
+
+// Numeric input with a fixed trailing "%" so it's clear the value is a percentage
+// as soon as the user starts typing, without polluting the stored numeric value.
+export function PercentInput({ value, onChange, className }) {
+  return (
+    <div className="relative">
+      <input
+        type="number" step="0.1" min="0" max="100"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="e.g. 9.5"
+        className={`${className} pr-7`}
+      />
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-tm-dark-muted text-sm pointer-events-none">%</span>
+    </div>
+  )
 }
 
 const EMPTY_DRAFT = { yesterday_conversion_pct: '', biggest_challenge: '', what_you_did: '', plan_for_today: '', comments: '' }
 
-export default function OwnershipLogSection({ locations, profile }) {
+export default function OwnershipLogSection({ locations, profile, onSaved }) {
   const [selectedLocId, setSelectedLocId] = useState(() => profile?.location_id || locations[0]?.id || '')
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
+  const [editingDate, setEditingDate] = useState(todayStr())
   const [draft, setDraft]     = useState(EMPTY_DRAFT)
   const [saving, setSaving]   = useState(false)
   const [now, setNow]         = useState(new Date())
@@ -44,20 +73,23 @@ export default function OwnershipLogSection({ locations, profile }) {
   useEffect(() => {
     if (!selectedLocId) return
     fetchEntries()
+    setEditingDate(todayStr())
   }, [selectedLocId])
 
-  const location  = locations.find(l => l.id === selectedLocId)
+  const location   = locations.find(l => l.id === selectedLocId)
   const todayEntry = entries.find(e => e.log_date === todayStr())
+  const editingEntry = entries.find(e => e.log_date === editingDate)
+  const isEditingToday = editingDate === todayStr()
 
   useEffect(() => {
-    setDraft(todayEntry ? {
-      yesterday_conversion_pct: todayEntry.yesterday_conversion_pct ?? '',
-      biggest_challenge: todayEntry.biggest_challenge || '',
-      what_you_did:      todayEntry.what_you_did      || '',
-      plan_for_today:    todayEntry.plan_for_today     || '',
-      comments:          todayEntry.comments           || '',
+    setDraft(editingEntry ? {
+      yesterday_conversion_pct: editingEntry.yesterday_conversion_pct ?? '',
+      biggest_challenge: editingEntry.biggest_challenge || '',
+      what_you_did:      editingEntry.what_you_did      || '',
+      plan_for_today:    editingEntry.plan_for_today     || '',
+      comments:          editingEntry.comments           || '',
     } : EMPTY_DRAFT)
-  }, [todayEntry?.id, selectedLocId])
+  }, [editingEntry?.id, editingDate, selectedLocId])
 
   const fetchEntries = async () => {
     setLoading(true)
@@ -72,26 +104,28 @@ export default function OwnershipLogSection({ locations, profile }) {
   }
 
   const status = useMemo(
-    () => ownershipLogStatus(todayEntry, location?.ownership_log_cutoff_time, now),
-    [todayEntry, location?.ownership_log_cutoff_time, now],
+    () => ownershipLogStatus(todayEntry, location?.timezone, now),
+    [todayEntry, location?.timezone, now],
   )
 
   const handleSave = async () => {
     setSaving(true)
     const payload = {
       location_id: selectedLocId,
-      log_date:    todayStr(),
+      log_date:    editingDate,
       yesterday_conversion_pct: draft.yesterday_conversion_pct === '' ? null : parseFloat(draft.yesterday_conversion_pct),
       biggest_challenge: draft.biggest_challenge || null,
       what_you_did:      draft.what_you_did      || null,
       plan_for_today:    draft.plan_for_today     || null,
       comments:          draft.comments           || null,
-      submitted_at:      new Date().toISOString(),
+      submitted_at:      editingEntry?.submitted_at || new Date().toISOString(),
       updated_at:        new Date().toISOString(),
     }
     await supabase.from('ownership_log_entries').upsert(payload, { onConflict: 'location_id,log_date' })
     setSaving(false)
     fetchEntries()
+    if (isEditingToday) onSaved?.()
+    if (!isEditingToday) setEditingDate(todayStr())
   }
 
   const inputCls = 'w-full border border-gray-300 dark:border-tm-dark-border rounded-lg px-3 py-2 text-sm bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal font-brand'
@@ -115,26 +149,29 @@ export default function OwnershipLogSection({ locations, profile }) {
           <span className="text-xs text-gray-400 dark:text-tm-dark-muted font-brand">Today's post:</span>
           <StatusBadge status={status} />
           {status !== 'complete' && (
-            <span className="text-[10px] text-gray-400 dark:text-tm-dark-muted">
-              cutoff {location?.ownership_log_cutoff_time || DEFAULT_OWNERSHIP_CUTOFF}
-            </span>
+            <span className="text-[10px] text-gray-400 dark:text-tm-dark-muted">by 10am local</span>
           )}
         </div>
       </div>
 
-      {/* Today's entry form */}
+      {/* Entry form — today by default, or a past post within the edit window */}
       <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
-        <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal mb-4">
-          {fmtDate(todayStr())} — Ownership Post
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-brand font-bold text-tm-blue dark:text-tm-teal">
+            {fmtDate(editingDate)} — Ownership Post {!isEditingToday && <span className="text-xs font-normal text-amber-600 dark:text-amber-400">(editing a past post)</span>}
+          </h3>
+          {!isEditingToday && (
+            <button onClick={() => setEditingDate(todayStr())} className="text-xs text-tm-teal hover:text-tm-blue dark:hover:text-white font-semibold transition-colors">
+              Back to today
+            </button>
+          )}
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Yesterday's Conversion %</label>
-            <input
-              type="number" step="0.1" min="0" max="100"
+            <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Yesterday's Conversion</label>
+            <PercentInput
               value={draft.yesterday_conversion_pct}
-              onChange={e => setDraft(d => ({ ...d, yesterday_conversion_pct: e.target.value }))}
-              placeholder="e.g. 9.5"
+              onChange={v => setDraft(d => ({ ...d, yesterday_conversion_pct: v }))}
               className={inputCls}
             />
           </div>
@@ -163,11 +200,11 @@ export default function OwnershipLogSection({ locations, profile }) {
             disabled={saving}
             className="px-5 py-2 rounded-lg bg-tm-teal text-tm-navy font-bold text-sm hover:brightness-110 transition-colors disabled:opacity-50"
           >
-            {saving ? 'Saving…' : todayEntry ? 'Update Post' : 'Submit Post'}
+            {saving ? 'Saving…' : editingEntry ? 'Update Post' : 'Submit Post'}
           </button>
-          {todayEntry?.submitted_at && (
+          {editingEntry?.submitted_at && (
             <span className="text-xs text-gray-400 dark:text-tm-dark-muted">
-              Last saved {new Date(todayEntry.updated_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+              Last saved {new Date(editingEntry.updated_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
             </span>
           )}
         </div>
@@ -189,21 +226,32 @@ export default function OwnershipLogSection({ locations, profile }) {
                   <th className="px-3 py-2 text-left">What You Did</th>
                   <th className="px-3 py-2 text-left">Plan</th>
                   <th className="px-3 py-2 text-left">Comments</th>
+                  <th className="px-3 py-2" />
                 </tr>
               </thead>
               <tbody>
-                {entries.filter(e => e.log_date !== todayStr()).map((e, i) => (
-                  <tr key={e.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-card'}>
-                    <td className="px-3 py-2 text-gray-700 dark:text-tm-dark-text whitespace-nowrap">{fmtDate(e.log_date)}</td>
-                    <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{e.yesterday_conversion_pct != null ? `${e.yesterday_conversion_pct}%` : '—'}</td>
-                    <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[200px] truncate" title={e.biggest_challenge}>{e.biggest_challenge || '—'}</td>
-                    <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[200px] truncate" title={e.what_you_did}>{e.what_you_did || '—'}</td>
-                    <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[200px] truncate" title={e.plan_for_today}>{e.plan_for_today || '—'}</td>
-                    <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[160px] truncate" title={e.comments}>{e.comments || '—'}</td>
-                  </tr>
-                ))}
+                {entries.filter(e => e.log_date !== todayStr()).map((e, i) => {
+                  const editable = daysAgo(e.log_date) <= EDIT_WINDOW_DAYS
+                  return (
+                    <tr key={e.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-card'}>
+                      <td className="px-3 py-2 text-gray-700 dark:text-tm-dark-text whitespace-nowrap">{fmtDate(e.log_date)}</td>
+                      <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{e.yesterday_conversion_pct != null ? `${e.yesterday_conversion_pct}%` : '—'}</td>
+                      <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[200px] truncate" title={e.biggest_challenge}>{e.biggest_challenge || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[200px] truncate" title={e.what_you_did}>{e.what_you_did || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[200px] truncate" title={e.plan_for_today}>{e.plan_for_today || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[160px] truncate" title={e.comments}>{e.comments || '—'}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        {editable && (
+                          <button onClick={() => setEditingDate(e.log_date)} className="text-[10px] font-semibold text-tm-teal hover:text-tm-blue dark:hover:text-white uppercase tracking-wide transition-colors">
+                            Edit
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
                 {entries.filter(e => e.log_date !== todayStr()).length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 dark:text-tm-dark-muted">No prior posts yet.</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 dark:text-tm-dark-muted">No prior posts yet.</td></tr>
                 )}
               </tbody>
             </table>

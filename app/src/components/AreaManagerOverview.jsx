@@ -2,13 +2,13 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
 import { isCurrentlyOpen } from '../utils/operatingHours'
-import { yesterdayMetrics, mtdMetrics, revenuePace, pct1, toDateStr } from '../utils/budgetMath'
-import { ownershipLogStatus, STATUS_LABEL, DEFAULT_OWNERSHIP_CUTOFF } from '../utils/ownershipLog'
+import { yesterdayMetrics, mtdMetrics, pct1, toDateStr } from '../utils/budgetMath'
+import { morningEntryStatus, STATUS_LABEL } from '../utils/morningStatus'
+import { ownershipLogStatus } from '../utils/ownershipLog'
 
 const todayStr = () => toDateStr(new Date())
 
 const STALE_HOURLY_MS = 2 * 60 * 60 * 1000 // 2 hours
-const STALE_BUDGET_DAYS = 1 // "yesterday or today" counts as current
 
 function fmtWhen(iso) {
   if (!iso) return 'never'
@@ -31,8 +31,19 @@ function OkBadge({ children }) {
   return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">{children}</span>
 }
 
+function WarnBadge({ children }) {
+  return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400">{children}</span>
+}
+
 function MutedBadge({ children }) {
   return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-500 dark:bg-tm-dark-card dark:text-tm-dark-muted">{children}</span>
+}
+
+function StatusBadgeFor(status) {
+  if (status === 'complete') return <OkBadge>{STATUS_LABEL.complete}</OkBadge>
+  if (status === 'pending')  return <WarnBadge>{STATUS_LABEL.pending}</WarnBadge>
+  if (status === 'overdue')  return <Flag>{STATUS_LABEL.overdue}</Flag>
+  return <MutedBadge>{STATUS_LABEL.none}</MutedBadge>
 }
 
 export default function AreaManagerOverview({ locations }) {
@@ -48,7 +59,7 @@ export default function AreaManagerOverview({ locations }) {
 
   useEffect(() => { fetchAll() }, [locations])
 
-  // Keep "time since last update" and cutoff-time flags current while the page is open
+  // Keep "time since last update" and the morning-status escalation current
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000)
     return () => clearInterval(t)
@@ -106,20 +117,18 @@ export default function AreaManagerOverview({ locations }) {
       let budget = null
       if (loc.show_budget_tracking) {
         const entry = budgetEntries.find(r => r.location_id === loc.id)
-        const daysOld = entry ? Math.floor((new Date(todayStr()) - new Date(entry.entry_date)) / 86400000) : Infinity
-        const stale = daysOld > STALE_BUDGET_DAYS
-        const yst = yesterdayMetrics(entry)
-        const mtd = mtdMetrics(entry)
-        budget = { entry, stale, daysOld, yst, mtd }
+        const hasToday = entry?.entry_date === todayStr()
+        const status = morningEntryStatus(hasToday, loc.timezone, now)
+        budget = { entry, status, yst: yesterdayMetrics(entry), mtd: mtdMetrics(entry) }
       }
 
       let ownership = null
       if (loc.show_ownership_tools) {
         const entry = ownershipToday.find(r => r.location_id === loc.id)
-        ownership = { entry, status: ownershipLogStatus(entry, loc.ownership_log_cutoff_time, now) }
+        ownership = { entry, status: ownershipLogStatus(entry, loc.timezone, now) }
       }
 
-      const flagged = hourlyStale || budget?.stale || ownership?.status === 'overdue'
+      const flagged = hourlyStale || budget?.status === 'overdue' || ownership?.status === 'overdue'
       return { loc, lastLog, openNow, ageMs, hourlyStale, budget, ownership, flagged }
     }).sort((a, b) => (b.flagged ? 1 : 0) - (a.flagged ? 1 : 0))
   }, [locations, latestLogs, budgetEntries, ownershipToday, globalHours, now])
@@ -162,16 +171,10 @@ export default function AreaManagerOverview({ locations }) {
               <div className="flex items-center justify-between text-xs mb-1.5">
                 <span className="text-gray-400 dark:text-tm-dark-muted">Budget entry</span>
                 <div className="flex items-center gap-1.5">
-                  {r.budget.entry ? (
-                    <span className="text-gray-600 dark:text-tm-dark-text">
-                      MTD Conv {pct1(r.budget.mtd.conversion)}
-                    </span>
-                  ) : (
-                    <MutedBadge>No entries yet</MutedBadge>
+                  {r.budget.entry && (
+                    <span className="text-gray-600 dark:text-tm-dark-text">MTD Conv {pct1(r.budget.mtd.conversion)}</span>
                   )}
-                  {r.budget.stale && (
-                    <Flag>{r.budget.entry ? `${r.budget.daysOld}d stale` : 'None'}</Flag>
-                  )}
+                  {StatusBadgeFor(r.budget.status)}
                 </div>
               </div>
             )}
@@ -180,9 +183,7 @@ export default function AreaManagerOverview({ locations }) {
             {r.ownership && (
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-400 dark:text-tm-dark-muted">Ownership post</span>
-                {r.ownership.status === 'complete' && <OkBadge>{STATUS_LABEL.complete}</OkBadge>}
-                {r.ownership.status === 'pending'  && <MutedBadge>{STATUS_LABEL.pending}</MutedBadge>}
-                {r.ownership.status === 'overdue'  && <Flag>{STATUS_LABEL.overdue}</Flag>}
+                {StatusBadgeFor(r.ownership.status)}
               </div>
             )}
 

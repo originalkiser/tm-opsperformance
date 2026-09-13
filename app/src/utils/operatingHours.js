@@ -47,6 +47,12 @@ function toZonedParts(date, timeZone) {
   return { year: +parts.year, month: +parts.month, day: +parts.day, hour: +(parts.hour === '24' ? '0' : parts.hour), minute: +parts.minute, second: +parts.second }
 }
 
+// Wall-clock hour/minute for a location's own time zone, right now (or at `now`).
+export function localHourMinute(timeZone, now = new Date()) {
+  const { hour, minute } = toZonedParts(now, timeZone || DEFAULT_TIMEZONE)
+  return { hour, minute }
+}
+
 // Find the UTC instant corresponding to local midnight of y-m-d in the given time zone.
 function zonedMidnightUTC(y, m, d, timeZone) {
   let guess = new Date(Date.UTC(y, m - 1, d, 0, 0, 0))

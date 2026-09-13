@@ -14,8 +14,8 @@ import DayOfWeekSection from '../components/DayOfWeekSection'
 import MonthlyRollup from '../components/MonthlyRollup'
 import DailySnapshot from '../components/DailySnapshot'
 import DowntimeSection from '../components/DowntimeSection'
-import BudgetTrackingSection from '../components/BudgetTrackingSection'
-import OwnershipLogSection from '../components/OwnershipLogSection'
+import BudgetTrackingReport from '../components/BudgetTrackingReport'
+import OwnershipLogReport from '../components/OwnershipLogReport'
 import OwnershipScorecardSection from '../components/OwnershipScorecardSection'
 import { supabase as supabaseClient } from '../lib/supabase'
 
@@ -237,17 +237,7 @@ export default function Reports() {
   // Budget-Tracking / Ownership-Tools scoped location lists
   const budgetLocations    = locations.filter(l => l.show_budget_tracking)
   const ownershipLocations = locations.filter(l => l.show_ownership_tools)
-
-  // For area managers wanting to set targets outside their assigned sites —
-  // admins already see every location via `locations`, so this only matters
-  // for area_manager. Fetched once, network-wide.
-  const [networkLocations, setNetworkLocations] = useState([])
-  useEffect(() => {
-    if (profile?.role !== 'area_manager') return
-    supabaseClient.from('locations').select('*').eq('show_budget_tracking', true).order('site_code')
-      .then(({ data }) => setNetworkLocations(data || []))
-  }, [profile?.role])
-  const allBudgetLocations = profile?.role === 'admin' ? budgetLocations : networkLocations
+  const canManageTargets   = profile?.role === 'admin' || profile?.role === 'area_manager'
 
   const marketLocations = selectedMarkets === null
     ? locations
@@ -538,19 +528,19 @@ export default function Reports() {
 
             {/* Budget Tracking */}
             {activeReport === 'budget' && (
-              <BudgetTrackingSection locations={budgetLocations} allLocations={allBudgetLocations} profile={profile} />
+              <BudgetTrackingReport locations={budgetLocations} canManageTargets={canManageTargets} />
             )}
 
             {/* Ownership Log */}
             {activeReport === 'ownership_log' && (
-              <OwnershipLogSection locations={ownershipLocations} profile={profile} />
+              <OwnershipLogReport locations={ownershipLocations} />
             )}
 
             {/* Ownership Scorecard */}
             {activeReport === 'ownership_scorecard' && (
               <OwnershipScorecardSection
                 locations={ownershipLocations}
-                canManage={profile?.role === 'admin' || profile?.role === 'area_manager'}
+                canManage={canManageTargets}
               />
             )}
           </div>

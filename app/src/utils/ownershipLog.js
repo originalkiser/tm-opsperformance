@@ -1,25 +1,15 @@
 // Ownership Log completion status — replaces the workbook's plain Yes/No
-// "Complete?" flag with a time-based warning: a post isn't "late" until the
-// site's configured cutoff time has passed for that day.
+// "Complete?" flag with a time-based warning on a fixed morning schedule
+// (see morningStatus.js): orange from 6:00 AM, red from 10:00 AM, until
+// the day's post is submitted.
 
-export const DEFAULT_OWNERSHIP_CUTOFF = '18:00'
+import { morningEntryStatus, STATUS_LABEL } from './morningStatus'
+
+export { STATUS_LABEL }
 
 // entry: the ownership_log_entries row for today (or null if none yet)
-// cutoffTime: 'HH:MM' (location.ownership_log_cutoff_time, or the default)
+// timeZone: the location's IANA time zone (location.timezone)
 // now: Date (injectable for testing)
-export function ownershipLogStatus(entry, cutoffTime, now = new Date()) {
-  if (entry?.submitted_at) return 'complete'
-
-  const cutoff = cutoffTime || DEFAULT_OWNERSHIP_CUTOFF
-  const [h, m] = cutoff.split(':').map(Number)
-  const cutoffToday = new Date(now)
-  cutoffToday.setHours(h, m || 0, 0, 0)
-
-  return now >= cutoffToday ? 'overdue' : 'pending'
-}
-
-export const STATUS_LABEL = {
-  complete: 'Complete',
-  pending:  'Pending',
-  overdue:  'Overdue',
+export function ownershipLogStatus(entry, timeZone, now = new Date()) {
+  return morningEntryStatus(!!entry?.submitted_at, timeZone, now)
 }

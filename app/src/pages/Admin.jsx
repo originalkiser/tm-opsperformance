@@ -6,7 +6,6 @@ import NavBar from '../components/NavBar'
 import TmLoader from '../components/TmLoader'
 import { DEFAULT_THRESHOLDS } from '../utils/metricColors'
 import { DEFAULT_STANDARD_HOURS, DEFAULT_WINTER_HOURS, TIMEZONE_OPTIONS } from '../utils/operatingHours'
-import { DEFAULT_OWNERSHIP_CUTOFF } from '../utils/ownershipLog'
 
 function generatePassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
@@ -193,10 +192,6 @@ export default function Admin() {
     fetchLocations()
   }
 
-  const updateLocationOwnershipCutoff = async (locId, cutoffTime) => {
-    await supabase.from('locations').update({ ownership_log_cutoff_time: cutoffTime || null }).eq('id', locId)
-    fetchLocations()
-  }
 
   const addManagerToLocation = async (managerId, locId) => {
     if (!managerId || !locId) return
@@ -680,7 +675,6 @@ export default function Admin() {
               onUpdateHoursOverride={updateLocationHoursOverride}
               onUpdateBudgetTracking={updateLocationBudgetTracking}
               onUpdateOwnershipTools={updateLocationOwnershipTools}
-              onUpdateOwnershipCutoff={updateLocationOwnershipCutoff}
             />
           )}
 
@@ -695,7 +689,7 @@ export default function Admin() {
 }
 
 // ── Locations tab ─────────────────────────────────────────────────────────────
-function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled, onUpdateEmail, onUpdateTimezone, onUpdateHoursOverride, onUpdateBudgetTracking, onUpdateOwnershipTools, onUpdateOwnershipCutoff }) {
+function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled, onUpdateEmail, onUpdateTimezone, onUpdateHoursOverride, onUpdateBudgetTracking, onUpdateOwnershipTools }) {
   const [marketInputs,    setMarketInputs]    = useState({})
   const [addMgrOpen,      setAddMgrOpen]      = useState({})
   const [thresholdInputs, setThresholdInputs] = useState({})
@@ -889,15 +883,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                       }`} />
                     </button>
                     {loc.show_ownership_tools && (
-                      <div className="mt-1">
-                        <input
-                          type="time"
-                          defaultValue={loc.ownership_log_cutoff_time || DEFAULT_OWNERSHIP_CUTOFF}
-                          onBlur={e => { if (e.target.value !== (loc.ownership_log_cutoff_time || DEFAULT_OWNERSHIP_CUTOFF)) onUpdateOwnershipCutoff(loc.id, e.target.value) }}
-                          title="Ownership Log warning cutoff time"
-                          className="w-full border border-gray-200 dark:border-tm-dark-border rounded px-1.5 py-0.5 text-[10px] bg-white dark:bg-tm-dark-surface text-gray-700 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
-                        />
-                      </div>
+                      <div className="text-[9px] text-gray-400 dark:text-tm-dark-muted mt-0.5">by 10am local</div>
                     )}
                   </td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
@@ -1001,7 +987,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
       </div>
       <div className="mt-4 pt-2 border-t border-gray-100 dark:border-tm-dark-border text-xs text-gray-400 dark:text-tm-dark-muted space-y-1">
         <p><strong className="text-gray-500 dark:text-tm-dark-text">Budget Tracking:</strong> Adds Yesterday/MTD performance vs. monthly goals, revenue &amp; membership pace, and a site leaderboard to Reports.</p>
-        <p><strong className="text-gray-500 dark:text-tm-dark-text">Ownership Tools:</strong> Adds the daily Ownership Log post and the monthly Ownership Scorecard. The cutoff time controls when an unposted log turns from "Pending" to "Overdue" for that day.</p>
+        <p><strong className="text-gray-500 dark:text-tm-dark-text">Ownership Tools:</strong> Adds the daily Ownership Log post and the monthly Ownership Scorecard. Both the Ownership Log and Budget Tracking daily entries are expected by 10am local time — the status shows orange starting at 6am and red after 10am until that day's entry is submitted.</p>
       </div>
 
       {/* ── Performance Thresholds ── */}

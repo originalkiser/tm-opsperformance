@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useMissingTargets } from '../hooks/useMissingTargets'
+import SetTargetsModal from './SetTargetsModal'
 
 export default function TargetsBell() {
-  const { missing, loading } = useMissingTargets()
+  const { missing, loading, refetch } = useMissingTargets()
   const [open, setOpen] = useState(false)
-  const navigate = useNavigate()
+  const [modalItems, setModalItems] = useState(null) // null = closed; array = open with these items
   const ref = useRef(null)
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export default function TargetsBell() {
           {missing.map(m => (
             <button
               key={`${m.location.id}-${m.month}`}
-              onClick={() => { setOpen(false); navigate('/reports') }}
+              onClick={() => { setOpen(false); setModalItems([m]) }}
               className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors"
             >
               <span className="text-xs font-brand font-semibold text-gray-700 dark:text-tm-dark-text">{m.location.name}</span>
@@ -48,7 +48,19 @@ export default function TargetsBell() {
               </span>
             </button>
           ))}
+          {missing.length > 1 && (
+            <button
+              onClick={() => { setOpen(false); setModalItems(missing) }}
+              className="w-full px-3 py-2 text-left text-xs font-brand font-bold text-tm-teal hover:text-tm-blue dark:hover:text-white transition-colors border-t border-gray-100 dark:border-tm-dark-border"
+            >
+              Set all {missing.length} sites
+            </button>
+          )}
         </div>
+      )}
+
+      {modalItems && (
+        <SetTargetsModal missing={modalItems} onClose={() => { setModalItems(null); refetch() }} />
       )}
     </div>
   )

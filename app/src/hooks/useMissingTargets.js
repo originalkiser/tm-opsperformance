@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { findMissingTargets } from '../utils/targetsNotifications'
@@ -13,19 +13,20 @@ export function useMissingTargets() {
 
   const canSetTargets = profile?.role === 'admin' || profile?.role === 'area_manager'
   const trackedLocations = canSetTargets ? locations.filter(l => l.show_budget_tracking) : []
+  const trackedIds = trackedLocations.map(l => l.id)
 
-  useEffect(() => {
-    if (!canSetTargets || !trackedLocations.length) { setLoading(false); return }
-    let cancelled = false
+  const refetch = useCallback(() => {
+    if (!canSetTargets || !trackedIds.length) { setMissing([]); setLoading(false); return }
+    setLoading(true)
     supabase.from('budget_targets').select('location_id, target_month')
-      .in('location_id', trackedLocations.map(l => l.id))
+      .in('location_id', trackedIds)
       .then(({ data }) => {
-        if (cancelled) return
         setMissing(findMissingTargets(trackedLocations, data || []))
         setLoading(false)
       })
-    return () => { cancelled = true }
-  }, [profile?.role, JSON.stringify(trackedLocations.map(l => l.id))])
+  }, [canSetTargets, JSON.stringify(trackedIds)])
 
-  return { missing, loading, trackedLocations }
+  useEffect(() => { refetch() }, [refetch])
+
+  return { missing, loading, trackedLocations, refetch }
 }

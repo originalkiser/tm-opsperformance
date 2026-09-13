@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 import NavBar from '../components/NavBar'
 import DateSelector, { computeDateRange, fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
 import LocationSelector from '../components/LocationSelector'
@@ -10,6 +11,7 @@ import DailySnapshot from '../components/DailySnapshot'
 import BudgetTrackingSection from '../components/BudgetTrackingSection'
 import OwnershipLogSection from '../components/OwnershipLogSection'
 import { shopTotals } from '../utils/logMath'
+import { morningEntryStatus } from '../utils/morningStatus'
 
 const formatTimeSlot = (ts) => {
   if (!ts) return null
@@ -129,7 +131,39 @@ export default function Dashboard() {
     localStorage.setItem('tm_selected_date', date)
   }
 
+  // Today's Budget Tracking / Ownership Log entry status, for the tab indicators.
+  const [hasBudgetToday,    setHasBudgetToday]    = useState(false)
+  const [hasOwnershipToday, setHasOwnershipToday] = useState(false)
+  const [statusNow, setStatusNow] = useState(new Date())
+  const [statusRefreshKey, setStatusRefreshKey] = useState(0)
+
+  useEffect(() => {
+    const t = setInterval(() => setStatusNow(new Date()), 60000)
+    return () => clearInterval(t)
+  }, [])
+
+  useEffect(() => {
+    const loc = locations.find(l => l.id === selectedLocationId)
+    if (!loc) return
+    let cancelled = false
+    ;(async () => {
+      if (loc.show_budget_tracking) {
+        const { data } = await supabase.from('budget_daily_entries').select('id')
+          .eq('location_id', loc.id).eq('entry_date', todayStr()).maybeSingle()
+        if (!cancelled) setHasBudgetToday(!!data)
+      }
+      if (loc.show_ownership_tools) {
+        const { data } = await supabase.from('ownership_log_entries').select('submitted_at')
+          .eq('location_id', loc.id).eq('log_date', todayStr()).maybeSingle()
+        if (!cancelled) setHasOwnershipToday(!!data?.submitted_at)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [selectedLocationId, activeTab, statusRefreshKey])
+
   const location   = locations.find(l => l.id === selectedLocationId)
+  const budgetStatus    = location?.show_budget_tracking ? morningEntryStatus(hasBudgetToday, location.timezone, statusNow) : null
+  const ownershipStatus = location?.show_ownership_tools ? morningEntryStatus(hasOwnershipToday, location.timezone, statusNow) : null
   const latestHour = formatTimeSlot(shopTotals(liveRows)?.time_slot ?? null)
   const canEdit =
     profile?.role === 'admin' ||
@@ -231,19 +265,23 @@ export default function Dashboard() {
                 { key: 'daily',     label: 'Daily Log'       },
                 { key: 'snapshot',  label: 'Snapshot'        },
                 { key: 'monthly',   label: 'Rollup'          },
-                ...(location?.show_budget_tracking ? [{ key: 'budget',    label: 'Budget Tracking' }] : []),
-                ...(location?.show_ownership_tools ? [{ key: 'ownership', label: 'Ownership Log'   }] : []),
-              ].map(({ key, label }) => (
+                ...(location?.show_budget_tracking ? [{ key: 'budget',    label: 'Budget Tracking', status: budgetStatus    }] : []),
+                ...(location?.show_ownership_tools ? [{ key: 'ownership', label: 'Ownership Log',   status: ownershipStatus }] : []),
+              ].map(({ key, label, status }) => (
                 <button
                   key={key}
                   onClick={() => setActiveTab(key)}
-                  className={`px-6 py-3 text-sm font-brand font-semibold transition-colors border-b-2 ${
+                  title={status === 'overdue' ? 'Overdue — by 10am local' : status === 'pending' ? 'Pending — by 10am local' : undefined}
+                  className={`px-6 py-3 text-sm font-brand font-semibold transition-colors border-b-2 flex items-center gap-1.5 ${
                     activeTab === key
                       ? 'border-tm-blue dark:border-tm-teal text-tm-blue dark:text-tm-teal bg-white dark:bg-tm-dark-surface'
                       : 'border-transparent text-gray-500 dark:text-tm-dark-muted hover:text-gray-700 dark:hover:text-tm-dark-text'
                   }`}
                 >
                   {label}
+                  {(status === 'pending' || status === 'overdue') && (
+                    <span className={`inline-block w-2 h-2 rounded-full ${status === 'overdue' ? 'bg-red-500' : 'bg-orange-400'}`} />
+                  )}
                 </button>
               ))}
             </div>
@@ -303,6 +341,7 @@ export default function Dashboard() {
                     allLocations={location ? [location] : []}
                     profile={profile}
                     initialTab="daily"
+                    onSaved={() => setStatusRefreshKey(k => k + 1)}
                   />
                 </div>
               )}
@@ -312,6 +351,7 @@ export default function Dashboard() {
                   <OwnershipLogSection
                     locations={location ? [location] : []}
                     profile={profile}
+                    onSaved={() => setStatusRefreshKey(k => k + 1)}
                   />
                 </div>
               )}

@@ -1,10 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
 import {
   toDateStr, firstOfMonth, monthProgress,
-  yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus,
-  computeScore, rankByScore, pct1,
+  yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus, pct1,
 } from '../utils/budgetMath'
 
 const todayStr = () => toDateStr(new Date())
@@ -12,7 +11,7 @@ const todayStr = () => toDateStr(new Date())
 const monthLabel = (monthStr) =>
   new Date(monthStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
-function PaceBadge({ onTrack, label }) {
+export function PaceBadge({ onTrack, label }) {
   if (onTrack == null) return <span className="text-gray-300 dark:text-tm-dark-muted text-xs">—</span>
   return (
     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -24,100 +23,11 @@ function PaceBadge({ onTrack, label }) {
   )
 }
 
-function BonusBadge({ tier }) {
+export function BonusBadge({ tier }) {
   const cls = tier === 'Off Track'
     ? 'bg-gray-100 text-gray-500 dark:bg-tm-dark-card dark:text-tm-dark-muted'
     : 'bg-tm-teal/20 text-tm-blue dark:bg-tm-teal/15 dark:text-tm-teal'
   return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${cls}`}>{tier}</span>
-}
-
-// ── Leaderboard tab ───────────────────────────────────────────────────────────
-
-function Leaderboard({ locations }) {
-  const [targets, setTargets]     = useState([])
-  const [dailyEntries, setDailyEntries] = useState([])
-  const [loading, setLoading]     = useState(true)
-
-  const currentMonth = firstOfMonth(todayStr())
-
-  useEffect(() => { fetchAll() }, [locations])
-
-  const fetchAll = async () => {
-    setLoading(true)
-    const locIds = locations.map(l => l.id)
-    if (!locIds.length) { setLoading(false); return }
-
-    const [{ data: t }, { data: de }] = await Promise.all([
-      supabase.from('budget_targets').select('*').in('location_id', locIds).eq('target_month', currentMonth),
-      supabase.from('budget_daily_entries').select('*').in('location_id', locIds).order('entry_date', { ascending: false }),
-    ])
-    setTargets(t || [])
-    // Keep only the latest entry per location
-    const latestByLoc = {}
-    ;(de || []).forEach(row => { if (!latestByLoc[row.location_id]) latestByLoc[row.location_id] = row })
-    setDailyEntries(Object.values(latestByLoc))
-    setLoading(false)
-  }
-
-  const rows = useMemo(() => {
-    const progress = monthProgress(todayStr())
-    const built = locations.map(loc => {
-      const target = targets.find(t => t.location_id === loc.id)
-      const entry  = dailyEntries.find(e => e.location_id === loc.id)
-      const yst    = yesterdayMetrics(entry)
-      const mtd    = mtdMetrics(entry)
-      const rev    = revenuePace(entry?.mtd_revenue_actual, target?.revenue_goal, progress)
-      const mem    = membershipStatus(entry?.mtd_membership_actual, target?.membership_goal, todayStr())
-      const score  = computeScore({
-        yesterdayConv: yst.conversion, mtdConv: mtd.conversion, mtdPmix: mtd.pmix,
-        membershipProgressRatio: mem.progressRatio, currentRating: entry?.current_rating,
-      })
-      return { loc, target, entry, yst, mtd, rev, mem, score }
-    })
-    return rankByScore(built)
-  }, [locations, targets, dailyEntries])
-
-  if (loading) return <div className="flex justify-center py-12"><TmLoader /></div>
-  if (!locations.length) return <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-10 text-center">No sites have Budget Tracking enabled yet.</div>
-
-  return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-tm-dark-border">
-      <table className="w-full text-xs font-brand border-collapse">
-        <thead>
-          <tr className="bg-tm-blue dark:bg-tm-navy text-white">
-            <th className="px-3 py-2 text-center">Rank</th>
-            <th className="px-3 py-2 text-left">Site</th>
-            <th className="px-3 py-2 text-center">Yesterday Conv</th>
-            <th className="px-3 py-2 text-center">Yesterday P-Mix</th>
-            <th className="px-3 py-2 text-center">MTD Conv</th>
-            <th className="px-3 py-2 text-center">MTD P-Mix</th>
-            <th className="px-3 py-2 text-center">Revenue %</th>
-            <th className="px-3 py-2 text-center">Revenue Pace</th>
-            <th className="px-3 py-2 text-center">Membership</th>
-            <th className="px-3 py-2 text-center">Rating</th>
-            <th className="px-3 py-2 text-center">Score</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={r.loc.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-card'}>
-              <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{r.score != null && r.entry ? r.rank : '—'}</td>
-              <td className="px-3 py-2 font-semibold text-gray-700 dark:text-tm-dark-text whitespace-nowrap">{r.loc.name}</td>
-              <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.yst.conversion)}</td>
-              <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.yst.pmix)}</td>
-              <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.mtd.conversion)}</td>
-              <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.mtd.pmix)}</td>
-              <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.rev.pct)}</td>
-              <td className="px-3 py-2 text-center"><PaceBadge onTrack={r.rev.onTrack} label={r.rev.onTrack ? 'On Track' : 'Off Track'} /></td>
-              <td className="px-3 py-2 text-center"><BonusBadge tier={r.mem.tier} /></td>
-              <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{r.entry?.current_rating ?? '—'}</td>
-              <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{r.entry ? r.score : '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
 }
 
 // ── Daily Entry tab ───────────────────────────────────────────────────────────
@@ -144,7 +54,7 @@ function emptyDailyForm() {
     .concat([['mtd_revenue_actual', ''], ['mtd_membership_actual', ''], ['current_rating', ''], ['current_reviews', '']]))
 }
 
-function DailyEntryTab({ locations, profile }) {
+function DailyEntryTab({ locations, profile, onSaved }) {
   const [selectedLocId, setSelectedLocId] = useState(() => profile?.location_id || locations[0]?.id || '')
   const [entry, setEntry]   = useState(null)
   const [form, setForm]     = useState(emptyDailyForm())
@@ -186,6 +96,7 @@ function DailyEntryTab({ locations, profile }) {
     await supabase.from('budget_daily_entries').upsert(payload, { onConflict: 'location_id,entry_date' })
     setSaving(false)
     fetchData()
+    onSaved?.()
   }
 
   const yst = yesterdayMetrics(form)
@@ -461,15 +372,11 @@ function TargetsTab({ locations, allLocations }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function BudgetTrackingSection({ locations, allLocations, profile, initialTab }) {
-  // A single-site leaderboard (ranked against itself) isn't useful — skip it
-  // when there's only one location, e.g. embedded on the Site Entry page.
-  const showLeaderboard = locations.length > 1
-  const [tab, setTab] = useState(initialTab || (showLeaderboard ? 'leaderboard' : 'daily'))
+export default function BudgetTrackingSection({ locations, allLocations, profile, initialTab, onSaved }) {
   const canManageTargets = profile?.role === 'admin' || profile?.role === 'area_manager'
+  const [tab, setTab] = useState(initialTab || 'daily')
 
   const TABS = [
-    ...(showLeaderboard ? [{ id: 'leaderboard', label: 'Leaderboard' }] : []),
     { id: 'daily',       label: 'Daily Entry' },
     ...(canManageTargets ? [{ id: 'targets', label: 'Targets' }] : []),
   ]
@@ -480,22 +387,23 @@ export default function BudgetTrackingSection({ locations, allLocations, profile
 
   return (
     <div className="space-y-4">
-      <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-tm-dark-border shadow-sm w-fit">
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-4 py-1.5 text-xs font-brand font-semibold transition-colors border-r last:border-r-0 border-gray-200 dark:border-tm-dark-border ${
-              tab === t.id ? 'bg-tm-blue dark:bg-tm-navy text-white' : 'bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue dark:hover:text-white'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {TABS.length > 1 && (
+        <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-tm-dark-border shadow-sm w-fit">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-1.5 text-xs font-brand font-semibold transition-colors border-r last:border-r-0 border-gray-200 dark:border-tm-dark-border ${
+                tab === t.id ? 'bg-tm-blue dark:bg-tm-navy text-white' : 'bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue dark:hover:text-white'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {tab === 'leaderboard' && showLeaderboard && <Leaderboard locations={locations} />}
-      {tab === 'daily'       && <DailyEntryTab locations={locations} profile={profile} />}
+      {tab === 'daily'   && <DailyEntryTab locations={locations} profile={profile} onSaved={onSaved} />}
       {tab === 'targets' && canManageTargets && <TargetsTab locations={locations} allLocations={allLocations} />}
     </div>
   )
