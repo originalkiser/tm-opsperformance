@@ -75,7 +75,7 @@ function Leaderboard({ locations }) {
       return { loc, target, entry, yst, mtd, rev, mem, score }
     })
     return rankByScore(built)
-  }, [locations, targets, dailyEntries, monthLogs])
+  }, [locations, targets, dailyEntries])
 
   if (loading) return <div className="flex justify-center py-12"><TmLoader /></div>
   if (!locations.length) return <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-10 text-center">No sites have Budget Tracking enabled yet.</div>
