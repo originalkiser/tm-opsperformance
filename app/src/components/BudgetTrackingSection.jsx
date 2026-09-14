@@ -5,6 +5,9 @@ import {
   toDateStr, firstOfMonth, monthProgress,
   yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus, pct1,
 } from '../utils/budgetMath'
+import {
+  YESTERDAY_FIELDS, MTD_FIELDS, emptyDailyForm, isFieldMissing, countMissing, isDayComplete,
+} from '../utils/budgetDailyFields'
 
 const todayStr = () => toDateStr(new Date())
 
@@ -32,28 +35,6 @@ export function BonusBadge({ tier }) {
 
 // ── Daily Entry tab ───────────────────────────────────────────────────────────
 
-const YESTERDAY_FIELDS = [
-  { key: 'yesterday_washes',      label: 'Yesterday Washes' },
-  { key: 'yesterday_redemptions', label: 'Yesterday Redemptions' },
-  { key: 'yesterday_basic',       label: 'Yesterday Basic' },
-  { key: 'yesterday_good',        label: 'Yesterday Good' },
-  { key: 'yesterday_better',      label: 'Yesterday Better' },
-  { key: 'yesterday_best',        label: 'Yesterday Best' },
-]
-const MTD_FIELDS = [
-  { key: 'mtd_washes',      label: 'MTD Washes' },
-  { key: 'mtd_redemptions', label: 'MTD Redemptions' },
-  { key: 'mtd_basic',       label: 'MTD Basic' },
-  { key: 'mtd_good',        label: 'MTD Good' },
-  { key: 'mtd_better',      label: 'MTD Better' },
-  { key: 'mtd_best',        label: 'MTD Best' },
-]
-
-function emptyDailyForm() {
-  return Object.fromEntries([...YESTERDAY_FIELDS, ...MTD_FIELDS].map(f => [f.key, ''])
-    .concat([['mtd_revenue_actual', ''], ['mtd_membership_actual', ''], ['current_rating', ''], ['current_reviews', '']]))
-}
-
 function DailyEntryTab({ locations, profile, onSaved }) {
   const [selectedLocId, setSelectedLocId] = useState(() => profile?.location_id || locations[0]?.id || '')
   const [entry, setEntry]   = useState(null)
@@ -61,6 +42,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
   const [target, setTarget] = useState(null)
   const [loading, setLoading]     = useState(true)
   const [saving, setSaving]       = useState(false)
+  const [attemptedSave, setAttemptedSave] = useState(false)
 
   useEffect(() => {
     if (!selectedLocId && locations[0]) setSelectedLocId(locations[0].id)
@@ -79,12 +61,16 @@ function DailyEntryTab({ locations, profile, onSaved }) {
     setEntry(todays)
     setTarget(t || null)
     setForm(todays ? Object.fromEntries(Object.keys(emptyDailyForm()).map(k => [k, todays[k] ?? ''])) : emptyDailyForm())
+    setAttemptedSave(false)
     setLoading(false)
   }
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  const missing = countMissing(form)
+
   const handleSave = async () => {
+    if (missing > 0) { setAttemptedSave(true); return }
     setSaving(true)
     const numOrNull = (v) => v === '' ? null : Number(v)
     const payload = {
@@ -105,7 +91,14 @@ function DailyEntryTab({ locations, profile, onSaved }) {
   const rev = revenuePace(form.mtd_revenue_actual, target?.revenue_goal, progress)
   const mem = membershipStatus(form.mtd_membership_actual, target?.membership_goal, todayStr())
 
-  const inputCls = 'w-full border border-gray-300 dark:border-tm-dark-border rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal font-brand placeholder:text-gray-300'
+  const baseInputCls = 'w-full border-2 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
+  const fieldCls = (key) => {
+    if (!isFieldMissing(form, key)) return `${baseInputCls} border-gray-300 dark:border-tm-dark-border focus:ring-tm-teal`
+    return attemptedSave
+      ? `${baseInputCls} border-red-500 focus:ring-red-400`
+      : `${baseInputCls} border-orange-400 focus:ring-orange-300`
+  }
+  const complete = isDayComplete(entry)
 
   return (
     <div className="space-y-5">
@@ -124,18 +117,30 @@ function DailyEntryTab({ locations, profile, onSaved }) {
 
       {loading ? <div className="flex justify-center py-12"><TmLoader /></div> : (
         <>
-          <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
-            <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-4">
-              Enter fresh numbers each day — nothing carries over from yesterday's entry.
-            </p>
+          <div className={`bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border p-5 transition-colors ${
+            complete ? 'border-green-400 dark:border-green-600 ring-2 ring-green-200 dark:ring-green-900/40' : 'border-gray-100 dark:border-tm-dark-border'
+          }`}>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs text-gray-400 dark:text-tm-dark-muted">
+                Enter fresh numbers each day — nothing carries over from yesterday's entry.
+              </p>
+              {complete && (
+                <span className="flex items-center gap-1 text-xs font-brand font-bold text-green-600 dark:text-green-400">
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd"/></svg>
+                  Today's numbers are done
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <h4 className="text-xs font-brand font-bold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-2">Yesterday</h4>
                 <div className="space-y-2">
                   {YESTERDAY_FIELDS.map(f => (
                     <div key={f.key} className="flex items-center gap-2">
-                      <label className="text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">{f.label}</label>
-                      <input type="number" min="0" placeholder="0" value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={inputCls} />
+                      <label className="text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">
+                        {f.label}{f.hint && <span className="block text-[10px] text-gray-400 dark:text-tm-dark-muted italic">{f.hint}</span>}
+                      </label>
+                      <input type="number" min="0" value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
                     </div>
                   ))}
                 </div>
@@ -149,8 +154,10 @@ function DailyEntryTab({ locations, profile, onSaved }) {
                 <div className="space-y-2">
                   {MTD_FIELDS.map(f => (
                     <div key={f.key} className="flex items-center gap-2">
-                      <label className="text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">{f.label}</label>
-                      <input type="number" min="0" placeholder="0" value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={inputCls} />
+                      <label className="text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">
+                        {f.label}{f.hint && <span className="block text-[10px] text-gray-400 dark:text-tm-dark-muted italic">{f.hint}</span>}
+                      </label>
+                      <input type="number" min="0" value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
                     </div>
                   ))}
                 </div>
@@ -164,26 +171,31 @@ function DailyEntryTab({ locations, profile, onSaved }) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-100 dark:border-tm-dark-border">
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">MTD Revenue Actual ($)</label>
-                <input type="number" min="0" step="0.01" placeholder="0" value={form.mtd_revenue_actual} onChange={e => set('mtd_revenue_actual', e.target.value)} className={inputCls} />
+                <input type="number" min="0" step="0.01" value={form.mtd_revenue_actual} onChange={e => set('mtd_revenue_actual', e.target.value)} className={fieldCls('mtd_revenue_actual')} />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">MTD Membership Actual</label>
-                <input type="number" min="0" placeholder="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={inputCls} />
+                <input type="number" min="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={fieldCls('mtd_membership_actual')} />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Current Rating</label>
-                <input type="number" min="0" max="5" step="0.01" placeholder="4.85" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={inputCls} />
+                <input type="number" min="0" max="5" step="0.01" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={fieldCls('current_rating')} />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Current Reviews</label>
-                <input type="number" min="0" placeholder="0" value={form.current_reviews} onChange={e => set('current_reviews', e.target.value)} className={inputCls} />
+                <input type="number" min="0" value={form.current_reviews} onChange={e => set('current_reviews', e.target.value)} className={fieldCls('current_reviews')} />
               </div>
             </div>
 
-            <div className="mt-4">
+            <div className="mt-4 flex items-center gap-3">
               <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-lg bg-tm-teal text-tm-navy font-bold text-sm hover:brightness-110 transition-colors disabled:opacity-50">
                 {saving ? 'Saving…' : entry ? 'Update Today’s Numbers' : 'Save Today’s Numbers'}
               </button>
+              {attemptedSave && missing > 0 && (
+                <span className="text-xs font-brand font-bold text-red-600 dark:text-red-400">
+                  {missing} field{missing !== 1 ? 's' : ''} need{missing === 1 ? 's' : ''} to be updated
+                </span>
+              )}
             </div>
           </div>
 

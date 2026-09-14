@@ -7,6 +7,9 @@ import {
   yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus,
   computeScore, rankByScore, pct1,
 } from '../utils/budgetMath'
+import {
+  YESTERDAY_FIELDS, MTD_FIELDS, emptyDailyForm, isFieldMissing, countMissing, isDayComplete,
+} from '../utils/budgetDailyFields'
 
 const todayStr = () => toDateStr(new Date())
 
@@ -18,33 +21,14 @@ function EditIcon() {
   )
 }
 
-// ── Edit modal — Daily Entry + Targets, scoped to one site ────────────────────
+// ── Edit modal — Daily Entry, scoped to one site ──────────────────────────────
 
-const YESTERDAY_FIELDS = [
-  { key: 'yesterday_washes',      label: 'Yesterday Washes' },
-  { key: 'yesterday_redemptions', label: 'Yesterday Redemptions' },
-  { key: 'yesterday_basic',       label: 'Yesterday Basic' },
-  { key: 'yesterday_good',        label: 'Yesterday Good' },
-  { key: 'yesterday_better',      label: 'Yesterday Better' },
-  { key: 'yesterday_best',        label: 'Yesterday Best' },
-]
-const MTD_FIELDS = [
-  { key: 'mtd_washes',      label: 'MTD Washes' },
-  { key: 'mtd_redemptions', label: 'MTD Redemptions' },
-  { key: 'mtd_basic',       label: 'MTD Basic' },
-  { key: 'mtd_good',        label: 'MTD Good' },
-  { key: 'mtd_better',      label: 'MTD Better' },
-  { key: 'mtd_best',        label: 'MTD Best' },
-]
-function emptyDailyForm() {
-  return Object.fromEntries([...YESTERDAY_FIELDS, ...MTD_FIELDS].map(f => [f.key, ''])
-    .concat([['mtd_revenue_actual', ''], ['mtd_membership_actual', ''], ['current_rating', ''], ['current_reviews', '']]))
-}
 function DailyEntryPane({ location }) {
   const [form, setForm]     = useState(emptyDailyForm())
   const [entry, setEntry]   = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving]   = useState(false)
+  const [attemptedSave, setAttemptedSave] = useState(false)
 
   useEffect(() => { fetchData() }, [location.id])
 
@@ -54,12 +38,15 @@ function DailyEntryPane({ location }) {
       .eq('location_id', location.id).eq('entry_date', todayStr()).maybeSingle()
     setEntry(data || null)
     setForm(data ? Object.fromEntries(Object.keys(emptyDailyForm()).map(k => [k, data[k] ?? ''])) : emptyDailyForm())
+    setAttemptedSave(false)
     setLoading(false)
   }
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const missing = countMissing(form)
 
   const handleSave = async () => {
+    if (missing > 0) { setAttemptedSave(true); return }
     setSaving(true)
     const numOrNull = (v) => v === '' ? null : Number(v)
     await supabase.from('budget_daily_entries').upsert({
@@ -72,40 +59,64 @@ function DailyEntryPane({ location }) {
     fetchData()
   }
 
-  const inputCls = 'w-full border border-gray-300 dark:border-tm-dark-border rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal font-brand placeholder:text-gray-300'
+  const baseInputCls = 'w-full border-2 rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
+  const fieldCls = (key) => {
+    if (!isFieldMissing(form, key)) return `${baseInputCls} border-gray-300 dark:border-tm-dark-border focus:ring-tm-teal`
+    return attemptedSave
+      ? `${baseInputCls} border-red-500 focus:ring-red-400`
+      : `${baseInputCls} border-orange-400 focus:ring-orange-300`
+  }
+  const complete = isDayComplete(entry)
 
   if (loading) return <div className="flex justify-center py-8"><TmLoader size={56} /></div>
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs text-gray-400 dark:text-tm-dark-muted">Editing {todayStr()}'s entry — resets fresh each new day.</p>
+    <div className={`space-y-4 ${complete ? 'rounded-xl ring-2 ring-green-200 dark:ring-green-900/40 p-3 -m-3' : ''}`}>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-gray-400 dark:text-tm-dark-muted">Editing {todayStr()}'s entry — resets fresh each new day.</p>
+        {complete && (
+          <span className="flex items-center gap-1 text-[10px] font-brand font-bold text-green-600 dark:text-green-400 whitespace-nowrap">
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd"/></svg>
+            Done
+          </span>
+        )}
+      </div>
       <div className="grid grid-cols-2 gap-3">
         {[...YESTERDAY_FIELDS, ...MTD_FIELDS].map(f => (
           <div key={f.key}>
-            <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">{f.label}</label>
-            <input type="number" min="0" placeholder="0" value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={inputCls} />
+            <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">
+              {f.label}{f.hint && <span className="block normal-case italic text-gray-400">{f.hint}</span>}
+            </label>
+            <input type="number" min="0" value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
           </div>
         ))}
         <div>
           <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">MTD Revenue Actual ($)</label>
-          <input type="number" min="0" step="0.01" placeholder="0" value={form.mtd_revenue_actual} onChange={e => set('mtd_revenue_actual', e.target.value)} className={inputCls} />
+          <input type="number" min="0" step="0.01" value={form.mtd_revenue_actual} onChange={e => set('mtd_revenue_actual', e.target.value)} className={fieldCls('mtd_revenue_actual')} />
         </div>
         <div>
           <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">MTD Membership Actual</label>
-          <input type="number" min="0" placeholder="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={inputCls} />
+          <input type="number" min="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={fieldCls('mtd_membership_actual')} />
         </div>
         <div>
           <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">Current Rating</label>
-          <input type="number" min="0" max="5" step="0.01" placeholder="4.85" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={inputCls} />
+          <input type="number" min="0" max="5" step="0.01" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={fieldCls('current_rating')} />
         </div>
         <div>
           <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">Current Reviews</label>
-          <input type="number" min="0" placeholder="0" value={form.current_reviews} onChange={e => set('current_reviews', e.target.value)} className={inputCls} />
+          <input type="number" min="0" value={form.current_reviews} onChange={e => set('current_reviews', e.target.value)} className={fieldCls('current_reviews')} />
         </div>
       </div>
-      <button onClick={handleSave} disabled={saving} className="px-4 py-2 rounded-lg bg-tm-teal text-tm-navy font-bold text-xs hover:brightness-110 transition-colors disabled:opacity-50">
-        {saving ? 'Saving…' : entry ? 'Update Entry' : 'Save Entry'}
-      </button>
+      <div className="flex items-center gap-3">
+        <button onClick={handleSave} disabled={saving} className="px-4 py-2 rounded-lg bg-tm-teal text-tm-navy font-bold text-xs hover:brightness-110 transition-colors disabled:opacity-50">
+          {saving ? 'Saving…' : entry ? 'Update Entry' : 'Save Entry'}
+        </button>
+        {attemptedSave && missing > 0 && (
+          <span className="text-[10px] font-brand font-bold text-red-600 dark:text-red-400">
+            {missing} field{missing !== 1 ? 's' : ''} need{missing === 1 ? 's' : ''} to be updated
+          </span>
+        )}
+      </div>
     </div>
   )
 }

@@ -148,6 +148,8 @@ npm run preview   # serve the dist build locally
 
 Push to `main` → GitHub Actions builds and deploys to GitHub Pages automatically. The live app uses `HashRouter` so that deep links work without server-side routing.
 
+Served at the custom domain **ops.tmcw.app** via `app/public/CNAME` (copied verbatim into `dist/` by Vite) and `vite.config.js`'s `base: '/'` — both assume the app is served from the domain root, not a `/repo-name/` subpath. If the custom domain is ever removed, `base` needs to go back to `/tm-opsperformance/` (the GitHub Pages project-page subpath) or assets will 404.
+
 ## Styling Conventions
 
 Custom Tailwind color tokens (defined in `tailwind.config.js`):
