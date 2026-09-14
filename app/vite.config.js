@@ -15,8 +15,7 @@ export default defineConfig({
       },
     },
   ],
-  // Custom domain (ops.tmcw.app) serves from the root, not a repo subpath.
-  base: '/',
+  base: '/tm-opsperformance/',
   define: {
     __BUILD_ID__: JSON.stringify(buildId),
   },
