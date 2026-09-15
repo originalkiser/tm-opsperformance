@@ -265,7 +265,7 @@ export default function Insights() {
   const fetchData = async () => {
     setLoading(true)
     const locIds = locations.map(l => l.id)
-    const PAGE = 1000
+    const PAGE = 4000
     const all = []
     for (let from = 0; ; from += PAGE) {
       const { data } = await supabase
