@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext({})
@@ -8,23 +8,37 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [locations, setLocations] = useState([])
   const [loading, setLoading] = useState(true)
+  // Tracks which user id profile/locations were last fetched for. Supabase
+  // fires onAuthStateChange on routine token refreshes (tab regains focus,
+  // ~hourly renewal) as well as real sign-ins — without this guard, every
+  // refresh created new profile/locations array references, which cascaded
+  // into every page's data-fetch effects and caused dashboards/reports to
+  // reload out from under whoever was looking at them.
+  const fetchedUserId = useRef(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      else setLoading(false)
+      if (session?.user) {
+        fetchedUserId.current = session.user.id
+        fetchProfile(session.user.id)
+      } else {
+        setLoading(false)
+      }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.id)
-      } else {
+      if (!session?.user) {
+        fetchedUserId.current = null
         setProfile(null)
         setLocations([])
         setLoading(false)
+        return
       }
+      if (fetchedUserId.current === session.user.id) return
+      fetchedUserId.current = session.user.id
+      fetchProfile(session.user.id)
     })
 
     return () => subscription.unsubscribe()

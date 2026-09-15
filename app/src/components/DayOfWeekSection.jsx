@@ -269,10 +269,10 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
       { label: 'Hour',                     type: 'text' },
       { label: `${prefix} Total Washes`,   type: 'num'  },
       { label: `${prefix} Redemptions`,    type: 'num'  },
-      { label: `${prefix} Sales`,          type: 'num'  },
       { label: `${prefix} Opportunities`,  type: 'num'  },
+      { label: `${prefix} Sales`,          type: 'num'  },
     ],
-    rows: hourlyAllChartData.map(r => [r.label, r.tw, r.mw, r.ms, r.opp]),
+    rows: hourlyAllChartData.map(r => [r.label, r.tw, r.mw, r.opp, r.ms]),
   }
 
   if (!Object.keys(dowStats).length) return (
@@ -434,9 +434,9 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
           <div>
             <h3 className="font-brand font-semibold text-sm text-tm-blue dark:text-tm-teal uppercase tracking-wide">Hourly Breakdown</h3>
             <div className="flex items-center gap-4 mt-1.5 text-[11px] font-brand text-gray-500 dark:text-tm-dark-muted">
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: REDEMPTIONS_COLOR }} />Membership Redemptions</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: SALES_COLOR }} />Sales</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: OPP_COLOR }} />Opportunities</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block ring-1 ring-black/10 dark:ring-white/20" style={{ background: REDEMPTIONS_COLOR }} />Membership Redemptions</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block ring-1 ring-black/10 dark:ring-white/20" style={{ background: OPP_COLOR }} />Opportunities</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block ring-1 ring-black/10 dark:ring-white/20" style={{ background: SALES_COLOR }} />Sales</span>
               <span>· number above bar = {prefix.toLowerCase()} total washes</span>
             </div>
           </div>
@@ -471,8 +471,8 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
                 <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide">Hour</th>
                 <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide text-center">{prefix} Total Washes</th>
                 <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide text-center">{prefix} Redemptions</th>
-                <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide text-center">{prefix} Sales</th>
                 <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide text-center">{prefix} Opportunities</th>
+                <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide text-center">{prefix} Sales</th>
               </tr>
             </thead>
             <tbody>
@@ -481,8 +481,8 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-brand font-semibold dark:text-tm-dark-text">{r.label}</td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.tw)}</td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.mw)}</td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.ms)}</td>
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.opp)}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.ms)}</td>
                 </tr>
               ))}
             </tbody>
