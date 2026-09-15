@@ -19,7 +19,7 @@ function fmtElapsed(seconds) {
     : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-const TIME_SLOTS = [
+export const TIME_SLOTS = [
   { label: '8:00 AM',  value: '08:00:00' },
   { label: '9:00 AM',  value: '09:00:00' },
   { label: '10:00 AM', value: '10:00:00' },

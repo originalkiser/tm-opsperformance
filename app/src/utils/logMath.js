@@ -55,3 +55,26 @@ export function employeeDeltasByDay(allDayRows) {
     Object.entries(result).map(([key, data]) => [canonical[key], data])
   )
 }
+
+/**
+ * Takes ALL rows for a shop-day, sorted chronologically, and diffs each row
+ * against the PREVIOUS row (regardless of employee) to get what actually
+ * happened during that time slot's hour — rows are cumulative running totals,
+ * so this is the only correct way to get an hourly figure.
+ */
+export function hourlyDeltasByDay(allDayRows) {
+  const sorted = [...allDayRows].sort((a, b) => a.time_slot.localeCompare(b.time_slot))
+  return sorted.map((row, idx) => {
+    const prev = sorted[idx - 1]
+    const delta = (f) => Math.max(0, toInt(row[f]) - (prev ? toInt(prev[f]) : 0))
+    return {
+      time_slot:     row.time_slot,
+      total_washes:  delta('total_washes'),
+      member_washes: delta('member_washes'),
+      basic:         delta('basic'),
+      good:          delta('good'),
+      better:        delta('better'),
+      best:          delta('best'),
+    }
+  })
+}

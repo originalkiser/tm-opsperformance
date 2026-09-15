@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { employeeDeltasByDay } from '../utils/logMath'
+import { employeeDeltasByDay, hourlyDeltasByDay } from '../utils/logMath'
 import { pmixCls, convCls, pmixHex, convHex } from '../utils/metricColors'
 import { fmtNum } from '../utils/format'
 import { toInt, pct, pctN, toDayTotals } from '../utils/insightsHelpers'
@@ -7,6 +7,8 @@ import { exportCsv, exportXlsx, exportPdf } from '../utils/exportTable'
 import { fmtDateRange } from './DateSelector'
 import MiniChart from './MiniChart'
 import ExportMenu from './ExportMenu'
+import HourlyStackedChart, { REDEMPTIONS_COLOR, SALES_COLOR, OPP_COLOR } from './HourlyStackedChart'
+import { TIME_SLOTS } from './DailyLogTable'
 
 const DOW_FULL  = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -37,8 +39,8 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
     })
   }
 
-  const { dowStats, shopDowStats, empDowStats } = useMemo(() => {
-    if (!logs.length) return { dowStats: {}, shopDowStats: {}, empDowStats: {} }
+  const { dowStats, shopDowStats, empDowStats, hourlyDowRaw, hourlyAllRaw, dowDates, totalDates } = useMemo(() => {
+    if (!logs.length) return { dowStats: {}, shopDowStats: {}, empDowStats: {}, hourlyDowRaw: {}, hourlyAllRaw: {}, dowDates: {}, totalDates: 0 }
 
     // Group raw hourly rows by location+date for employee delta calc
     const locDateGroups = {}
@@ -109,8 +111,11 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
       shopDowStats[key] = makeStat(raw, raw.dates.size)
     })
 
-    // Employee deltas accumulated by (dow, locId, empName)
-    const empAccum = {}
+    // Employee deltas accumulated by (dow, locId, empName), and hourly deltas
+    // accumulated by (dow, time_slot) and by (time_slot) alone (all days combined).
+    const empAccum      = {}
+    const hourlyDowRaw  = {}
+    const hourlyAllRaw  = {}
     Object.entries(locDateGroups).forEach(([locDateKey, rows]) => {
       const colonIdx = locDateKey.indexOf('::')
       const locId    = locDateKey.slice(0, colonIdx)
@@ -131,6 +136,24 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
         e.gr    += d.google_reviews; e.basic += d.basic; e.good += d.good
         e.btr   += d.better;         e.bst  += d.best
         e.dates.add(date)
+      })
+
+      const loc     = locations.find(l => l.id === locId)
+      const formula = loc?.opportunities_formula
+      hourlyDeltasByDay(rows).forEach(h => {
+        const ms  = h.basic + h.good + h.better + h.best
+        const opp = formula === 'simple'
+          ? Math.max(0, h.total_washes - h.member_washes)
+          : Math.max(0, h.total_washes - h.member_washes + ms)
+
+        const dowKey = `${dow}::${h.time_slot}`
+        if (!hourlyDowRaw[dowKey]) hourlyDowRaw[dowKey] = { tw: 0, mw: 0, ms: 0, opp: 0 }
+        hourlyDowRaw[dowKey].tw += h.total_washes; hourlyDowRaw[dowKey].mw += h.member_washes
+        hourlyDowRaw[dowKey].ms += ms;             hourlyDowRaw[dowKey].opp += opp
+
+        if (!hourlyAllRaw[h.time_slot]) hourlyAllRaw[h.time_slot] = { tw: 0, mw: 0, ms: 0, opp: 0 }
+        hourlyAllRaw[h.time_slot].tw += h.total_washes; hourlyAllRaw[h.time_slot].mw += h.member_washes
+        hourlyAllRaw[h.time_slot].ms += ms;             hourlyAllRaw[h.time_slot].opp += opp
       })
     })
 
@@ -156,7 +179,9 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
       }
     })
 
-    return { dowStats, shopDowStats, empDowStats }
+    const totalDates = new Set(dayTotals.map(r => r.log_date)).size
+
+    return { dowStats, shopDowStats, empDowStats, hourlyDowRaw, hourlyAllRaw, dowDates, totalDates }
   }, [logs, locations])
 
   const navyColor = dark ? '#D6E4F0' : '#1A3555'
@@ -176,6 +201,32 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
   })
 
   const prefix = showTotals ? 'Total' : 'Avg'
+
+  // Hourly breakdown: stacked bar chart data, one array of 13 time slots per
+  // day of week plus one "all days combined" rollup — divided by the same
+  // date counts used for the Averages toggle above.
+  const hourlyRowFor = (raw, n) => {
+    const div = showTotals ? 1 : Math.max(n, 1)
+    return {
+      tw:  Math.round((raw?.tw  || 0) / div),
+      mw:  Math.round((raw?.mw  || 0) / div),
+      ms:  Math.round((raw?.ms  || 0) / div),
+      opp: Math.round((raw?.opp || 0) / div),
+    }
+  }
+
+  const hourlyAllChartData = TIME_SLOTS.map(slot => ({
+    label: slot.label,
+    ...hourlyRowFor(hourlyAllRaw[slot.value], totalDates),
+  }))
+
+  const hourlyDowChartData = {}
+  DOW_ORDER.forEach(dow => {
+    hourlyDowChartData[dow] = TIME_SLOTS.map(slot => ({
+      label: slot.label,
+      ...hourlyRowFor(hourlyDowRaw[`${dow}::${slot.value}`], dowDates[dow]?.size),
+    }))
+  })
 
   // Export spec for DOW summary table
   const exportRows = DOW_ORDER
@@ -207,6 +258,21 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
       { label: '# Days',            type: 'num'  },
     ],
     rows: exportRows,
+  }
+
+  // Export spec for the hourly breakdown table (all days combined)
+  const exportHourlySpec = {
+    filename: `hourly-breakdown_${dateRange.start}_to_${dateRange.end}`,
+    title:    'Hourly Breakdown — All Days Combined',
+    subtitle: `${showTotals ? 'Totals' : 'Averages'} — ${fmtDateRange(dateRange.start, dateRange.end)}`,
+    columns: [
+      { label: 'Hour',                     type: 'text' },
+      { label: `${prefix} Total Washes`,   type: 'num'  },
+      { label: `${prefix} Redemptions`,    type: 'num'  },
+      { label: `${prefix} Sales`,          type: 'num'  },
+      { label: `${prefix} Opportunities`,  type: 'num'  },
+    ],
+    rows: hourlyAllChartData.map(r => [r.label, r.tw, r.mw, r.ms, r.opp]),
   }
 
   if (!Object.keys(dowStats).length) return (
@@ -360,6 +426,68 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Hourly Breakdown */}
+      <div className="mt-8">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="font-brand font-semibold text-sm text-tm-blue dark:text-tm-teal uppercase tracking-wide">Hourly Breakdown</h3>
+            <div className="flex items-center gap-4 mt-1.5 text-[11px] font-brand text-gray-500 dark:text-tm-dark-muted">
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: REDEMPTIONS_COLOR }} />Membership Redemptions</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: SALES_COLOR }} />Sales</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: OPP_COLOR }} />Opportunities</span>
+              <span>· number above bar = {prefix.toLowerCase()} total washes</span>
+            </div>
+          </div>
+          <ExportMenu items={[
+            { label: 'Excel (.xlsx)', run: () => exportXlsx(exportHourlySpec) },
+            { label: 'PDF',           run: () => exportPdf(exportHourlySpec)  },
+            { label: 'CSV',           run: () => exportCsv(exportHourlySpec)  },
+          ]} />
+        </div>
+
+        <div className="mb-4">
+          <HourlyStackedChart title={`All Days Combined — ${prefix}`} data={hourlyAllChartData} dark={dark} />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          {DOW_ORDER.filter(dow => dowStats[dow]).map(dow => (
+            <HourlyStackedChart
+              key={dow}
+              title={`${DOW_FULL[dow]} — ${prefix}`}
+              data={hourlyDowChartData[dow]}
+              dark={dark}
+              height={180}
+            />
+          ))}
+        </div>
+
+        {/* Hourly table — all days combined */}
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-tm-blue dark:bg-tm-navy text-white text-left">
+                <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide">Hour</th>
+                <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide text-center">{prefix} Total Washes</th>
+                <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide text-center">{prefix} Redemptions</th>
+                <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide text-center">{prefix} Sales</th>
+                <th className="px-3 py-2 border border-tm-navy dark:border-tm-dark-border font-brand font-semibold tracking-wide text-center">{prefix} Opportunities</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hourlyAllChartData.map((r, i) => (
+                <tr key={r.label} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-brand font-semibold dark:text-tm-dark-text">{r.label}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.tw)}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.mw)}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.ms)}</td>
+                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.opp)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
