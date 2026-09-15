@@ -26,10 +26,18 @@ export function daysInMonth(dateStr) {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
 }
 
-// Fraction of the month elapsed (day 1 of 30 → 1/30, last day → 1).
-export function monthProgress(dateStr) {
+// Days elapsed THROUGH YESTERDAY, not including today — Yesterday/MTD figures
+// are entered each morning for the prior day, so on the 1st this is 0 (nothing
+// from this month has been entered yet) and on the 15th this is 14.
+export function daysElapsed(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
-  return d.getDate() / daysInMonth(dateStr)
+  return Math.max(0, d.getDate() - 1)
+}
+
+// Fraction of the month elapsed as of yesterday (the 1st → 0, the 15th of a
+// 30-day month → 14/30 ≈ 46.7%, the last day → (daysInMonth-1)/daysInMonth).
+export function monthProgress(dateStr) {
+  return daysElapsed(dateStr) / daysInMonth(dateStr)
 }
 
 // ── Yesterday / MTD derived metrics ──────────────────────────────────────────────
@@ -92,6 +100,32 @@ export function membershipStatus(mtdMembershipActual, membershipGoal, dateStr) {
   }
   const progressRatio = goal > 0 ? Math.min(1.5, actual / goal) : 0
   return { tier, progressRatio, actual, goal }
+}
+
+// Default net-new-members-per-day pace when a target doesn't set its own.
+export const DEFAULT_MEMBERSHIP_DAILY_GROWTH = 2
+
+// End-of-month membership goal, derived from a starting headcount and a daily
+// net-growth rate (e.g. 1,700 starting + 2/day × 30 days = 1,760 by month end).
+export function computeMembershipGoal(startingMembers, dailyGrowth, dateStr) {
+  if (startingMembers == null || startingMembers === '') return null
+  const rate = dailyGrowth == null || dailyGrowth === '' ? DEFAULT_MEMBERSHIP_DAILY_GROWTH : Number(dailyGrowth)
+  return Math.round(toNum(startingMembers) + rate * daysInMonth(dateStr))
+}
+
+// Day-by-day membership pace, the same shape as revenuePace: is MTD Membership
+// Actual at or above where the daily growth rate says it should be by now
+// (starting headcount + rate × days elapsed through yesterday)?
+export function membershipPace(mtdMembershipActual, startingMembers, dailyGrowth, dateStr) {
+  if (startingMembers == null || startingMembers === '') return { expected: null, onTrack: null, paceRatio: 0 }
+  const rate     = dailyGrowth == null || dailyGrowth === '' ? DEFAULT_MEMBERSHIP_DAILY_GROWTH : Number(dailyGrowth)
+  const expected = toNum(startingMembers) + rate * daysElapsed(dateStr)
+  const actual   = toNum(mtdMembershipActual)
+  return {
+    expected,
+    onTrack: expected > 0 ? actual >= expected : null,
+    paceRatio: expected > 0 ? Math.min(1.5, actual / expected) : 0,
+  }
 }
 
 // ── Composite score & rank ────────────────────────────────────────────────────

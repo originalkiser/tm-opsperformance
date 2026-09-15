@@ -4,7 +4,7 @@ import TmLoader from './TmLoader'
 import { PaceBadge, BonusBadge } from './BudgetTrackingSection'
 import {
   toDateStr, firstOfMonth, monthProgress,
-  yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus,
+  yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus, membershipPace,
   computeScore, rankByScore, pct1,
 } from '../utils/budgetMath'
 import {
@@ -178,11 +178,12 @@ export default function BudgetTrackingReport({ locations }) {
       const mtd    = mtdMetrics(entry)
       const rev    = revenuePace(entry?.mtd_revenue_actual, target?.revenue_goal, progress)
       const mem    = membershipStatus(entry?.mtd_membership_actual, target?.membership_goal, todayStr())
+      const memPace = membershipPace(entry?.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, todayStr())
       const score  = computeScore({
         yesterdayConv: yst.conversion, mtdConv: mtd.conversion, mtdPmix: mtd.pmix,
         membershipProgressRatio: mem.progressRatio, currentRating: entry?.current_rating,
       })
-      return { loc, target, entry, yst, mtd, rev, mem, score }
+      return { loc, target, entry, yst, mtd, rev, mem, memPace, score }
     })
     return rankByScore(built)
   }, [locations, targets, dailyEntries])
@@ -205,6 +206,7 @@ export default function BudgetTrackingReport({ locations }) {
               <th className="px-3 py-2 text-center">Revenue %</th>
               <th className="px-3 py-2 text-center">Revenue Pace</th>
               <th className="px-3 py-2 text-center">Membership</th>
+              <th className="px-3 py-2 text-center">Membership Pace</th>
               <th className="px-3 py-2 text-center">Rating</th>
               <th className="px-3 py-2 text-center">Score</th>
               <th className="px-2 py-2" />
@@ -222,6 +224,7 @@ export default function BudgetTrackingReport({ locations }) {
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.rev.pct)}</td>
                 <td className="px-3 py-2 text-center"><PaceBadge onTrack={r.rev.onTrack} label={r.rev.onTrack ? 'On Track' : 'Off Track'} /></td>
                 <td className="px-3 py-2 text-center"><BonusBadge tier={r.mem.tier} /></td>
+                <td className="px-3 py-2 text-center"><PaceBadge onTrack={r.memPace.onTrack} label={r.memPace.onTrack ? 'On Track' : 'Off Track'} /></td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{r.entry?.current_rating ?? '—'}</td>
                 <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{r.entry ? r.score : '—'}</td>
                 <td className="px-2 py-2 text-center">

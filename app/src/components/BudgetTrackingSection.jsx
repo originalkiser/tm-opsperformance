@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
 import {
   toDateStr, firstOfMonth, monthProgress,
-  yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus, pct1,
+  yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus, membershipPace, pct1,
 } from '../utils/budgetMath'
 import {
   YESTERDAY_FIELDS, MTD_FIELDS, emptyDailyForm, isFieldMissing, countMissing, isDayComplete,
@@ -90,6 +90,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
   const progress = monthProgress(todayStr())
   const rev = revenuePace(form.mtd_revenue_actual, target?.revenue_goal, progress)
   const mem = membershipStatus(form.mtd_membership_actual, target?.membership_goal, todayStr())
+  const memPace = membershipPace(form.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, todayStr())
 
   const baseInputCls = 'w-full border-2 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
   const fieldCls = (key) => {
@@ -200,7 +201,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
           </div>
 
           {/* Pace summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border p-4">
               <div className="text-[10px] font-brand font-semibold text-gray-400 uppercase tracking-wide mb-1">MTD Revenue %</div>
               <div className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal">{pct1(rev.pct)}</div>
@@ -209,7 +210,13 @@ function DailyEntryTab({ locations, profile, onSaved }) {
             <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border p-4">
               <div className="text-[10px] font-brand font-semibold text-gray-400 uppercase tracking-wide mb-1">MTD Membership Actual</div>
               <div className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal">{form.mtd_membership_actual || 0}</div>
-              <div className="text-[10px] text-gray-400 mt-0.5">goal {target?.membership_goal ?? '—'}</div>
+              <div className="text-[10px] text-gray-400 mt-0.5">
+                {memPace.expected != null ? `pace ${Math.round(memPace.expected)} · ` : ''}goal {target?.membership_goal ?? '—'}
+              </div>
+            </div>
+            <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border p-4">
+              <div className="text-[10px] font-brand font-semibold text-gray-400 uppercase tracking-wide mb-1">Membership Pace</div>
+              <div className="mt-1"><PaceBadge onTrack={memPace.onTrack} label={memPace.onTrack ? 'On Track' : 'Off Track'} /></div>
             </div>
             <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border p-4">
               <div className="text-[10px] font-brand font-semibold text-gray-400 uppercase tracking-wide mb-1">Membership Bonus</div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
-import { firstOfMonth } from '../utils/budgetMath'
+import { firstOfMonth, computeMembershipGoal, DEFAULT_MEMBERSHIP_DAILY_GROWTH } from '../utils/budgetMath'
 import { logEdit } from '../utils/auditLog'
 
 const todayStr = () => {
@@ -14,13 +14,18 @@ const monthLabel = (monthStr) =>
 
 const FIELD_LABELS = {
   revenue_goal: 'Revenue Goal',
-  membership_goal: 'Membership Goal',
+  starting_members: 'Starting Members',
+  membership_daily_growth: 'Daily Growth Target',
+  membership_goal: 'Membership Goal (end of month)',
   desired_rating: 'Desired Rating',
   labor_hours_non_salary: 'Labor — Regular Hours',
   labor_hours_with_salary: 'Labor — With Salary',
 }
 
-const emptyForm = () => ({ revenue_goal: '', membership_goal: '', desired_rating: '4.85', labor_hours_non_salary: '', labor_hours_with_salary: '' })
+const emptyForm = () => ({
+  revenue_goal: '', starting_members: '', membership_daily_growth: String(DEFAULT_MEMBERSHIP_DAILY_GROWTH),
+  desired_rating: '4.85', labor_hours_non_salary: '', labor_hours_with_salary: '',
+})
 
 function fmtMoney(v) {
   if (v == null) return '—'
@@ -32,19 +37,27 @@ function fmtMoney(v) {
 function TargetModal({ location, month, existing, profile, onClose, onSaved }) {
   const [form, setForm] = useState(() => existing ? {
     revenue_goal: existing.revenue_goal ?? '',
-    membership_goal: existing.membership_goal ?? '',
+    starting_members: existing.starting_members ?? '',
+    membership_daily_growth: existing.membership_daily_growth ?? String(DEFAULT_MEMBERSHIP_DAILY_GROWTH),
     desired_rating: existing.desired_rating ?? '4.85',
     labor_hours_non_salary: existing.labor_hours_non_salary ?? '',
     labor_hours_with_salary: existing.labor_hours_with_salary ?? '',
   } : emptyForm())
   const [saving, setSaving] = useState(false)
 
+  const computedGoal = computeMembershipGoal(form.starting_members, form.membership_daily_growth, month)
+
   const handleSave = async () => {
     setSaving(true)
     const numOrZero = (v) => v === '' ? 0 : Number(v)
+    // Keep the previously-stored goal if Starting Members isn't set yet, rather
+    // than silently zeroing out a site that hasn't switched over to pace tracking.
+    const membershipGoal = computedGoal != null ? computedGoal : (existing?.membership_goal ?? 0)
     const newValues = {
       revenue_goal: numOrZero(form.revenue_goal),
-      membership_goal: numOrZero(form.membership_goal),
+      starting_members: form.starting_members === '' ? null : Number(form.starting_members),
+      membership_daily_growth: form.membership_daily_growth === '' ? DEFAULT_MEMBERSHIP_DAILY_GROWTH : Number(form.membership_daily_growth),
+      membership_goal: membershipGoal,
       desired_rating: numOrZero(form.desired_rating),
       labor_hours_non_salary: numOrZero(form.labor_hours_non_salary),
       labor_hours_with_salary: numOrZero(form.labor_hours_with_salary),
@@ -90,14 +103,32 @@ function TargetModal({ location, month, existing, profile, onClose, onSaved }) {
               <input type="number" min="0" step="0.01" value={form.revenue_goal} onChange={e => setForm(f => ({ ...f, revenue_goal: e.target.value }))} className={inputCls} />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Membership Goal</label>
-              <input type="number" min="0" value={form.membership_goal} onChange={e => setForm(f => ({ ...f, membership_goal: e.target.value }))} className={inputCls} />
-            </div>
-            <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Desired Rating</label>
               <input type="number" min="0" max="5" step="0.01" value={form.desired_rating} onChange={e => setForm(f => ({ ...f, desired_rating: e.target.value }))} className={inputCls} />
             </div>
-            <div />
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-tm-dark-border">
+            <p className="text-[10px] text-gray-400 dark:text-tm-dark-muted mb-2">
+              The month-end Membership Goal is calculated from a starting headcount plus a daily net-growth rate, instead of typing the goal directly.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Starting Members</label>
+                <input type="number" min="0" placeholder="e.g. 1700" value={form.starting_members} onChange={e => setForm(f => ({ ...f, starting_members: e.target.value }))} className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Daily Growth Target</label>
+                <input type="number" step="0.1" value={form.membership_daily_growth} onChange={e => setForm(f => ({ ...f, membership_daily_growth: e.target.value }))} className={inputCls} />
+              </div>
+            </div>
+            <div className="mt-2 bg-gray-50 dark:bg-tm-dark-card rounded-lg px-3 py-2 text-xs">
+              <span className="text-gray-400 dark:text-tm-dark-muted">Membership Goal by month end:</span>{' '}
+              <strong className="text-tm-blue dark:text-tm-teal">{computedGoal ?? existing?.membership_goal ?? '—'}</strong>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-tm-dark-border grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Labor — Regular Hours</label>
               <input type="number" min="0" value={form.labor_hours_non_salary} onChange={e => setForm(f => ({ ...f, labor_hours_non_salary: e.target.value }))} className={inputCls} />
