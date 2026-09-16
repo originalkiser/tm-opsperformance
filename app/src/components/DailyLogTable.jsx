@@ -43,6 +43,7 @@ const COLUMN_DEFS = [
   { key: 'good',           label: 'Good'             },
   { key: 'better',         label: 'Better'           },
   { key: 'best',           label: 'Best'             },
+  { key: 'reactivations',  label: 'Reactivations'    },
   { key: 'net_members',    label: 'Net\nMembers'     },
 ]
 
@@ -646,6 +647,7 @@ export default function DailyLogTable({
         good:             toInt(row.good),
         better:           toInt(row.better),
         best:             toInt(row.best),
+        ...(formulaRef.current !== 'simple' ? { reactivations: toInt(row.reactivations) } : {}),
         net_members:      toInt(row.net_members),
         memberships_sold,
         opportunities,
@@ -688,6 +690,7 @@ export default function DailyLogTable({
         good:             toInt(row.good),
         better:           toInt(row.better),
         best:             toInt(row.best),
+        ...(formulaRef.current !== 'simple' ? { reactivations: toInt(row.reactivations) } : {}),
         net_members:      toInt(row.net_members),
         memberships_sold,
         opportunities,
@@ -798,7 +801,7 @@ export default function DailyLogTable({
     const KEY_W = {
       employee_name: 90, _time: 64,
       google_reviews: 54, total_washes: 54, member_washes: 60,
-      basic: 44, good: 44, better: 44, best: 44, net_members: 54,
+      basic: 44, good: 44, better: 44, best: 44, reactivations: 78, net_members: 54,
       _ms: 74, _opp: 72, _pmix: 55, _conv: 64,
     }
 
@@ -1022,6 +1025,7 @@ export default function DailyLogTable({
       'good': 'good',
       'better': 'better',
       'best': 'best',
+      'reactivations': 'reactivations',
       'net members': 'net_members',
     }
     const colMap = {}
@@ -1072,6 +1076,8 @@ export default function DailyLogTable({
   const orderedCols = columnOrder
     .map(key => COLUMN_DEFS.find(c => c.key === key))
     .filter(Boolean)
+    // Reactivations is only meaningful for shops using the Detailed opportunities formula
+    .filter(c => c.key !== 'reactivations' || opportunitiesFormula !== 'simple')
 
   const latestRow   = shopTotals(rows)
   const totals      = latestRow ?? {}
@@ -1255,7 +1261,8 @@ export default function DailyLogTable({
               'google_reviews', 'total_washes',
               'member_washes',  'basic',
               'good',           'better',
-              'best',           'net_members',
+              'best',           ...(opportunitiesFormula !== 'simple' ? ['reactivations'] : []),
+              'net_members',
             ].map(field => {
               const def = COLUMN_DEFS.find(c => c.key === field)
               return (
