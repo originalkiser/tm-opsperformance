@@ -5,14 +5,32 @@
 -- its own cumulative running totals. split_index=0 is always the base row
 -- for that hour; additional splits count up from 1.
 --
--- IMPORTANT: this must be applied before/with the app code that starts
--- upserting on (location_id, log_date, time_slot, split_index) — until this
--- runs, saving ANY row on the daily log (not just split rows) will fail,
--- because the upsert's conflict target changes for every row.
+-- Split into two steps with different timing requirements — see each one.
 
+-- ── STEP 1 — safe to run right now, well ahead of deploying the new code ──
+-- Just adds a column with a default; the currently-live app code doesn't
+-- know about split_index and will simply ignore it. Existing rows all get
+-- split_index=0, which is exactly what they already are conceptually.
 alter table daily_logs
   add column if not exists split_index integer not null default 0;
 
+-- ── STEP 2 — do NOT run until you're ready to push the new code live ──
+-- This swaps the unique constraint the currently-live app's upsert relies on
+-- (location_id, log_date, time_slot) for one that includes split_index. The
+-- OLD constraint and the split-hour feature are mutually exclusive — the old
+-- one caps each hour at exactly one row, which is the whole thing splitting
+-- needs to violate — so they can't both be active, and the swap can't happen
+-- gradually. The moment this runs, the OLD code's upsert (which still asks
+-- for onConflict on the 3-column constraint) starts failing for every save,
+-- old code or new, until the new code is live and asking for the 4-column
+-- one instead.
+--
+-- Run this immediately before or right as you push, to keep that window as
+-- short as possible — pushing first (so GitHub Actions' build/deploy is
+-- already running in the background) and running this right after tends to
+-- minimize the gap versus running this first and then pushing, since either
+-- way the gap is bounded by how long the deploy takes to go live, not by
+-- which order you do the two steps in.
 do $$
 begin
   if exists (

@@ -1479,10 +1479,10 @@ export default function DailyLogTable({
                 // colored left/right edge (on the first/last column) so the
                 // whole group reads as one bracketed block.
                 const grouped = g.count > 1
-                const topCls    = grouped && pos === g.first ? 'border-t-2 border-t-orange-400 dark:border-t-orange-500' : ''
-                const bottomCls = grouped && isLast            ? 'border-b-2 border-b-orange-400 dark:border-b-orange-500' : ''
-                const leftCls   = grouped ? 'border-l-2 border-l-orange-400 dark:border-l-orange-500' : ''
-                const rightCls  = grouped ? 'border-r-2 border-r-orange-400 dark:border-r-orange-500' : ''
+                const topCls    = grouped && pos === g.first ? "border-t-2 border-t-sky-400 dark:border-t-sky-500 [border-top-style:dashed]" : ''
+                const bottomCls = grouped && isLast            ? "border-b-2 border-b-sky-400 dark:border-b-sky-500 [border-bottom-style:dashed]" : ''
+                const leftCls   = grouped ? "border-l-2 border-l-sky-400 dark:border-l-sky-500 [border-left-style:dashed]" : ''
+                const rightCls  = grouped ? "border-r-2 border-r-sky-400 dark:border-r-sky-500 [border-right-style:dashed]" : ''
 
                 return (
                   <tr key={`${row.time_slot}-${row.split_index ?? 0}`} className={`${rowBg(g.parity)} ${dim}`}>
