@@ -5,6 +5,12 @@ export const FIELDS = [
   'basic', 'good', 'better', 'best', 'net_members',
 ]
 
+// Chronological order for daily_log rows: by time_slot, then by split_index
+// (a "split hour" holds more than one row for the same time_slot — e.g. one
+// employee 8:00-8:15, another 8:15-9:00 — split_index 0 first).
+const chronoCompare = (a, b) =>
+  a.time_slot.localeCompare(b.time_slot) || (toInt(a.split_index) - toInt(b.split_index))
+
 /**
  * Returns the latest time-slot row that has any data entered for a shop day.
  * Cumulative values grow through the day, so the latest filled-in time slot
@@ -17,7 +23,7 @@ export function shopTotals(rows) {
   // earlier rows that contain real wash counts.
   const withData = rows.filter(r => toInt(r.total_washes) > 0 && toInt(r.member_washes) > 0)
   if (!withData.length) return null
-  return withData.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
+  return withData.sort((a, b) => chronoCompare(b, a))[0]
 }
 
 /**
@@ -29,7 +35,7 @@ export function shopTotals(rows) {
  * all accumulate into a single entry keyed by the first-seen capitalization.
  */
 export function employeeDeltasByDay(allDayRows) {
-  const sorted = [...allDayRows].sort((a, b) => a.time_slot.localeCompare(b.time_slot))
+  const sorted = [...allDayRows].sort(chronoCompare)
   const result    = {}   // lowercase key → accumulated deltas
   const canonical = {}   // lowercase key → first-seen display name
 
@@ -63,7 +69,7 @@ export function employeeDeltasByDay(allDayRows) {
  * so this is the only correct way to get an hourly figure.
  */
 export function hourlyDeltasByDay(allDayRows) {
-  const sorted = [...allDayRows].sort((a, b) => a.time_slot.localeCompare(b.time_slot))
+  const sorted = [...allDayRows].sort(chronoCompare)
   return sorted.map((row, idx) => {
     const prev = sorted[idx - 1]
     const delta = (f) => Math.max(0, toInt(row[f]) - (prev ? toInt(prev[f]) : 0))

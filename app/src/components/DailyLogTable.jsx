@@ -51,9 +51,10 @@ const ALL_KEYS = COLUMN_DEFS.map(c => c.key)
 
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
-const emptyRow = (timeSlot) =>
+const emptyRow = (timeSlot, splitIndex = 0) =>
   ALL_KEYS.reduce((acc, f) => ({ ...acc, [f]: '' }), {
     time_slot: timeSlot,
+    split_index: splitIndex,
     employee_name: '',
   })
 
@@ -301,6 +302,9 @@ export default function DailyLogTable({
   })
   const [reorderMode, setReorderMode] = useState(false)
   const [draggedIdx, setDraggedIdx]   = useState(null)
+  // Storage indices of split rows explicitly removed via "×" this session —
+  // keeps a cleared-but-unsaved split row from lingering in the display list.
+  const [removedSplitIndices, setRemovedSplitIndices] = useState(() => new Set())
   const [showEditModal, setShowEditModal] = useState(false)
   const [showPasteModal, setShowPasteModal] = useState(false)
   const [copyFeedback, setCopyFeedback]     = useState(false)
@@ -366,6 +370,7 @@ export default function DailyLogTable({
     fetchData()
     fetchEmployees()
     historyRef.current = []
+    setRemovedSplitIndices(new Set())
   }, [locationId, selectedDate])
 
   // Downtime: fetch active downtime + reasons when location changes
@@ -405,6 +410,18 @@ export default function DailyLogTable({
     setEmps(data || [])
   }
 
+  const hydrateRow = (existing, timeSlot, splitIndex) => {
+    if (!existing) return emptyRow(timeSlot, splitIndex)
+    const hasData = existing.employee_name || ALL_KEYS.some(f => (existing[f] ?? 0) > 0)
+    if (!hasData) return emptyRow(timeSlot, splitIndex)
+    return {
+      ...existing,
+      ...ALL_KEYS.reduce((acc, f) => ({ ...acc, [f]: existing[f] ?? '' }), {}),
+      split_index: splitIndex,
+      employee_name: existing.employee_name ?? '',
+    }
+  }
+
   const fetchData = async () => {
     const { data } = await supabase
       .from('daily_logs')
@@ -412,20 +429,21 @@ export default function DailyLogTable({
       .eq('location_id', locationId)
       .eq('log_date', selectedDate)
 
-    setRows(
-      TIME_SLOTS.map(slot => {
-        const existing = data?.find(d => d.time_slot === slot.value)
-        if (!existing) return emptyRow(slot.value)
-        const hasData = existing.employee_name ||
-          ALL_KEYS.some(f => (existing[f] ?? 0) > 0)
-        if (!hasData) return emptyRow(slot.value)
-        return {
-          ...existing,
-          ...ALL_KEYS.reduce((acc, f) => ({ ...acc, [f]: existing[f] ?? '' }), {}),
-          employee_name: existing.employee_name ?? '',
-        }
-      })
-    )
+    // Base row (split_index 0) for every hour, in fixed TIME_SLOTS order —
+    // storage indices 0-12 always hold these, everything else relies on it.
+    const baseRows = TIME_SLOTS.map(slot => {
+      const existing = data?.find(d => d.time_slot === slot.value && (d.split_index ?? 0) === 0)
+      return hydrateRow(existing, slot.value, 0)
+    })
+
+    // Any "split hour" rows (split_index > 0) get appended after the base 13,
+    // in whatever order — display order is derived separately from these.
+    const splitRows = (data || [])
+      .filter(d => (d.split_index ?? 0) > 0)
+      .sort((a, b) => a.time_slot.localeCompare(b.time_slot) || a.split_index - b.split_index)
+      .map(d => hydrateRow(d, d.time_slot, d.split_index))
+
+    setRows([...baseRows, ...splitRows])
   }
 
   // ── Downtime helpers ─────────────────────────────────────────────────────────
@@ -639,6 +657,7 @@ export default function DailyLogTable({
         location_id:      locationIdRef.current,
         log_date:         dateRef.current,
         time_slot:        row.time_slot,
+        split_index:      row.split_index ?? 0,
         employee_name:    row.employee_name || null,
         google_reviews:   toInt(row.google_reviews),
         total_washes:     toInt(row.total_washes),
@@ -652,7 +671,7 @@ export default function DailyLogTable({
         memberships_sold,
         opportunities,
       },
-      { onConflict: 'location_id,log_date,time_slot' }
+      { onConflict: 'location_id,log_date,time_slot,split_index' }
     ).select('id').single()
 
     if (error) {
@@ -682,6 +701,7 @@ export default function DailyLogTable({
         location_id:      locationIdRef.current,
         log_date:         dateRef.current,
         time_slot:        row.time_slot,
+        split_index:      row.split_index ?? 0,
         employee_name:    row.employee_name || null,
         google_reviews:   toInt(row.google_reviews),
         total_washes:     toInt(row.total_washes),
@@ -695,7 +715,7 @@ export default function DailyLogTable({
         memberships_sold,
         opportunities,
       },
-      { onConflict: 'location_id,log_date,time_slot' }
+      { onConflict: 'location_id,log_date,time_slot,split_index' }
     )
   }, [])
 
@@ -726,10 +746,27 @@ export default function DailyLogTable({
       .map((_, i) => i)
       .filter(i => JSON.stringify(snapshot[i]) !== JSON.stringify(current[i]))
 
+    // Undoing an "add split" shrinks the array — any dropped row that had
+    // already been saved needs its DB row deleted too, or it'll silently
+    // reappear next time the table refetches.
+    const droppedRows = current.slice(snapshot.length)
+
     rowsRef.current = snapshot
     setRows(snapshot)
 
     if (changedIndices.length) scheduleBatch(changedIndices)
+    droppedRows.forEach(r => { if (r.id) supabase.from('daily_logs').delete().eq('id', r.id) })
+
+    // Undoing a "remove split" (×) restores the row's data here, but it was
+    // also hidden from display via removedSplitIndices — un-hide it now that
+    // it has data again, or it'd be saved but invisible until next refetch.
+    setRemovedSplitIndices(prev => {
+      const revived = changedIndices.filter(i => rowHasData(snapshot[i]))
+      if (!revived.length) return prev
+      const next = new Set(prev)
+      revived.forEach(i => next.delete(i))
+      return next
+    })
   }, [scheduleBatch])
 
   useEffect(() => {
@@ -755,6 +792,40 @@ export default function DailyLogTable({
     next[index] = { ...next[index], [field]: value }
     rowsRef.current = next
     setRows(next)
+    scheduleBatch([index])
+  }
+
+  // ── Split hour ───────────────────────────────────────────────────────────────
+  // Lets one hour hold more than one row (e.g. an 8:00-8:15 / 8:15-9:00 shift
+  // change), each with its own cumulative totals — employeeDeltasByDay diffs
+  // consecutive rows chronologically, so splitting an hour just gives it two
+  // data points to diff instead of one. New rows are always appended to the
+  // END of the storage array so no other row's index ever shifts.
+
+  const addSplit = (timeSlotValue) => {
+    historyRef.current = [
+      ...historyRef.current.slice(-(MAX_HISTORY - 1)),
+      rowsRef.current.map(r => ({ ...r })),
+    ]
+    const forSlot       = rowsRef.current.filter(r => r.time_slot === timeSlotValue)
+    const nextSplitIndex = Math.max(0, ...forSlot.map(r => r.split_index ?? 0)) + 1
+    const next = [...rowsRef.current, emptyRow(timeSlotValue, nextSplitIndex)]
+    rowsRef.current = next
+    setRows(next)
+  }
+
+  const removeSplit = (index) => {
+    historyRef.current = [
+      ...historyRef.current.slice(-(MAX_HISTORY - 1)),
+      rowsRef.current.map(r => ({ ...r })),
+    ]
+    const next = [...rowsRef.current]
+    // Keep the id so a previously-saved split gets deleted (doSave/flushSave
+    // already delete any row that no longer rowHasData()).
+    next[index] = { ...emptyRow(next[index].time_slot, next[index].split_index), id: next[index].id }
+    rowsRef.current = next
+    setRows(next)
+    setRemovedSplitIndices(prev => new Set(prev).add(index))
     scheduleBatch([index])
   }
 
@@ -817,7 +888,7 @@ export default function DailyLogTable({
 
     const cw     = (col) => KEY_W[col.key] || 54
     const totalW = imgCols.reduce((s, c) => s + cw(c), 0)
-    const totalH = BANNER_H + HEADER_H + TIME_SLOTS.length * ROW_H + ROW_H
+    const totalH = BANNER_H + HEADER_H + displayRows.length * ROW_H + ROW_H
 
     const canvas = document.createElement('canvas')
     canvas.width  = totalW * SCALE
@@ -884,13 +955,14 @@ export default function DailyLogTable({
     })
 
     // ── Data rows ──
-    rows.forEach((row, i) => {
+    displayRows.forEach(({ row }, i) => {
       const y    = BANNER_H + HEADER_H + i * ROW_H
       const alt  = i % 2 === 0
       const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
+      const slotLabel = TIME_SLOTS.find(s => s.value === row.time_slot)?.label || ''
       const vals = {
         employee_name: row.employee_name || '',
-        _time:  TIME_SLOTS[i]?.label || '',
+        _time:  (row.split_index ?? 0) > 0 ? `↳ ${slotLabel}` : slotLabel,
         ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: toInt(row[c.key]) > 0 ? String(row[c.key]) : '' }), {}),
         _ms:   memberships_sold > 0 ? String(memberships_sold) : '',
         _opp:  opportunities    > 0 ? String(opportunities)    : '',
@@ -924,7 +996,7 @@ export default function DailyLogTable({
     })
 
     // ── Totals row ──
-    const totY  = BANNER_H + HEADER_H + TIME_SLOTS.length * ROW_H
+    const totY  = BANNER_H + HEADER_H + displayRows.length * ROW_H
     const totVs = {
       employee_name: 'Totals', _time: '',
       ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: fmtNum(totals[c.key]) }), {}),
@@ -970,7 +1042,7 @@ export default function DailyLogTable({
     const hLines = [
       BANNER_H,
       BANNER_H + HEADER_H,
-      ...Array.from({ length: TIME_SLOTS.length }, (_, i) => BANNER_H + HEADER_H + (i + 1) * ROW_H),
+      ...Array.from({ length: displayRows.length }, (_, i) => BANNER_H + HEADER_H + (i + 1) * ROW_H),
       totalH,
     ]
     hLines.forEach(gy => {
@@ -987,11 +1059,11 @@ export default function DailyLogTable({
       } catch {
         // Fallback: TSV text
         const headerRow = ['Name', 'Time', ...orderedCols.map(c => c.label.replace('\n', ' ')), 'Memberships Sold', 'Opportunities', 'P-Mix', 'Conversion']
-        const dataRows = TIME_SLOTS.map((slot, i) => {
-          const row = rows[i]
+        const dataRows = displayRows.map(({ row }) => {
           const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
+          const slotLabel = TIME_SLOTS.find(s => s.value === row.time_slot)?.label || ''
           return [
-            row.employee_name || '', slot.label,
+            row.employee_name || '', (row.split_index ?? 0) > 0 ? `↳ ${slotLabel}` : slotLabel,
             ...orderedCols.map(col => toInt(row[col.key]) > 0 ? row[col.key] : ''),
             memberships_sold > 0 ? memberships_sold : '',
             opportunities    > 0 ? opportunities    : '',
@@ -1090,6 +1162,25 @@ export default function DailyLogTable({
   const rowBg = (i) => i % 2 === 0
     ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt'
     : 'bg-white dark:bg-tm-dark-surface'
+
+  // Table View's actual on-screen row order: base rows in TIME_SLOTS order,
+  // with any split-hour rows sorted in right after the hour they belong to.
+  // storageIndex is what update()/saveImmediately()/etc. still key off of —
+  // only rendering and keyboard nav use the row's position in this list.
+  const displayRows = rows
+    .map((row, storageIndex) => ({ row, storageIndex }))
+    .filter(({ storageIndex }) => !removedSplitIndices.has(storageIndex))
+    .sort((a, b) =>
+      a.row.time_slot.localeCompare(b.row.time_slot) ||
+      (a.row.split_index ?? 0) - (b.row.split_index ?? 0)
+    )
+
+  // Last row currently shown for each hour — that's where the "+" to add
+  // another split lives.
+  const lastIndexForSlot = {}
+  displayRows.forEach(({ storageIndex }, pos) => {
+    lastIndexForSlot[rows[storageIndex].time_slot] = pos
+  })
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -1366,13 +1457,15 @@ export default function DailyLogTable({
               </tr>
             </thead>
             <tbody>
-              {TIME_SLOTS.map((slot, i) => {
-                const row = rows[i]
+              {displayRows.map(({ row, storageIndex: i }, pos) => {
+                const slot = TIME_SLOTS.find(s => s.value === row.time_slot)
                 const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
-                const dim = dirtySet.current.has(i) ? 'opacity-90' : ''
+                const dim     = dirtySet.current.has(i) ? 'opacity-90' : ''
+                const isSplit = (row.split_index ?? 0) > 0
+                const isLast  = lastIndexForSlot[row.time_slot] === pos
 
                 return (
-                  <tr key={slot.value} className={`${rowBg(i)} ${dim}`}>
+                  <tr key={`${row.time_slot}-${row.split_index ?? 0}`} className={`${rowBg(pos)} ${dim}`}>
                     <td className="border border-gray-200 dark:border-tm-dark-border px-1 w-24">
                       {canEdit ? (
                         <EmployeeSelect
@@ -1386,14 +1479,38 @@ export default function DailyLogTable({
                       )}
                     </td>
                     <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-medium text-gray-700 dark:text-tm-dark-muted w-20">
-                      {slot.label}
+                      <div className="flex items-center justify-center gap-1">
+                        <span className={isSplit ? 'text-[10px] italic' : ''}>
+                          {isSplit ? `↳ ${slot?.label}` : slot?.label}
+                        </span>
+                        {canEdit && isLast && (
+                          <button
+                            type="button"
+                            onClick={() => addSplit(row.time_slot)}
+                            title="Split this hour between another employee"
+                            className="text-tm-teal hover:text-tm-blue dark:hover:text-white leading-none text-sm font-bold px-0.5"
+                          >
+                            +
+                          </button>
+                        )}
+                        {canEdit && isSplit && (
+                          <button
+                            type="button"
+                            onClick={() => removeSplit(i)}
+                            title="Remove this split"
+                            className="text-red-400 hover:text-red-600 leading-none text-sm font-bold px-0.5"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
                     </td>
                     {orderedCols.map((col, colIdx) => (
                       <td key={col.key} className="border border-gray-200 dark:border-tm-dark-border px-1">
                         <input
                           type="number"
                           min="0"
-                          data-row={i}
+                          data-row={pos}
                           data-col={colIdx}
                           className="w-full text-center py-1.5 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded disabled:cursor-default text-gray-800 dark:text-tm-dark-text transition-colors"
                           value={row[col.key]}
@@ -1401,7 +1518,7 @@ export default function DailyLogTable({
                           onFocus={handleEditDuringDowntime}
                           onChange={e => update(i, col.key, e.target.value)}
                           onBlur={() => saveImmediately(i)}
-                          onKeyDown={e => handleCellKeyDown(e, i, colIdx)}
+                          onKeyDown={e => handleCellKeyDown(e, pos, colIdx)}
                         />
                       </td>
                     ))}

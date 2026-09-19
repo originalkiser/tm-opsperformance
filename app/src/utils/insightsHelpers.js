@@ -20,7 +20,10 @@ export function agg(rows) {
   }
 }
 
-// One row per (location, date) — latest time_slot with any data.
+// One row per (location, date) — latest time_slot with any data. A "split
+// hour" (see logMath.js) can hold more than one row per time_slot, so ties
+// break on split_index — the last split of the latest hour holds the day's
+// true final cumulative totals.
 export function toDayTotals(rows) {
   const map = {}
   rows.forEach(r => {
@@ -35,7 +38,9 @@ export function toDayTotals(rows) {
       toInt(r.google_reviews) > 0
     )
     const src = withData.length ? withData : dayRows
-    return src.sort((a, b) => b.time_slot.localeCompare(a.time_slot))[0]
+    return src.sort((a, b) =>
+      b.time_slot.localeCompare(a.time_slot) || (toInt(b.split_index) - toInt(a.split_index))
+    )[0]
   })
 }
 

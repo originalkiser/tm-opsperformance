@@ -69,7 +69,7 @@ function shopStats(rows, formula) {
 
 function HourlyTable({ rows, thresholds, formula }) {
   const qualifying = [...rows]
-    .sort((a, b) => (a.time_slot > b.time_slot ? 1 : -1))
+    .sort((a, b) => a.time_slot.localeCompare(b.time_slot) || (a.split_index ?? 0) - (b.split_index ?? 0))
     .filter(r => r.employee_name || [
       'google_reviews','total_washes','member_washes','basic','good','better','best','net_members',
     ].some(f => toInt(r[f]) > 0))
