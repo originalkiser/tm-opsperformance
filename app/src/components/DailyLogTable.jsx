@@ -960,9 +960,10 @@ export default function DailyLogTable({
       const alt  = i % 2 === 0
       const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
       const slotLabel = TIME_SLOTS.find(s => s.value === row.time_slot)?.label || ''
+      const ordinal   = i - groupInfo[row.time_slot].first + 1
       const vals = {
         employee_name: row.employee_name || '',
-        _time:  (row.split_index ?? 0) > 0 ? `↳ ${slotLabel}` : slotLabel,
+        _time:  ordinal > 1 ? `${slotLabel} (${ordinal})` : slotLabel,
         ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: toInt(row[c.key]) > 0 ? String(row[c.key]) : '' }), {}),
         _ms:   memberships_sold > 0 ? String(memberships_sold) : '',
         _opp:  opportunities    > 0 ? String(opportunities)    : '',
@@ -1059,11 +1060,12 @@ export default function DailyLogTable({
       } catch {
         // Fallback: TSV text
         const headerRow = ['Name', 'Time', ...orderedCols.map(c => c.label.replace('\n', ' ')), 'Memberships Sold', 'Opportunities', 'P-Mix', 'Conversion']
-        const dataRows = displayRows.map(({ row }) => {
+        const dataRows = displayRows.map(({ row }, i) => {
           const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
           const slotLabel = TIME_SLOTS.find(s => s.value === row.time_slot)?.label || ''
+          const ordinal   = i - groupInfo[row.time_slot].first + 1
           return [
-            row.employee_name || '', (row.split_index ?? 0) > 0 ? `↳ ${slotLabel}` : slotLabel,
+            row.employee_name || '', ordinal > 1 ? `${slotLabel} (${ordinal})` : slotLabel,
             ...orderedCols.map(col => toInt(row[col.key]) > 0 ? row[col.key] : ''),
             memberships_sold > 0 ? memberships_sold : '',
             opportunities    > 0 ? opportunities    : '',
@@ -1175,11 +1177,18 @@ export default function DailyLogTable({
       (a.row.split_index ?? 0) - (b.row.split_index ?? 0)
     )
 
-  // Last row currently shown for each hour — that's where the "+" to add
-  // another split lives.
-  const lastIndexForSlot = {}
-  displayRows.forEach(({ storageIndex }, pos) => {
-    lastIndexForSlot[rows[storageIndex].time_slot] = pos
+  // Per-hour group bounds/size, and each row's 1-based position within its
+  // hour's group (1 = the base row, 2 = the first split, ...) — drives the
+  // "+" placement (last row of the group), the group outline, and the
+  // "(2)"/"(3)" suffix on split rows.
+  const groupInfo = {}
+  let groupParity = -1
+  let lastGroupSlot = null
+  displayRows.forEach(({ row }, pos) => {
+    if (row.time_slot !== lastGroupSlot) { groupParity++; lastGroupSlot = row.time_slot }
+    const g = (groupInfo[row.time_slot] ??= { first: pos, last: pos, count: 0, parity: groupParity })
+    g.last = pos
+    g.count++
   })
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -1462,11 +1471,22 @@ export default function DailyLogTable({
                 const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
                 const dim     = dirtySet.current.has(i) ? 'opacity-90' : ''
                 const isSplit = (row.split_index ?? 0) > 0
-                const isLast  = lastIndexForSlot[row.time_slot] === pos
+                const g       = groupInfo[row.time_slot]
+                const isLast  = g.last === pos
+                const ordinal = pos - g.first + 1
+
+                // A split hour's rows get a colored top/bottom outline plus a
+                // colored left/right edge (on the first/last column) so the
+                // whole group reads as one bracketed block.
+                const grouped = g.count > 1
+                const topCls    = grouped && pos === g.first ? 'border-t-2 border-t-orange-400 dark:border-t-orange-500' : ''
+                const bottomCls = grouped && isLast            ? 'border-b-2 border-b-orange-400 dark:border-b-orange-500' : ''
+                const leftCls   = grouped ? 'border-l-2 border-l-orange-400 dark:border-l-orange-500' : ''
+                const rightCls  = grouped ? 'border-r-2 border-r-orange-400 dark:border-r-orange-500' : ''
 
                 return (
-                  <tr key={`${row.time_slot}-${row.split_index ?? 0}`} className={`${rowBg(pos)} ${dim}`}>
-                    <td className="border border-gray-200 dark:border-tm-dark-border px-1 w-24">
+                  <tr key={`${row.time_slot}-${row.split_index ?? 0}`} className={`${rowBg(g.parity)} ${dim}`}>
+                    <td className={`border border-gray-200 dark:border-tm-dark-border px-1 w-24 ${topCls} ${bottomCls} ${leftCls}`}>
                       {canEdit ? (
                         <EmployeeSelect
                           value={row.employee_name}
@@ -1478,35 +1498,43 @@ export default function DailyLogTable({
                         <span className="px-1 text-gray-700 dark:text-tm-dark-text">{row.employee_name}</span>
                       )}
                     </td>
-                    <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-medium text-gray-700 dark:text-tm-dark-muted w-20">
-                      <div className="flex items-center justify-center gap-1">
-                        <span className={isSplit ? 'text-[10px] italic' : ''}>
-                          {isSplit ? `↳ ${slot?.label}` : slot?.label}
+                    <td className={`border border-gray-200 dark:border-tm-dark-border px-1.5 py-1.5 text-center font-medium text-gray-700 dark:text-tm-dark-muted w-28 whitespace-nowrap ${topCls} ${bottomCls}`}>
+                      <div className="flex items-center justify-center gap-1 whitespace-nowrap">
+                        <span className="whitespace-nowrap">
+                          {slot?.label}{ordinal > 1 ? ` (${ordinal})` : ''}
                         </span>
                         {canEdit && isLast && (
-                          <button
-                            type="button"
-                            onClick={() => addSplit(row.time_slot)}
-                            title="Split this hour between another employee"
-                            className="text-tm-teal hover:text-tm-blue dark:hover:text-white leading-none text-sm font-bold px-0.5"
-                          >
-                            +
-                          </button>
+                          <div className="relative group shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => addSplit(row.time_slot)}
+                              className="text-tm-teal hover:text-tm-blue dark:hover:text-white leading-none text-sm font-bold px-0.5"
+                            >
+                              +
+                            </button>
+                            <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-tm-navy dark:bg-black text-white text-[10px] font-brand px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow">
+                              Split this hour
+                            </span>
+                          </div>
                         )}
                         {canEdit && isSplit && (
-                          <button
-                            type="button"
-                            onClick={() => removeSplit(i)}
-                            title="Remove this split"
-                            className="text-red-400 hover:text-red-600 leading-none text-sm font-bold px-0.5"
-                          >
-                            ×
-                          </button>
+                          <div className="relative group shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => removeSplit(i)}
+                              className="text-red-400 hover:text-red-600 leading-none text-sm font-bold px-0.5"
+                            >
+                              ×
+                            </button>
+                            <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-tm-navy dark:bg-black text-white text-[10px] font-brand px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow">
+                              Remove this split
+                            </span>
+                          </div>
                         )}
                       </div>
                     </td>
                     {orderedCols.map((col, colIdx) => (
-                      <td key={col.key} className="border border-gray-200 dark:border-tm-dark-border px-1">
+                      <td key={col.key} className={`border border-gray-200 dark:border-tm-dark-border px-1 ${topCls} ${bottomCls}`}>
                         <input
                           type="number"
                           min="0"
@@ -1522,16 +1550,16 @@ export default function DailyLogTable({
                         />
                       </td>
                     ))}
-                    <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-sky/30 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-semibold font-brand">
+                    <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-sky/30 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-semibold font-brand ${topCls} ${bottomCls}`}>
                       {memberships_sold > 0 ? memberships_sold : ''}
                     </td>
-                    <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-sky/30 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-semibold font-brand">
+                    <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-sky/30 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-semibold font-brand ${topCls} ${bottomCls}`}>
                       {opportunities > 0 ? opportunities : ''}
                     </td>
-                    <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${pmixCls(p_mix, metricThresholds)}`}>
+                    <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${pmixCls(p_mix, metricThresholds)} ${topCls} ${bottomCls}`}>
                       {p_mix}
                     </td>
-                    <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${convCls(conversion, metricThresholds)}`}>
+                    <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${convCls(conversion, metricThresholds)} ${topCls} ${bottomCls} ${rightCls}`}>
                       {conversion}
                     </td>
                   </tr>
