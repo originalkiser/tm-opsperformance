@@ -46,7 +46,6 @@ app/                        # Vite app root
       useVersionCheck.js    # Polls for new deployments
     lib/
       supabase.js           # Anon client (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
-      supabaseAdmin.js      # Service-role client (VITE_SUPABASE_SERVICE_KEY) — admin only
     utils/
       logMath.js            # Core metric calculations (shopTotals, employeeDeltasByDay)
 .github/workflows/deploy.yml  # Build → GitHub Pages on push to main
@@ -138,9 +137,10 @@ These are restored on page load so users land where they left off.
 |----------|---------|---------|
 | `VITE_SUPABASE_URL` | All clients | Project URL |
 | `VITE_SUPABASE_ANON_KEY` | `supabase.js` | Row-level security enforced anon key |
-| `VITE_SUPABASE_SERVICE_KEY` | `supabaseAdmin.js` | Service role key — bypasses RLS, used only for admin user creation/password reset |
 
-Set in `.env` locally and as GitHub repository secrets for CI builds. The service key is never required for normal app use — missing it only disables the "Add User" and "Reset Password" features.
+Set in `.env` locally and as GitHub repository secrets (and Cloudflare Pages env vars) for builds.
+
+**Never put the service-role key in a `VITE_*` variable.** Vite inlines every `VITE_*` value into the public JavaScript bundle, and the service-role key bypasses all row-level security. Anything that needs it runs in an edge function instead, where Supabase injects it server-side: user create / reset password / change email / permanent delete go through the `admin-users` function (`app/supabase/functions/admin-users/`), which checks the caller's role first; the Jotform hand-off goes through `submit-downtime-jotform`.
 
 ## Development
 

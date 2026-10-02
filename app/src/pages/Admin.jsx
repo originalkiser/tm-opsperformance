@@ -1,15 +1,22 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { supabaseAdmin } from '../lib/supabaseAdmin'
 import { useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
 import TmLoader from '../components/TmLoader'
 import { DEFAULT_THRESHOLDS } from '../utils/metricColors'
 import { DEFAULT_STANDARD_HOURS, DEFAULT_WINTER_HOURS, TIMEZONE_OPTIONS } from '../utils/operatingHours'
 
-function generatePassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
-  return Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+// Account actions (create / reset password / change email / permanent delete) need
+// Supabase's admin API, so they run in the admin-users edge function, which checks the
+// caller's role. The service-role key never reaches the browser.
+async function adminUsers(body) {
+  const { data, error } = await supabase.functions.invoke('admin-users', { body })
+  if (!error && data?.ok !== false) return { data }
+  let message = data?.error
+  if (!message && error?.context?.json) {
+    try { message = (await error.context.json())?.error } catch { /* body wasn't JSON */ }
+  }
+  return { error: message || error?.message || 'Request failed' }
 }
 
 function daysLeft(deletedAt) {
@@ -119,26 +126,24 @@ export default function Admin() {
   }
 
   const permanentDeleteUser = async (userId) => {
-    if (!supabaseAdmin) return
-    await supabaseAdmin.auth.admin.deleteUser(userId)
+    const { error } = await adminUsers({ action: 'delete', user_id: userId })
+    if (error) { window.alert(`Couldn't delete this user: ${error}`); return }
     setDeletedUsers(prev => prev.filter(u => u.id !== userId))
     setConfirmDelete(null)
   }
 
   const changeUserEmail = async (userId) => {
-    if (!supabaseAdmin) return
     const newEmail = (editingEmail[userId] || '').trim()
     if (!newEmail) return
     setEmailStatus(p => ({ ...p, [userId]: 'saving' }))
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { email: newEmail })
+    const { error } = await adminUsers({ action: 'change_email', user_id: userId, new_email: newEmail })
     if (!error) {
-      await supabase.from('user_profiles').update({ email: newEmail }).eq('id', userId)
       fetchUsers()
       setEditingEmail(p => { const n = { ...p }; delete n[userId]; return n })
       setEmailStatus(p => ({ ...p, [userId]: 'done' }))
       setTimeout(() => setEmailStatus(p => { const n = { ...p }; delete n[userId]; return n }), 2000)
     } else {
-      setEmailStatus(p => ({ ...p, [userId]: error.message }))
+      setEmailStatus(p => ({ ...p, [userId]: error }))
     }
   }
 
@@ -207,19 +212,12 @@ export default function Admin() {
 
   const addUser = async (e) => {
     e.preventDefault()
-    if (!supabaseAdmin) { setAddError('Service key not configured.'); return }
     setAddError('')
     setAddStatus('saving')
-    const tempPw = generatePassword()
-    const { error } = await supabaseAdmin.auth.admin.createUser({
-      email: addEmail.trim(),
-      password: tempPw,
-      email_confirm: true,
-      user_metadata: { name: addName.trim() },
-    })
-    if (error) { setAddError(error.message); setAddStatus('error'); return }
+    const { data, error } = await adminUsers({ action: 'create', email: addEmail.trim(), name: addName.trim() })
+    if (error) { setAddError(error); setAddStatus('error'); return }
     setTimeout(() => fetchUsers(), 1200)
-    setAddStatus({ tempPw })
+    setAddStatus({ tempPw: data.temp_password })
     setAddEmail('')
     setAddName('')
   }
@@ -227,12 +225,10 @@ export default function Admin() {
   const resetAddForm = () => { setAddStatus(null); setAddError('') }
 
   const resetPassword = async (userId, userEmail) => {
-    if (!supabaseAdmin) return
-    const tempPw = generatePassword()
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { password: tempPw })
+    const { data, error } = await adminUsers({ action: 'reset_password', user_id: userId })
     setResetResults(prev => ({
       ...prev,
-      [userId]: error ? { error: error.message } : { tempPw, email: userEmail },
+      [userId]: error ? { error } : { tempPw: data.temp_password, email: userEmail },
     }))
   }
 
@@ -536,9 +532,6 @@ export default function Admin() {
                           </tbody>
                         </table>
                       )}
-                      {!supabaseAdmin && (
-                        <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">Service key required for permanent deletion.</p>
-                      )}
                     </div>
                   )}
                 </div>
@@ -585,12 +578,6 @@ export default function Admin() {
                     {addStatus === 'saving' ? 'Creating…' : 'Create User'}
                   </button>
                 </form>
-              )}
-
-              {!supabaseAdmin && (
-                <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-900/40 rounded text-xs text-yellow-700 dark:text-yellow-300">
-                  <strong>Setup needed:</strong> Add <code>VITE_SUPABASE_SERVICE_KEY</code> to <code>.env</code> and GitHub Secrets, then redeploy.
-                </div>
               )}
             </div>
           )}
