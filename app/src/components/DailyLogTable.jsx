@@ -7,8 +7,6 @@ import DowntimeModal from './DowntimeModal'
 import { shopTotals } from '../utils/logMath'
 import { fmtNum } from '../utils/format'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
-import { operatingDowntimeMinutes } from '../utils/operatingHours'
-import { getJotformSiteName } from '../utils/jotformSiteNames'
 
 function fmtElapsed(seconds) {
   const h = Math.floor(seconds / 3600)
@@ -276,8 +274,6 @@ export default function DailyLogTable({
   locationId,
   locationName,
   locationEmail,
-  locationTimezone,
-  locationHoursOverride,
   selectedDate,
   canEdit,
   opportunitiesFormula = 'detailed',
@@ -485,110 +481,22 @@ export default function DailyLogTable({
     setShowDowntimeModal(false)
   }
 
-  const submitToJotForm = async (resolvedLog) => {
-    const [{ data: cfg }, { data: hoursCfg }] = await Promise.all([
-      supabase.from('app_settings').select('value').eq('key', 'jotform').maybeSingle(),
-      supabase.from('app_settings').select('value').eq('key', 'operating_hours').maybeSingle(),
-    ])
-    if (!cfg?.value?.form_id || !cfg?.value?.api_key || !cfg?.value?.mappings) return
-    const { form_id, api_key, mappings } = cfg.value
-
-    const startedAt   = new Date(resolvedLog.started_at)
-    const endedAt     = new Date(resolvedLog.ended_at)
-    const durationHrs = (operatingDowntimeMinutes(
-      resolvedLog,
-      { timezone: locationTimezone, operating_hours_override: locationHoursOverride },
-      hoursCfg?.value
-    ) / 60).toFixed(2)
-    const multiDay    = startedAt.toDateString() !== endedAt.toDateString() ? 'Yes' : 'No'
-    const fmtDate     = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    const fmtTime     = d => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-
-    const values = {
-      location_name:            getJotformSiteName(locationName),
-      site_code:                '',
-      site_email:               resolvedLog.site_email || locationEmail || '',
-      start_date:               fmtDate(startedAt),
-      start_time:               fmtTime(startedAt),
-      end_date:                 fmtDate(endedAt),
-      end_time:                 fmtTime(endedAt),
-      duration_hours:           durationHrs,
-      downtime_type:            resolvedLog.downtime_type            || '',
-      reason:                   resolvedLog.reason                   || '',
-      details:                  resolvedLog.details                  || '',
-      resolution_notes:         resolvedLog.resolution_notes         || '',
-      corrective_action_needed: resolvedLog.corrective_action_needed ? 'Yes' : 'No',
-      corrective_action:        resolvedLog.corrective_action        || '',
-      multi_day:                multiDay,
-      scope:                    resolvedLog.scope                    || '',
-    }
-
-    // mappings = { rawQid: srcKey } where rawQid may have # prefix and comma-separated sub-fields.
-    // JotForm's submission API keys fields by their BARE numeric question ID (submission[13]=value) —
-    // "input_13" is only the rendered form's HTML id attribute, not a valid API field name, so it
-    // must be stripped or JotForm silently drops the field (accepts the POST, leaves the row blank).
-    const stripId = q => q.replace(/^input_/, '')
-    const body = new FormData()
-    Object.entries(mappings).forEach(([rawQid, srcKey]) => {
-      if (!srcKey || values[srcKey] === undefined) return
-      const val  = String(values[srcKey])
-      // Strip # and split on commas to get individual input names
-      const qids = rawQid.split(',').map(q => q.trim().replace(/^#/, '')).filter(Boolean)
-      if (!qids.length) return
-
-      if (qids.length === 1) {
-        body.append(`submission[${stripId(qids[0])}]`, val)
-        return
-      }
-
-      const hasMonth = qids.some(q => /^month_/.test(q))
-      const hasTime  = qids.some(q => /_timeInput/.test(q))
-      const isRadio  = qids.every(q => /_\d+$/.test(q))
-
-      if (hasMonth) {
-        // Date sub-fields: month_19, day_19, year_19 → submission[19][month/day/year]
-        const num = (qids.find(q => /^month_/.test(q)) || '').replace('month_', '')
-        if (!num) return
-        const d = new Date(val)
-        if (isNaN(d)) return
-        body.append(`submission[${num}][month]`, String(d.getMonth() + 1))
-        body.append(`submission[${num}][day]`,   String(d.getDate()))
-        body.append(`submission[${num}][year]`,  String(d.getFullYear()))
-        return
-      }
-
-      if (hasTime) {
-        // Time sub-fields: input_22_timeInput, input_22_ampm → submission[22][timeInput/ampm]
-        const tq   = qids.find(q => /_timeInput/.test(q)) || ''
-        const base = stripId(tq.replace('_timeInput', ''))
-        const m    = val.match(/^(\d+:\d+)\s*(AM|PM)$/i)
-        if (!m) return
-        body.append(`submission[${base}][timeInput]`, m[1])
-        body.append(`submission[${base}][ampm]`,      m[2].toUpperCase())
-        return
-      }
-
-      if (isRadio) {
-        // Radio/checkbox options: input_31_0, input_31_1 → send value to base submission[31]
-        const base = stripId(qids[0].replace(/_\d+$/, ''))
-        body.append(`submission[${base}]`, val)
-        return
-      }
-
-      // Fallback: send value to each sub-field individually
-      qids.forEach(q => body.append(`submission[${stripId(q)}]`, val))
+  // The Jotform post happens server-side (submit-downtime-jotform edge function) so it
+  // doesn't depend on this user's permissions or network. If it fails, the reason is
+  // recorded on the downtime and an admin can resend it from Reports → Downtime.
+  const sendToJotform = async (downtimeId) => {
+    const { data, error } = await supabase.functions.invoke('submit-downtime-jotform', {
+      body: { downtime_log_id: downtimeId },
     })
-
-    try {
-      const resp = await fetch(`https://api.jotform.com/form/${form_id}/submissions?apiKey=${api_key}`, { method: 'POST', body })
-      const json = await resp.json()
-      return json?.content?.submissionID || null
-    } catch {}
-    return null
+    if (error || data?.ok === false) {
+      setSaveError("Downtime ended, but it couldn't be sent to Jotform yet. An admin can resend it from Reports → Downtime.")
+      setTimeout(() => setSaveError(null), 10000)
+    }
   }
 
   const handleEndDowntime = async ({ ended_at, resolution_notes, corrective_action_needed, corrective_action }) => {
-    const { data: resolved } = await supabase.from('downtime_logs').update({
+    const downtimeId = activeDowntime.id
+    const { error: updateError } = await supabase.from('downtime_logs').update({
       ended_at,
       resolution_notes:         resolution_notes         || null,
       corrective_action_needed: corrective_action_needed ?? null,
@@ -596,17 +504,12 @@ export default function DailyLogTable({
       status:    'resolved',
       ended_by:  profile?.id,
       updated_at: new Date().toISOString(),
-    }).eq('id', activeDowntime.id).select().single()
+    }).eq('id', downtimeId)
     setActiveDowntime(null)
     setDowntimeWarningVisible(false)
     downtimeWarningSeenRef.current = false
     setShowDowntimeModal(false)
-    if (resolved) {
-      const submissionId = await submitToJotForm(resolved)
-      if (submissionId) {
-        await supabase.from('downtime_logs').update({ jotform_submission_id: submissionId }).eq('id', resolved.id)
-      }
-    }
+    if (!updateError) sendToJotform(downtimeId)
   }
 
   const handleCancelDowntime = async () => {

@@ -30,6 +30,7 @@ const ALL_COLS = [
   { key: 'ended',      label: 'End Time',            defaultHidden: false },
   { key: 'duration',   label: 'Duration (op. hrs)',  defaultHidden: false },
   { key: 'status',     label: 'Status',              defaultHidden: false },
+  { key: 'jotform',    label: 'Jotform',             defaultHidden: false },
   { key: 'resolution', label: 'Resolution',          defaultHidden: false },
   { key: 'ca_needed',  label: 'Corrective Action?',  defaultHidden: false },
   { key: 'ca',         label: 'Corrective Action',   defaultHidden: true  },
@@ -129,6 +130,35 @@ function StatusBadge({ status }) {
 }
 
 // ── Column Picker ─────────────────────────────────────────────────────────────
+
+// A resolved downtime is handed to Jotform server-side (submit-downtime-jotform).
+// This shows how that went and, for admins, lets them resend one that didn't go through.
+const SENDING_STALE_MS = 2 * 60 * 1000
+function JotformCell({ row, canResend, busy, onResend }) {
+  if (row.status !== 'resolved') return <span className="text-gray-300 dark:text-tm-dark-border">—</span>
+  if (row.jotform_submission_id) return <span className="text-green-600 dark:text-green-400 font-semibold">✓ Sent</span>
+
+  const inFlight = row.jotform_status === 'sending' &&
+    row.jotform_attempted_at && Date.now() - new Date(row.jotform_attempted_at).getTime() < SENDING_STALE_MS
+  const failed = row.jotform_status === 'failed'
+  const label  = busy || inFlight ? 'Sending…' : failed ? 'Failed' : 'Not sent'
+  const tone   = busy || inFlight ? 'text-gray-500' : failed ? 'text-red-500' : 'text-amber-500'
+
+  return (
+    <div className="flex items-center gap-2 whitespace-nowrap">
+      <span className={`font-semibold ${tone}`} title={row.jotform_error || undefined}>{label}</span>
+      {canResend && !busy && !inFlight && (
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); onResend() }}
+          className="px-1.5 py-0.5 rounded border border-tm-teal/50 text-tm-blue dark:text-tm-teal hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 text-[10px] font-semibold transition-colors"
+        >
+          Resend
+        </button>
+      )}
+    </div>
+  )
+}
 
 function ColPicker({ hiddenCols, onChange, onClose }) {
   const ref = useRef(null)
@@ -492,6 +522,8 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
   const [deletedLogs,   setDeletedLogs]   = useState([])
   const [showDeleted,   setShowDeleted]   = useState(false)
   const [globalHours,   setGlobalHours]   = useState(null)
+  const [resendingIds,  setResendingIds]  = useState(() => new Set())
+  const [resendError,   setResendError]   = useState(null)
   const colPickerRef = useRef(null)
 
   const locMap  = useMemo(() => Object.fromEntries(locations.map(l => [l.id, l.name])), [locations])
@@ -565,7 +597,7 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
   const tableRows = useMemo(() => {
     const copy = [...filtered]
     copy.sort((a, b) => {
-      const colToField = { date: 'started_at', location: 'location_id', scope: 'scope', type: 'downtime_type', reason: 'reason', details: 'details', started: 'started_at', ended: 'ended_at', duration: null, status: 'status', resolution: 'resolution_notes', ca_needed: 'corrective_action_needed', ca: 'corrective_action', multi_day: null, site_email: 'site_email' }
+      const colToField = { date: 'started_at', location: 'location_id', scope: 'scope', type: 'downtime_type', reason: 'reason', details: 'details', started: 'started_at', ended: 'ended_at', duration: null, status: 'status', jotform: 'jotform_status', resolution: 'resolution_notes', ca_needed: 'corrective_action_needed', ca: 'corrective_action', multi_day: null, site_email: 'site_email' }
       const field = colToField[sortCol] || sortCol
       const va = a[field] ?? '', vb = b[field] ?? ''
       if (va < vb) return sortDir === 'asc' ? -1 : 1
@@ -586,6 +618,21 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
   const axisColor = dark ? '#8899bb' : '#6b7280'
   const allTypes  = [...new Set(logs.map(r => r.downtime_type).filter(Boolean))].sort()
   const allScopes = [...new Set(logs.map(r => r.scope).filter(Boolean))].sort()
+
+  const handleResend = async (row) => {
+    const site = locMap[row.location_id] || 'this site'
+    if (!window.confirm(`Send the ${fmtDate(row.started_at)} downtime at ${site} to Jotform?
+
+If it was already entered there by hand, this will create a duplicate.`)) return
+    setResendError(null)
+    setResendingIds(prev => new Set(prev).add(row.id))
+    const { data, error } = await supabase.functions.invoke('submit-downtime-jotform', { body: { downtime_log_id: row.id } })
+    setResendingIds(prev => { const next = new Set(prev); next.delete(row.id); return next })
+    if (error || data?.ok === false) {
+      setResendError(`Couldn't send the ${site} downtime to Jotform: ${data?.error || error?.message || 'unknown error'}`)
+    }
+    if (onRefresh) onRefresh()
+  }
 
   const handleRecover = async (delRecord) => {
     // Re-insert into downtime_logs
@@ -633,6 +680,7 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
       case 'ended':      return end   ? <><div>{fmtDate(row.ended_at)}</div><div className="text-[10px] text-gray-400 dark:text-tm-dark-muted">{fmtTime(row.ended_at)}</div></>   : '—'
       case 'duration':   return row.status === 'active' ? <span className="text-red-500 font-semibold animate-pulse text-[10px]">Active</span> : (start && end ? fmtDuration(durationMsFor(row)) : '—')
       case 'status':     return <StatusBadge status={row.status} />
+      case 'jotform':    return <JotformCell row={row} canResend={isAdmin} busy={resendingIds.has(row.id)} onResend={() => handleResend(row)} />
       case 'resolution': return <span className="truncate max-w-[160px] block" title={row.resolution_notes}>{row.resolution_notes || '—'}</span>
       case 'ca_needed':  return row.corrective_action_needed === true ? <span className="text-amber-500 font-bold">✓ Yes</span> : row.corrective_action_needed === false ? <span className="text-gray-400">No</span> : <span className="text-gray-300 dark:text-tm-dark-border text-[10px]">n/a</span>
       case 'ca':         return <span className="truncate max-w-[160px] block" title={row.corrective_action}>{row.corrective_action || '—'}</span>
@@ -748,6 +796,13 @@ export default function DowntimeSection({ logs = [], locations = [], dark, isAdm
           ]} />
         </div>
       </div>
+
+      {resendError && (
+        <div className="mb-2 flex items-start justify-between gap-3 px-3 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-xs rounded-lg font-brand">
+          <span>{resendError}</span>
+          <button onClick={() => setResendError(null)} className="shrink-0 text-red-400 hover:text-red-600 leading-none text-base">×</button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-tm-dark-border">

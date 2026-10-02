@@ -1,9 +1,11 @@
-// JotForm's "Site" dropdown uses the full number-city-street naming convention
-// (e.g. "1520-Cleveland-N Davis"), while our locations table stores the shorter
-// "1520-Cleveland". Map by the site number (the part before the first hyphen)
-// so downtime submissions land on the correct JotForm dropdown option.
+// Add a new site here (and redeploy the function) so its downtimes land on the
+// right Jotform dropdown option.
+//
+// Jotform's "Site" dropdown uses the full number-city-street naming convention
+// (e.g. "1520-Cleveland-N Davis"), while the locations table stores the shorter
+// "1520-Cleveland". Map by the site number (the part before the first hyphen).
 
-export const JOTFORM_SITE_NAMES = {
+const JOTFORM_SITE_NAMES: Record<string, string> = {
   '1504': '1504-Brooklyn-Atlantic',
   '1505': '1505-Hempstead-Henry',
   '1506': '1506-Queens-Rockaway',
@@ -34,10 +36,7 @@ export const JOTFORM_SITE_NAMES = {
   '1532': '1532-Jackson-E Jackson',
 }
 
-// Given our app's location name ("1520-Cleveland" or similar), return the full
-// JotForm dropdown label. Falls back to the original name if the site number
-// isn't in the map (e.g. a new site added before this table is updated).
-export function getJotformSiteName(locationName) {
+export function getJotformSiteName(locationName: string | null | undefined) {
   if (!locationName) return ''
   const num = String(locationName).split('-')[0].trim()
   return JOTFORM_SITE_NAMES[num] || locationName

@@ -117,6 +117,14 @@ Shared pieces:
 - **"Set targets" reminders** (`targetsNotifications.js`, `useMissingTargets.js`, `TargetsBanner.jsx`, `TargetsBell.jsx`, `SetTargetsModal.jsx`): flags any admin/area-manager-visible site missing a `budget_targets` row for the current month, or (starting 7 days before month-end) missing next month's row. The banner and NavBar bell both open the same modal — either one site at a time with a "Save Target — N sites remaining" button, or a single table (widens up to 1100px, capped at the viewport width) to enter every missing site at once.
 - **Site Health** (`AreaManagerOverview.jsx`, on the Insights.jsx "Dashboard" page, admin/area-manager only): a self-contained collapsible card (default collapsed) flagging stale hourly updates and outstanding Budget/Ownership entries per site; every alert badge links to the matching Reports section pre-filtered to that site via router state (`navigate('/reports', { state: { report, locationId } })`, read by `Reports.jsx` on mount).
 
+### Downtime → Jotform hand-off
+
+Ending a downtime (Site Entry → End Downtime) marks the `downtime_logs` row `resolved`, then calls the **`submit-downtime-jotform` edge function** (`app/supabase/functions/submit-downtime-jotform/`). The function runs with the service role, so it doesn't matter who clicked: it reads the Jotform form ID, API key and field mappings from `app_settings` (key `jotform`, edited in Admin → JotForm Integration), builds the submission, posts it to Jotform, and writes the result back to the row — `jotform_submission_id`, `jotform_status` (`sending` | `sent` | `failed`), `jotform_error`, `jotform_attempted_at`. It refuses a second submission for a downtime that already has an ID, and a `sending` claim stops two overlapping attempts from double-posting.
+
+Why server-side: this used to run in the end-user's browser, reading the API key with their own login. Store logins can't read `app_settings`, so for store users it silently did nothing for weeks. Dates/times are formatted in the **store's** time zone (`locations.timezone`), not the clicker's.
+
+Reports → Downtime has a **Jotform** column (Sent / Not sent / Failed, hover for the error). Admins get a **Resend** button on anything not sent — it confirms first, since a downtime someone already keyed into Jotform by hand would be duplicated. `build.ts` is pure and was checked against past real submissions; `operatingHours.ts` and `siteNames.ts` in that folder are server-side copies of the app's utilities (functions can't import from `app/src`) — add a new site's Jotform dropdown name to `siteNames.ts` and redeploy.
+
 ### State Persistence
 
 Dashboard persists user selections to `localStorage` with `tm_` prefix:
@@ -147,6 +155,15 @@ npm run preview   # serve the dist build locally
 ## Deployment
 
 Push to `main` → GitHub Actions builds and deploys to GitHub Pages automatically. The live app uses `HashRouter` so that deep links work without server-side routing.
+
+Supabase changes are **not** part of that pipeline. From `app/` (the Supabase CLI is already logged in on this machine; always pass the project explicitly — the same login can see other projects):
+
+```bash
+supabase db query --linked -f supabase/migrationNN.sql          # apply a migration (project is linked: tm-opsperformance)
+supabase functions deploy <name> --project-ref qbdvixxooofdlfurcpqy --use-api   # deploy an edge function, no Docker needed
+```
+
+Order matters when a change spans both: apply additive migrations and deploy functions first, then push the client that depends on them.
 
 ## Styling Conventions
 

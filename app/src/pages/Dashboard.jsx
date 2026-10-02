@@ -293,8 +293,6 @@ export default function Dashboard() {
                   locationId={selectedLocationId}
                   locationName={location?.name}
                   locationEmail={location?.site_email}
-                  locationTimezone={location?.timezone}
-                  locationHoursOverride={location?.operating_hours_override}
                   selectedDate={selectedDate}
                   canEdit={canEdit}
                   opportunitiesFormula={opportunitiesFormula}
