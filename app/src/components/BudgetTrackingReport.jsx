@@ -44,6 +44,14 @@ function DailyEntryPane({ location }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const missing = countMissing(form)
+  const calculatedCash =
+  form.yesterday_total_revenue === '' ||
+  form.yesterday_cc_revenue === '' ||
+  form.yesterday_house_revenue === ''
+    ? null
+    : Number(form.yesterday_total_revenue)
+      - Number(form.yesterday_cc_revenue)
+      - Number(form.yesterday_house_revenue)
 
   const handleSave = async () => {
     if (missing > 0) { setAttemptedSave(true); return }
@@ -90,8 +98,45 @@ function DailyEntryPane({ location }) {
             <input type="number" min="0" value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
           </div>
         ))}
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">MTD Revenue Actual ($)</label>
+         {[
+  ['yesterday_total_revenue', 'Yesterday Total Revenue ($)'],
+  ['yesterday_cc_revenue', 'Yesterday CC Revenue ($)'],
+  ['yesterday_house_revenue', 'Yesterday House Account Revenue ($)'],
+].map(([key, label]) => (
+  <div key={key}>
+    <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">
+      {label}
+    </label>
+    <input
+      type="number"
+      min="0"
+      step="0.01"
+      value={form[key]}
+      onChange={e => set(key, e.target.value)}
+      className={fieldCls(key)}
+    />
+  </div>
+))}
+        <div className="col-span-2 rounded-lg bg-gray-50 dark:bg-tm-dark-card px-3 py-2 text-xs">
+  <span className="text-gray-500 dark:text-tm-dark-muted">
+    Yesterday Cash Revenue (Calculated):
+  </span>
+  <strong className="ml-2 text-tm-blue dark:text-tm-teal">
+    {calculatedCash === null
+      ? '—'
+      : calculatedCash.toLocaleString('en-US', {
+          style: 'currency',
+          currency: 'USD'
+        })}
+  </strong>
+  {calculatedCash < 0 && (
+    <span className="ml-2 text-red-500">
+      Check revenue entries
+    </span>
+  )}
+</div>
+         <div> 
+        <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">MTD Revenue Actual ($)</label>
           <input type="number" min="0" step="0.01" value={form.mtd_revenue_actual} onChange={e => set('mtd_revenue_actual', e.target.value)} className={fieldCls('mtd_revenue_actual')} />
         </div>
         <div>
