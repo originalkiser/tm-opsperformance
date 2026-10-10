@@ -8,9 +8,10 @@ import {
   computeScore, rankByScore, pct1,
 } from '../utils/budgetMath'
 import {
-  YESTERDAY_FIELDS, MTD_FIELDS, emptyDailyForm, isFieldMissing, countMissing, isDayComplete,
+  YESTERDAY_FIELDS, MTD_FIELDS, emptyDailyForm,
+  isFieldMissing, countMissing, isDayComplete,
+  calculateCashRevenue, validateRevenue,
 } from '../utils/budgetDailyFields'
-
 const todayStr = () => toDateStr(new Date())
 
 function EditIcon() {
@@ -44,28 +45,39 @@ function DailyEntryPane({ location }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const missing = countMissing(form)
-  const calculatedCash =
-  form.yesterday_total_revenue === '' ||
-  form.yesterday_cc_revenue === '' ||
-  form.yesterday_house_revenue === ''
-    ? null
-    : Number(form.yesterday_total_revenue)
-      - Number(form.yesterday_cc_revenue)
-      - Number(form.yesterday_house_revenue)
+  
+ const calculatedCash = calculateCashRevenue(form)
 
   const handleSave = async () => {
     if (missing > 0) { setAttemptedSave(true); return }
+    const revenueError = validateRevenue(form)
+if (revenueError) {
+  alert(revenueError)
+  return
+}
     setSaving(true)
     const numOrNull = (v) => v === '' ? null : Number(v)
-    await supabase.from('budget_daily_entries').upsert({
+  try {
+  const { error } = await supabase
+    .from('budget_daily_entries')
+    .upsert({
       location_id: location.id,
-      entry_date:  todayStr(),
-      ...Object.fromEntries(Object.entries(form).map(([k, v]) => [k, numOrNull(v)])),
+      entry_date: todayStr(),
+      ...Object.fromEntries(
+        Object.entries(form).map(([k, v]) => [k, numOrNull(v)])
+      ),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'location_id,entry_date' })
-    setSaving(false)
-    fetchData()
-  }
+
+  if (error) throw error
+
+  await fetchData()
+} catch (error) {
+  console.error('Admin Budget Tracking save failed:', error)
+  alert('Unable to save this entry. Please try again.')
+} finally {
+  setSaving(false)
+}
 
   const baseInputCls = 'w-full border-2 rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
   const fieldCls = (key) => {
