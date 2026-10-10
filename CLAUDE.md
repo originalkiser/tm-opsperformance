@@ -86,6 +86,10 @@ Because cumulative rows can have **different employees per time slot** (shift ch
 
 `canEdit` flag on Dashboard: only store users at their own location, area managers, and admins can enter data.
 
+Only admins can change a user's `role`, `location_id`, `is_active`, `deleted_at` or `email` on `user_profiles` — a `BEFORE UPDATE` trigger (`protect_profile_privileged_columns`, `migration12.sql`) enforces it. The row policies alone let anyone edit their own row, so don't add client code that updates those columns for non-admins; it will be rejected. Service-role calls (edge functions) and direct SQL are exempt.
+
+For how changes reach production, safe-testing practice and the credentials map, see [`HANDOFF.md`](HANDOFF.md).
+
 ### Supabase Tables
 
 - `locations` — site metadata: `name`, `site_code`, `market`, `opportunities_formula`, `exclude_from_reporting`, `show_budget_tracking`, `show_ownership_tools`, `ownership_log_cutoff_time`
