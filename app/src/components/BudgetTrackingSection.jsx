@@ -6,7 +6,9 @@ import {
   yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus, membershipPace, pct1,
 } from '../utils/budgetMath'
 import {
-  YESTERDAY_FIELDS, MTD_FIELDS, emptyDailyForm, isFieldMissing, countMissing, isDayComplete,
+  YESTERDAY_FIELDS, MTD_FIELDS, emptyDailyForm,
+  isFieldMissing, countMissing, isDayComplete,
+  calculateCashRevenue, validateRevenue,
 } from '../utils/budgetDailyFields'
 
 const todayStr = () => toDateStr(new Date())
@@ -68,17 +70,16 @@ function DailyEntryTab({ locations, profile, onSaved }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const missing = countMissing(form)
-  const calculatedCash =
-  form.yesterday_total_revenue === '' ||
-  form.yesterday_cc_revenue === '' ||
-  form.yesterday_house_revenue === ''
-    ? null
-    : Number(form.yesterday_total_revenue)
-      - Number(form.yesterday_cc_revenue)
-      - Number(form.yesterday_house_revenue)
+  
+const calculatedCash = calculateCashRevenue(form)
 
   const handleSave = async () => {
     if (missing > 0) { setAttemptedSave(true); return }
+      const revenueError = validateRevenue(form)
+  if (revenueError) {
+    alert(revenueError)
+    return
+  }
     setSaving(true)
     const numOrNull = (v) => v === '' ? null : Number(v)
     const payload = {
@@ -87,10 +88,21 @@ function DailyEntryTab({ locations, profile, onSaved }) {
       ...Object.fromEntries(Object.entries(form).map(([k, v]) => [k, numOrNull(v)])),
       updated_at: new Date().toISOString(),
     }
-    await supabase.from('budget_daily_entries').upsert(payload, { onConflict: 'location_id,entry_date' })
-    setSaving(false)
-    fetchData()
-    onSaved?.()
+  try {
+  const { error } = await supabase
+    .from('budget_daily_entries')
+    .upsert(payload, { onConflict: 'location_id,entry_date' })
+
+  if (error) throw error
+
+  await fetchData()
+  onSaved?.()
+} catch (error) {
+  console.error('Budget Tracking save failed:', error)
+  alert('Unable to save this entry. Please try again or contact an administrator.')
+} finally {
+  setSaving(false)
+}
   }
 
   const yst = yesterdayMetrics(form)
