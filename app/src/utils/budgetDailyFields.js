@@ -51,3 +51,58 @@ export const countMissing = (form) => ALL_DAILY_FIELDS.filter(f => isFieldMissin
 // in-progress form) — drives the "today's numbers are done" highlight.
 export const isDayComplete = (entry) =>
   !!entry && ALL_DAILY_FIELDS.every(f => entry[f.key] != null)
+
+// Calculate cash revenue from the three entered amounts.
+export function calculateCashRevenue(form) {
+  const fields = [
+    'yesterday_total_revenue',
+    'yesterday_cc_revenue',
+    'yesterday_house_revenue',
+  ]
+
+  if (fields.some(key => form[key] === '' || form[key] == null)) {
+    return null
+  }
+
+  const total = Number(form.yesterday_total_revenue)
+  const cc = Number(form.yesterday_cc_revenue)
+  const house = Number(form.yesterday_house_revenue)
+
+  if (![total, cc, house].every(Number.isFinite)) {
+    return null
+  }
+
+  return Math.round((total - cc - house) * 100) / 100
+}
+
+// Return an error message if revenue amounts are invalid.
+export function validateRevenue(form) {
+  const fields = [
+    'yesterday_total_revenue',
+    'yesterday_cc_revenue',
+    'yesterday_house_revenue',
+  ]
+
+  // Existing required-field validation handles blanks.
+  if (fields.some(key => form[key] === '' || form[key] == null)) {
+    return null
+  }
+
+  if (fields.some(key =>
+    !Number.isFinite(Number(form[key])) || Number(form[key]) < 0
+  )) {
+    return 'Revenue amounts must be valid, non-negative numbers.'
+  }
+
+  const cash = calculateCashRevenue(form)
+
+  if (cash === null) {
+    return 'Unable to calculate cash revenue.'
+  }
+
+  if (cash < 0) {
+    return 'Credit card and house account revenue exceed total revenue.'
+  }
+
+  return null
+}
