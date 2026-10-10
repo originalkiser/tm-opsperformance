@@ -17,6 +17,7 @@
 //   anything else / not allowed               → { ok: false, error }
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { projectKeys } from '../_shared/keys.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -46,9 +47,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  const url        = Deno.env.get('SUPABASE_URL') ?? ''
-  const anonKey    = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  const { url, publishableKey: anonKey, secretKey: serviceKey } = projectKeys()
 
   // deno-lint-ignore no-explicit-any
   let body: any = null

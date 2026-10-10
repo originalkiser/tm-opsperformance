@@ -68,7 +68,7 @@ The "Deletes in N days" countdown on deleted users and deleted downtime logs is 
 - `invite-user` is in the repo but is not deployed and nothing calls it.
 
 **Where credentials live** (values are never in the repo):
-- Supabase URL + public (anon) key: GitHub Actions secrets, Cloudflare env vars, and your local `app/.env` (gitignored). The anon key is public by design — row-level security is what protects the data.
+- Supabase URL + public key: GitHub Actions secrets, Cloudflare env vars, and your local `app/.env` (gitignored). The public key is public by design — row-level security is what protects the data. There are two variables: `VITE_SUPABASE_ANON_KEY` (legacy) and `VITE_SUPABASE_PUBLISHABLE_KEY` (new-style, optional); if the latter is set it wins.
 - The Supabase **service-role** key bypasses all security. It must only ever exist inside Supabase (it's injected into edge functions). **Never put it in a `VITE_*` variable** — Vite bakes those into the public JavaScript.
 - The Jotform API key and field mappings are in the `app_settings` table, readable only by admins, and edited at Admin → JotForm Integration.
 - Power BI reads downtime data through the public key, via a read policy on `downtime_logs` (the connection details are shown in Admin → Downtime). If the project's API keys are ever rotated, Power BI needs the new key.

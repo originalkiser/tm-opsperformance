@@ -13,6 +13,7 @@
 //   → { ok: false, error }                               recorded on the row as 'failed'
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { projectKeys } from '../_shared/keys.ts'
 import { buildSubmissionFields } from './build.ts'
 
 const corsHeaders = {
@@ -29,9 +30,7 @@ const STALE_SENDING_MS = 2 * 60 * 1000
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  const url        = Deno.env.get('SUPABASE_URL') ?? ''
-  const anonKey    = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  const { url, publishableKey: anonKey, secretKey: serviceKey } = projectKeys()
 
   let downtimeLogId: string | undefined
   let dryRun = false

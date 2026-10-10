@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabasePublicKey } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
 import TmLoader from '../components/TmLoader'
@@ -1441,7 +1441,7 @@ function DowntimeAdminTab({ locations }) {
   const [copiedItem,  setCopiedItem]  = useState('')
 
   const sbUrl  = import.meta.env.VITE_SUPABASE_URL       || ''
-  const sbAnon = import.meta.env.VITE_SUPABASE_ANON_KEY  || ''
+  const sbAnon = supabasePublicKey || ''
   const maskedKey = sbAnon ? sbAnon.slice(0, 20) + '…' + sbAnon.slice(-6) : '(not set)'
 
   const copyText = (text, key) => {

@@ -140,11 +140,12 @@ These are restored on page load so users land where they left off.
 | Variable | Used by | Purpose |
 |----------|---------|---------|
 | `VITE_SUPABASE_URL` | All clients | Project URL |
-| `VITE_SUPABASE_ANON_KEY` | `supabase.js` | Row-level security enforced anon key |
+| `VITE_SUPABASE_ANON_KEY` | `supabase.js` | Legacy public (anon) key — row-level security enforced |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | `supabase.js` | Optional. New-style public key (`sb_publishable_…`); when set it is used instead of the anon key |
 
 Set in `.env` locally and as GitHub repository secrets (and Cloudflare Pages env vars) for builds.
 
-**Never put the service-role key in a `VITE_*` variable.** Vite inlines every `VITE_*` value into the public JavaScript bundle, and the service-role key bypasses all row-level security. Anything that needs it runs in an edge function instead, where Supabase injects it server-side: user create / reset password / change email / permanent delete go through the `admin-users` function (`app/supabase/functions/admin-users/`), which checks the caller's role first; the Jotform hand-off goes through `submit-downtime-jotform`.
+**Never put the service-role key in a `VITE_*` variable.** Vite inlines every `VITE_*` value into the public JavaScript bundle, and the service-role key bypasses all row-level security. Anything that needs it runs in an edge function instead, where Supabase injects it server-side (functions read the keys through `supabase/functions/_shared/keys.ts`, which prefers the new-style keys and falls back to the legacy ones): user create / reset password / change email / permanent delete go through the `admin-users` function (`app/supabase/functions/admin-users/`), which checks the caller's role first; the Jotform hand-off goes through `submit-downtime-jotform`.
 
 ## Development
 
