@@ -68,6 +68,14 @@ function DailyEntryTab({ locations, profile, onSaved }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const missing = countMissing(form)
+  const calculatedCash =
+  form.yesterday_total_revenue === '' ||
+  form.yesterday_cc_revenue === '' ||
+  form.yesterday_house_revenue === ''
+    ? null
+    : Number(form.yesterday_total_revenue)
+      - Number(form.yesterday_cc_revenue)
+      - Number(form.yesterday_house_revenue)
 
   const handleSave = async () => {
     if (missing > 0) { setAttemptedSave(true); return }
@@ -169,6 +177,45 @@ function DailyEntryTab({ locations, profile, onSaved }) {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
+  {[
+    ['yesterday_total_revenue', 'Yesterday Total Revenue ($)'],
+    ['yesterday_cc_revenue', 'Yesterday CC Revenue ($)'],
+    ['yesterday_house_revenue', 'Yesterday House Account Revenue ($)'],
+  ].map(([key, label]) => (
+    <div key={key}>
+      <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">
+        {label}
+      </label>
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        value={form[key]}
+        onChange={e => set(key, e.target.value)}
+        className={fieldCls(key)}
+      />
+    </div>
+  ))}
+</div>
+   <div className="mt-3 rounded-lg bg-gray-50 dark:bg-tm-dark-card px-3 py-2 text-sm">
+  <span className="text-gray-500 dark:text-tm-dark-muted">
+    Yesterday Cash Revenue (Calculated):
+  </span>
+  <strong className="ml-2 text-tm-blue dark:text-tm-teal">
+    {calculatedCash === null
+      ? '—'
+      : calculatedCash.toLocaleString('en-US', {
+          style: 'currency',
+          currency: 'USD'
+        })}
+  </strong>
+  {calculatedCash < 0 && (
+    <span className="ml-2 text-red-500">
+      Check revenue entries
+    </span>
+  )}
+</div>         
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-100 dark:border-tm-dark-border">
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">MTD Revenue Actual ($)</label>
