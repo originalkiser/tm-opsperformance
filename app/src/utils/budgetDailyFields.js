@@ -28,10 +28,13 @@ export const MTD_FIELDS = [
 ]
 
 export const EXTRA_FIELDS = [
-  { key: 'mtd_revenue_actual',    label: 'MTD Revenue Actual ($)' },
+  { key: 'yesterday_total_revenue', label: 'Yesterday Total Revenue ($)' },
+  { key: 'yesterday_cc_revenue', label: 'Yesterday CC Revenue ($)' },
+  { key: 'yesterday_house_revenue', label: 'Yesterday House Account Revenue ($)' },
+  { key: 'mtd_revenue_actual', label: 'MTD Revenue Actual ($)' },
   { key: 'mtd_membership_actual', label: 'MTD Membership Actual' },
-  { key: 'current_rating',        label: 'Current Rating' },
-  { key: 'current_reviews',       label: 'Current Reviews' },
+  { key: 'current_rating', label: 'Current Rating' },
+  { key: 'current_reviews', label: 'Current Reviews' },
 ]
 
 export const ALL_DAILY_FIELDS = [...YESTERDAY_FIELDS, ...MTD_FIELDS, ...EXTRA_FIELDS]
