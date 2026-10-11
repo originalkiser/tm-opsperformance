@@ -75,7 +75,7 @@ export function mtdMetrics(entry) {
 
 // On track when MTD Revenue % has kept pace with the fraction of the month elapsed.
 export function revenuePace(mtdRevenueActual, revenueGoal, progress) {
-  const pct = revenueGoal > 0 ? toNum(mtdRevenueActual) / revenueGoal : null
+  const pct = mtdRevenueActual !== '' && mtdRevenueActual != null && revenueGoal > 0 ? toNum(mtdRevenueActual) / revenueGoal : null
   if (pct == null) return { pct: null, onTrack: null, paceRatio: 0 }
   return {
     pct,

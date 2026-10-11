@@ -1,3 +1,4 @@
+import { cashRevenue, revenueError } from './budgetRevenue.js'
 // Shared field metadata + validation for the Budget Tracking daily entry
 // form, used both on the Site Entry page (BudgetTrackingSection.jsx) and the
 // Reports-page admin override (BudgetTrackingReport.jsx), so the two stay in
@@ -28,10 +29,12 @@ export const MTD_FIELDS = [
 ]
 
 export const EXTRA_FIELDS = [
-  { key: 'mtd_revenue_actual',    label: 'MTD Revenue Actual ($)' },
+  { key: 'yesterday_total_revenue', label: 'Yesterday Total Revenue ($)' },
+  { key: 'yesterday_cc_revenue', label: 'Yesterday CC Revenue ($)' },
+  { key: 'yesterday_house_revenue', label: 'Yesterday House Account Revenue ($)' },
   { key: 'mtd_membership_actual', label: 'MTD Membership Actual' },
-  { key: 'current_rating',        label: 'Current Rating' },
-  { key: 'current_reviews',       label: 'Current Reviews' },
+  { key: 'current_rating', label: 'Current Rating' },
+  { key: 'current_reviews', label: 'Current Reviews' },
 ]
 
 export const ALL_DAILY_FIELDS = [...YESTERDAY_FIELDS, ...MTD_FIELDS, ...EXTRA_FIELDS]
@@ -47,4 +50,7 @@ export const countMissing = (form) => ALL_DAILY_FIELDS.filter(f => isFieldMissin
 // True once every field has an explicit value in the *saved* row (not the
 // in-progress form) — drives the "today's numbers are done" highlight.
 export const isDayComplete = (entry) =>
-  !!entry && ALL_DAILY_FIELDS.every(f => entry[f.key] != null)
+  !!entry && ALL_DAILY_FIELDS.every(f => !isFieldMissing(entry, f.key)) && !validateRevenue(entry)
+
+export const calculateCashRevenue = cashRevenue
+export const validateRevenue = revenueError
