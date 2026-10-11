@@ -1,3 +1,5 @@
+import useBudgetDailyEntry from '../hooks/useBudgetDailyEntry'
+import BudgetRevenueSummary from './BudgetRevenueSummary'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
@@ -6,7 +8,9 @@ import {
   yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus, membershipPace, pct1,
 } from '../utils/budgetMath'
 import {
-  YESTERDAY_FIELDS, MTD_FIELDS, emptyDailyForm, isFieldMissing, countMissing, isDayComplete,
+  YESTERDAY_FIELDS, MTD_FIELDS,
+  isFieldMissing, isDayComplete,
+  calculateCashRevenue,
 } from '../utils/budgetDailyFields'
 
 const todayStr = () => toDateStr(new Date())
@@ -37,60 +41,16 @@ export function BonusBadge({ tier }) {
 
 function DailyEntryTab({ locations, profile, onSaved }) {
   const [selectedLocId, setSelectedLocId] = useState(() => profile?.location_id || locations[0]?.id || '')
-  const [entry, setEntry]   = useState(null)
-  const [form, setForm]     = useState(emptyDailyForm())
-  const [target, setTarget] = useState(null)
-  const [loading, setLoading]     = useState(true)
-  const [saving, setSaving]       = useState(false)
-  const [attemptedSave, setAttemptedSave] = useState(false)
-
-  useEffect(() => {
-    if (!selectedLocId && locations[0]) setSelectedLocId(locations[0].id)
-  }, [locations])
-
-  useEffect(() => { if (selectedLocId) fetchData() }, [selectedLocId])
-
-  const fetchData = async () => {
-    setLoading(true)
-    const currentMonth = firstOfMonth(todayStr())
-    const [{ data: entries }, { data: t }] = await Promise.all([
-      supabase.from('budget_daily_entries').select('*').eq('location_id', selectedLocId).eq('entry_date', todayStr()).maybeSingle(),
-      supabase.from('budget_targets').select('*').eq('location_id', selectedLocId).eq('target_month', currentMonth).maybeSingle(),
-    ])
-    const todays = entries || null
-    setEntry(todays)
-    setTarget(t || null)
-    setForm(todays ? Object.fromEntries(Object.keys(emptyDailyForm()).map(k => [k, todays[k] ?? ''])) : emptyDailyForm())
-    setAttemptedSave(false)
-    setLoading(false)
-  }
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-
-  const missing = countMissing(form)
-
-  const handleSave = async () => {
-    if (missing > 0) { setAttemptedSave(true); return }
-    setSaving(true)
-    const numOrNull = (v) => v === '' ? null : Number(v)
-    const payload = {
-      location_id: selectedLocId,
-      entry_date:  todayStr(),
-      ...Object.fromEntries(Object.entries(form).map(([k, v]) => [k, numOrNull(v)])),
-      updated_at: new Date().toISOString(),
-    }
-    await supabase.from('budget_daily_entries').upsert(payload, { onConflict: 'location_id,entry_date' })
-    setSaving(false)
-    fetchData()
-    onSaved?.()
-  }
+  const [entryDate, setEntryDate] = useState(todayStr)
+  const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, handleSave } = useBudgetDailyEntry(selectedLocId, entryDate, onSaved)
+  const calculatedCash = calculateCashRevenue(form)
 
   const yst = yesterdayMetrics(form)
   const mtd = mtdMetrics(form)
-  const progress = monthProgress(todayStr())
-  const rev = revenuePace(form.mtd_revenue_actual, target?.revenue_goal, progress)
-  const mem = membershipStatus(form.mtd_membership_actual, target?.membership_goal, todayStr())
-  const memPace = membershipPace(form.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, todayStr())
+  const progress = monthProgress(entryDate)
+  const rev = revenuePace(error ? null : mtdRevenue.total, target?.revenue_goal, progress)
+  const mem = membershipStatus(form.mtd_membership_actual, target?.membership_goal, entryDate)
+  const memPace = membershipPace(form.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, entryDate)
 
   const baseInputCls = 'w-full border-2 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
   const fieldCls = (key) => {
@@ -106,7 +66,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
       <div className="flex items-center justify-between">
         <select
           value={selectedLocId}
-          onChange={e => setSelectedLocId(e.target.value)}
+          disabled={saving} onChange={e => setSelectedLocId(e.target.value)}
           className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal font-brand"
         >
           {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -128,10 +88,17 @@ function DailyEntryTab({ locations, profile, onSaved }) {
               {complete && (
                 <span className="flex items-center gap-1 text-xs font-brand font-bold text-green-600 dark:text-green-400">
                   <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd"/></svg>
-                  Today's numbers are done
+                  Saved entry is complete
                 </span>
               )}
             </div>
+<label className="block text-xs mb-3">Morning entry date (revenue is for the prior business day)
+        <input aria-label="Morning entry date" type="date" max={todayStr()} value={entryDate} disabled={saving} onChange={e => { if (e.target.value && e.target.value <= todayStr()) setEntryDate(e.target.value) }} className="ml-2 border rounded p-1 text-gray-800" />
+      </label>
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+      {revenueError && <p role="alert" className="text-sm text-red-600">{revenueError}</p>}
+      {saved && <p role="status" className="text-sm text-green-600">Entry saved.</p>}
+      <fieldset disabled={saving || !!error}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <h4 className="text-xs font-brand font-bold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-2">Yesterday</h4>
@@ -141,7 +108,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
                       <label className="text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">
                         {f.label}{f.hint && <span className="block text-[10px] text-gray-400 dark:text-tm-dark-muted italic">{f.hint}</span>}
                       </label>
-                      <input type="number" min="0" value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
+                      <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
                     </div>
                   ))}
                 </div>
@@ -158,7 +125,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
                       <label className="text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">
                         {f.label}{f.hint && <span className="block text-[10px] text-gray-400 dark:text-tm-dark-muted italic">{f.hint}</span>}
                       </label>
-                      <input type="number" min="0" value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
+                      <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
                     </div>
                   ))}
                 </div>
@@ -169,10 +136,49 @@ function DailyEntryTab({ locations, profile, onSaved }) {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
+  {[
+    ['yesterday_total_revenue', 'Yesterday Total Revenue ($)'],
+    ['yesterday_cc_revenue', 'Yesterday CC Revenue ($)'],
+    ['yesterday_house_revenue', 'Yesterday House Account Revenue ($)'],
+  ].map(([key, label]) => (
+    <div key={key}>
+      <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">
+        {label}
+      </label>
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        aria-label={label} value={form[key]}
+        onChange={e => set(key, e.target.value)}
+        className={fieldCls(key)}
+      />
+    </div>
+  ))}
+</div>
+   <div className="mt-3 rounded-lg bg-gray-50 dark:bg-tm-dark-card px-3 py-2 text-sm">
+  <span className="text-gray-500 dark:text-tm-dark-muted">
+    Yesterday Cash Revenue (Calculated):
+  </span>
+  <strong className="ml-2 text-tm-blue dark:text-tm-teal">
+    {calculatedCash === null
+      ? '—'
+      : calculatedCash.toLocaleString('en-US', {
+          style: 'currency',
+          currency: 'USD'
+        })}
+  </strong>
+  {calculatedCash < 0 && (
+    <span className="ml-2 text-red-500">
+      Check revenue entries
+    </span>
+  )}
+</div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-100 dark:border-tm-dark-border">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">MTD Revenue Actual ($)</label>
-                <input type="number" min="0" step="0.01" value={form.mtd_revenue_actual} onChange={e => set('mtd_revenue_actual', e.target.value)} className={fieldCls('mtd_revenue_actual')} />
+
+                <BudgetRevenueSummary revenue={mtdRevenue} historical={entry?.mtd_revenue_actual} />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">MTD Membership Actual</label>
@@ -188,9 +194,10 @@ function DailyEntryTab({ locations, profile, onSaved }) {
               </div>
             </div>
 
+</fieldset>
             <div className="mt-4 flex items-center gap-3">
-              <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-lg bg-tm-teal text-tm-navy font-bold text-sm hover:brightness-110 transition-colors disabled:opacity-50">
-                {saving ? 'Saving…' : entry ? 'Update Today’s Numbers' : 'Save Today’s Numbers'}
+              <button onClick={handleSave} disabled={saving || loading || !!error || !!revenueError} className="px-5 py-2 rounded-lg bg-tm-teal text-tm-navy font-bold text-sm hover:brightness-110 transition-colors disabled:opacity-50">
+                {saving ? 'Saving…' : entry ? 'Update Entry' : 'Save Entry'}
               </button>
               {attemptedSave && missing > 0 && (
                 <span className="text-xs font-brand font-bold text-red-600 dark:text-red-400">
@@ -236,6 +243,7 @@ function emptyTargetForm() {
 }
 
 function TargetsTab({ locations, allLocations }) {
+
   const [selectedLocId, setSelectedLocId] = useState(() => locations[0]?.id || '')
   const [month, setMonth]   = useState(() => firstOfMonth(todayStr()))
   const [form, setForm]     = useState(emptyTargetForm())
