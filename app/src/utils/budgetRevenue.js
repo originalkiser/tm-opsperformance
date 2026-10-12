@@ -8,6 +8,17 @@ export function shiftDate(date, days) {
 
 export const revenueMonthStart = date => `${date.slice(0, 7)}-01`
 
+// Historical references belong to the selected month/site and never enter totals.
+export function latestHistoricalRevenue(entries, locationId, entryDate) {
+  const monthStart = revenueMonthStart(entryDate)
+  const latest = entries.filter(row => row.location_id === locationId
+    && row.entry_date >= monthStart && row.entry_date <= entryDate
+    && row.mtd_revenue_actual != null && row.mtd_revenue_actual !== ''
+    && Number.isFinite(Number(row.mtd_revenue_actual)) && Number(row.mtd_revenue_actual) >= 0)
+    .sort((a, b) => b.entry_date.localeCompare(a.entry_date))[0]
+  return latest ? { amount: Number(latest.mtd_revenue_actual), entryDate: latest.entry_date } : null
+}
+
 // Parse exact cents: reject fractional cents, whitespace, exponent notation,
 // negative values and values beyond numeric(12,2), rather than rounding input.
 export function revenueCents(value) {
@@ -36,19 +47,30 @@ export function revenueError(form) {
   return null
 }
 
-export function calculateMtdRevenue(entries, locationId, entryDate) {
+export const TRANSITION_MONTH = '2026-10-01'
+export const TRANSITION_CUTOFF = '2026-10-11'
+
+export function calculateMtdRevenue(entries, locationId, entryDate, startingBalance = null) {
   const monthStart = revenueMonthStart(entryDate)
+  const baseline = monthStart === TRANSITION_MONTH && startingBalance?.location_id === locationId
+    && startingBalance?.revenue_month === TRANSITION_MONTH ? startingBalance : null
+  if (baseline && (baseline.cutoff_business_date !== TRANSITION_CUTOFF || revenueCents(baseline.amount) == null)) {
+    throw new Error('Invalid October revenue starting balance.')
+  }
+  // A balance through October 11 cannot describe an earlier as-of date.
+  const activeBaseline = baseline && entryDate > TRANSITION_CUTOFF ? baseline : null
+  const firstBusinessDate = activeBaseline ? shiftDate(TRANSITION_CUTOFF, 1) : monthStart
   const byDate = new Map()
   for (const row of entries) {
     if (row.location_id !== locationId) continue
     const businessDate = shiftDate(row.entry_date, -1)
-    if (businessDate < monthStart || businessDate >= entryDate) continue
+    if (businessDate < firstBusinessDate || businessDate >= entryDate) continue
     if (byDate.has(businessDate)) throw new Error('Duplicate revenue business date.')
     byDate.set(businessDate, row)
   }
-  let cents = 0
+  let cents = activeBaseline ? revenueCents(activeBaseline.amount) : 0
   const missingDates = []
-  for (let date = monthStart; date < entryDate; date = shiftDate(date, 1)) {
+  for (let date = firstBusinessDate; date < entryDate; date = shiftDate(date, 1)) {
     const row = byDate.get(date)
     const amount = row && revenueCents(row.yesterday_total_revenue)
     if (amount == null || REVENUE_KEYS.some(key => revenueCents(row[key]) == null) || revenueError(row)) missingDates.push(date)
@@ -60,7 +82,17 @@ export function calculateMtdRevenue(entries, locationId, entryDate) {
     recordedTotal: cents / 100,
     missingDates,
     throughDate: shiftDate(entryDate, -1),
+    startingBalance: activeBaseline,
   }
+}
+
+export async function fetchStartingBalances(client, locationIds, entryDate) {
+  if (revenueMonthStart(entryDate) !== TRANSITION_MONTH || !locationIds.length) return []
+  const { data, error } = await client.from('revenue_starting_balances').select('*')
+    .in('location_id', locationIds).eq('revenue_month', TRANSITION_MONTH)
+  if (error) throw error
+  if (!data) throw new Error('Starting balances could not be loaded.')
+  return data
 }
 
 // Live totals are derived, never written over historical cumulative values.

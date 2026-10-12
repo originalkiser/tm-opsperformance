@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { emptyDailyForm, countMissing, validateRevenue } from '../utils/budgetDailyFields'
-import { calculateMtdRevenue, dailyPayload, fetchRevenueEntries, revenueMonthStart } from '../utils/budgetRevenue'
+import { calculateMtdRevenue, dailyPayload, fetchRevenueEntries, revenueMonthStart, latestHistoricalRevenue, fetchStartingBalances } from '../utils/budgetRevenue'
 
 export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
 
@@ -9,6 +9,7 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
   const [entry, setEntry] = useState(null)
   const [target, setTarget] = useState(null)
   const [entries, setEntries] = useState([])
+  const [startingBalance, setStartingBalance] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadedScope, setLoadedScope] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -29,19 +30,22 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
     setEntry(null)
     setTarget(null)
     setEntries([])
+    setStartingBalance(null)
     setForm(emptyDailyForm())
     setAttemptedSave(false)
     async function load() {
       try {
-        const [rows, result] = await Promise.all([
+        const [rows, result, balances] = await Promise.all([
           fetchRevenueEntries(supabase, [locationId], entryDate),
           supabase.from('budget_targets').select('*').eq('location_id', locationId)
             .eq('target_month', revenueMonthStart(entryDate)).maybeSingle(),
+          fetchStartingBalances(supabase, [locationId], entryDate),
         ])
         if (result.error) throw result.error
         if (generation.current !== id) return
         const current = rows.find(row => row.entry_date === entryDate) || null
         setEntries(rows)
+        setStartingBalance(balances[0] || null)
         setEntry(current)
         setTarget(result.data)
         setForm(current ? Object.fromEntries(Object.keys(emptyDailyForm()).map(key => [key, current[key] ?? ''])) : emptyDailyForm())
@@ -66,8 +70,9 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
   const mtdRevenue = useMemo(() => calculateMtdRevenue([
     ...entries.filter(row => row.entry_date !== entryDate),
     { ...form, location_id: locationId, entry_date: entryDate },
-  ], locationId, entryDate), [entries, form, locationId, entryDate])
+  ], locationId, entryDate, startingBalance), [entries, form, locationId, entryDate, startingBalance])
   const missing = countMissing(form)
+  const historicalRevenue = useMemo(() => latestHistoricalRevenue(entries, locationId, entryDate), [entries, locationId, entryDate])
   const revenueError = validateRevenue(form)
 
   const handleSave = async () => {
@@ -95,5 +100,5 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
       setSaving(false)
     }
   }
-  return { form, entry, target, loading: isLoading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, handleSave }
+  return { form, entry, target, loading: isLoading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave, startingBalance, updateStartingBalance: setStartingBalance }
 }

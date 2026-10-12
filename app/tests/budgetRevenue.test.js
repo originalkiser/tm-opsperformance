@@ -1,10 +1,76 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { calculateMtdRevenue, shiftDate, dailyPayload, fetchRevenueEntries, revenueCents } from '../src/utils/budgetRevenue.js'
+import { calculateMtdRevenue, shiftDate, dailyPayload, fetchRevenueEntries, revenueCents, latestHistoricalRevenue, fetchStartingBalances } from '../src/utils/budgetRevenue.js'
 import { calculateCashRevenue, validateRevenue, emptyDailyForm, countMissing, isDayComplete } from '../src/utils/budgetDailyFields.js'
 import { revenuePace } from '../src/utils/budgetMath.js'
 
 const row = (date, total, location = 'test') => ({ location_id: location, entry_date: date, yesterday_total_revenue: total, yesterday_cc_revenue: 0, yesterday_house_revenue: 0 })
+const baseline = { location_id: 'test', revenue_month: '2026-10-01', cutoff_business_date: '2026-10-11', amount: '63638.80' }
+test('October cutoff includes October 11 exactly once, including later manager corrections', () => {
+  const entries = [row('2026-10-12', 7000), row('2026-10-13', '100.10'), row('2026-10-14', '200.20')]
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-12', baseline).total, 63638.8)
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', baseline).total, 63939.1)
+  entries[0].yesterday_total_revenue = 9999
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', baseline).total, 63939.1)
+  entries[1].yesterday_total_revenue = '150.10'
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', baseline).total, 63989.1)
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', { ...baseline, amount: '64000' }).total, 64350.3)
+})
+test('post-cutoff missing or invalid figures suppress totals and pace until corrected', () => {
+  const entries = [row('2026-10-14', 100)]
+  let result = calculateMtdRevenue(entries, 'test', '2026-10-14', baseline)
+  assert.deepEqual(result.missingDates, ['2026-10-12'])
+  assert.equal(result.total, null)
+  assert.equal(revenuePace(result.total, 100000, 0.4).onTrack, null)
+  entries.push({ ...row('2026-10-13', 200), yesterday_cc_revenue: 201 })
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', baseline).total, null)
+  entries[1].yesterday_cc_revenue = 0
+  result = calculateMtdRevenue(entries, 'test', '2026-10-14', baseline)
+  assert.equal(result.total, 63938.8)
+  assert.equal(revenuePace(result.total, 100000, 0.4).onTrack, true)
+})
+test('October balance never applies to earlier dates, other sites or November', () => {
+  assert.equal(calculateMtdRevenue([], 'test', '2026-10-11', baseline).startingBalance, null)
+  assert.equal(calculateMtdRevenue([], 'other', '2026-10-12', baseline).total, null)
+  assert.equal(calculateMtdRevenue([], 'test', '2026-11-01', baseline).total, 0)
+  assert.equal(calculateMtdRevenue([row('2026-11-02', 500)], 'test', '2026-11-02', baseline).total, 500)
+  assert.equal(calculateMtdRevenue([], 'test', '2026-10-12', { ...baseline, amount: 0 }).total, 0)
+  assert.throws(() => calculateMtdRevenue([], 'test', '2026-10-12', { ...baseline, cutoff_business_date: '2026-10-10' }))
+})
+test('starting-balance read errors cannot silently fall back; November skips October reads', async () => {
+  const client = { from() { return { select() { return this }, in() { return this }, eq() { return { data: null, error: new Error('denied') } } } } }
+  await assert.rejects(fetchStartingBalances(client, ['test'], '2026-10-12'), /denied/)
+  assert.deepEqual(await fetchStartingBalances(client, ['test'], '2026-11-01'), [])
+})
+test('transition finds latest recorded historical reference despite newer blank entries', () => {
+  const entries = [
+    { location_id: 'test', entry_date: '2026-10-09', mtd_revenue_actual: 60000 },
+    { location_id: 'test', entry_date: '2026-10-11', mtd_revenue_actual: '63638.80' },
+    row('2026-10-12', 100),
+    { location_id: 'other', entry_date: '2026-10-12', mtd_revenue_actual: 999999 },
+    { location_id: 'test', entry_date: '2026-10-13', mtd_revenue_actual: 999999 },
+  ]
+  const before = JSON.stringify(entries)
+  assert.deepEqual(latestHistoricalRevenue(entries, 'test', '2026-10-12'), { amount: 63638.8, entryDate: '2026-10-11' })
+  const automatic = calculateMtdRevenue(entries, 'test', '2026-10-12')
+  assert.equal(automatic.total, null)
+  assert.equal(automatic.recordedTotal, 100)
+  assert.equal(revenuePace(automatic.total, 100000, 0.4).onTrack, null)
+  assert.equal(JSON.stringify(entries), before)
+})
+test('historical reference does not carry into another month and zero is valid', () => {
+  const entries = [{ location_id: 'test', entry_date: '2026-10-31', mtd_revenue_actual: 63638.8 }]
+  assert.equal(latestHistoricalRevenue(entries, 'test', '2026-11-02'), null)
+  entries.push({ location_id: 'test', entry_date: '2026-11-01', mtd_revenue_actual: 0 })
+  assert.deepEqual(latestHistoricalRevenue(entries, 'test', '2026-11-02'), { amount: 0, entryDate: '2026-11-01' })
+})
+test('next month switches to automatic totals without backfilling transition month', () => {
+  const entries = [row('2026-10-12', 100), row('2026-11-02', 200), row('2026-11-03', 300)]
+  const result = calculateMtdRevenue(entries, 'test', '2026-11-03')
+  assert.equal(result.complete, true)
+  assert.equal(result.total, 500)
+  assert.equal(revenuePace(result.total, 1000, 0.1).onTrack, true)
+})
 test('cash is exact cents and remains blank until every component exists', () => {
   assert.equal(calculateCashRevenue({ yesterday_total_revenue: '0.30', yesterday_cc_revenue: '0.10', yesterday_house_revenue: '0.20' }), 0)
   assert.equal(calculateCashRevenue({ yesterday_total_revenue: 100 }), null)

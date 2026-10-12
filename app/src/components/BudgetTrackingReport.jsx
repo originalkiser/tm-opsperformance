@@ -1,4 +1,6 @@
-import { calculateMtdRevenue, fetchRevenueEntries } from '../utils/budgetRevenue'
+import { useAuth } from '../contexts/AuthContext'
+import RevenueStartingBalanceEditor from './RevenueStartingBalanceEditor'
+import { calculateMtdRevenue, fetchRevenueEntries, latestHistoricalRevenue, fetchStartingBalances } from '../utils/budgetRevenue'
 import useBudgetDailyEntry from '../hooks/useBudgetDailyEntry'
 import BudgetRevenueSummary from './BudgetRevenueSummary'
 import { useState, useEffect, useMemo } from 'react'
@@ -28,8 +30,9 @@ function EditIcon() {
 // ── Edit modal — Daily Entry, scoped to one site ──────────────────────────────
 
 function DailyEntryPane({ location }) {
+  const { profile } = useAuth()
   const [entryDate, setEntryDate] = useState(todayStr)
-  const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, handleSave } = useBudgetDailyEntry(location.id, entryDate)
+  const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave, startingBalance, updateStartingBalance } = useBudgetDailyEntry(location.id, entryDate)
   const calculatedCash = calculateCashRevenue(form)
 
   const baseInputCls = 'w-full border-2 rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
@@ -60,6 +63,7 @@ function DailyEntryPane({ location }) {
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       {revenueError && <p role="alert" className="text-sm text-red-600">{revenueError}</p>}
       {saved && <p role="status" className="text-sm text-green-600">Entry saved.</p>}
+      {profile?.role === 'admin' && entryDate.startsWith('2026-10') && <RevenueStartingBalanceEditor locationId={location.id} balance={startingBalance} disabled={saving || loading || !!error} onSaved={updateStartingBalance} />}
       <fieldset disabled={saving || loading || !!error}>
       <div className="grid grid-cols-2 gap-3">
         {[...YESTERDAY_FIELDS, ...MTD_FIELDS].map(f => (
@@ -109,7 +113,7 @@ function DailyEntryPane({ location }) {
 </div>
          <div>
 
-          <BudgetRevenueSummary revenue={mtdRevenue} historical={entry?.mtd_revenue_actual} />
+          <BudgetRevenueSummary revenue={mtdRevenue} historical={historicalRevenue} />
         </div>
         <div>
           <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">MTD Membership Actual</label>
@@ -165,6 +169,7 @@ export default function BudgetTrackingReport({ locations }) {
 
   const [targets, setTargets]     = useState([])
   const [dailyEntries, setDailyEntries] = useState([])
+  const [startingBalances, setStartingBalances] = useState([])
   const [loading, setLoading]     = useState(true)
   const [reportError, setReportError] = useState('')
   const [editingLoc, setEditingLoc] = useState(null)
@@ -180,13 +185,15 @@ export default function BudgetTrackingReport({ locations }) {
 
     setReportError('')
     try {
-      const [result, entries] = await Promise.all([
+      const [result, entries, balances] = await Promise.all([
         supabase.from('budget_targets').select('*').in('location_id', locIds).eq('target_month', currentMonth),
         fetchRevenueEntries(supabase, locIds, todayStr()),
+        fetchStartingBalances(supabase, locIds, todayStr()),
       ])
       if (result.error) throw result.error
       setTargets(result.data || [])
       setDailyEntries(entries)
+      setStartingBalances(balances)
     } catch {
       setDailyEntries([])
       setReportError('Unable to load the report. Revenue totals and pace are unavailable; please reload.')
@@ -200,7 +207,8 @@ export default function BudgetTrackingReport({ locations }) {
       const entry  = dailyEntries.filter(e => e.location_id === loc.id).sort((a, b) => b.entry_date.localeCompare(a.entry_date))[0]
       const yst    = yesterdayMetrics(entry)
       const mtd    = mtdMetrics(entry)
-      const revenue = calculateMtdRevenue(dailyEntries, loc.id, todayStr())
+      const revenue = calculateMtdRevenue(dailyEntries, loc.id, todayStr(), startingBalances.find(balance => balance.location_id === loc.id))
+      const historicalRevenue = latestHistoricalRevenue(dailyEntries, loc.id, todayStr())
       const rev    = revenuePace(revenue.total, target?.revenue_goal, progress)
       const mem    = membershipStatus(entry?.mtd_membership_actual, target?.membership_goal, todayStr())
       const memPace = membershipPace(entry?.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, todayStr())
@@ -208,10 +216,10 @@ export default function BudgetTrackingReport({ locations }) {
         yesterdayConv: yst.conversion, mtdConv: mtd.conversion, mtdPmix: mtd.pmix,
         membershipProgressRatio: mem.progressRatio, currentRating: entry?.current_rating,
       })
-      return { loc, target, entry, yst, mtd, rev, mem, memPace, score, revenue }
+      return { loc, target, entry, yst, mtd, rev, mem, memPace, score, revenue, historicalRevenue }
     })
     return rankByScore(built)
-  }, [locations, targets, dailyEntries])
+  }, [locations, targets, dailyEntries, startingBalances])
 
   if (loading) return <div className="flex justify-center py-12"><TmLoader /></div>
   if (reportError) return <p role="alert" className="text-red-600">{reportError}</p>
@@ -248,7 +256,7 @@ export default function BudgetTrackingReport({ locations }) {
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.yst.pmix)}</td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.mtd.conversion)}</td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.mtd.pmix)}</td>
-                <td className="px-3 py-2 text-left"><BudgetRevenueSummary revenue={r.revenue} historical={r.entry?.mtd_revenue_actual} /></td>
+                <td className="px-3 py-2 text-left"><BudgetRevenueSummary revenue={r.revenue} historical={r.historicalRevenue} /></td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.rev.pct)}</td>
                 <td className="px-3 py-2 text-center"><PaceBadge onTrack={r.rev.onTrack} label={r.rev.onTrack ? 'On Track' : 'Off Track'} /></td>
                 <td className="px-3 py-2 text-center"><BonusBadge tier={r.mem.tier} /></td>
