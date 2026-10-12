@@ -42,7 +42,7 @@ export function BonusBadge({ tier }) {
 function DailyEntryTab({ locations, profile, onSaved }) {
   const [selectedLocId, setSelectedLocId] = useState(() => profile?.location_id || locations[0]?.id || '')
   const [entryDate, setEntryDate] = useState(todayStr)
-  const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, handleSave } = useBudgetDailyEntry(selectedLocId, entryDate, onSaved)
+  const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(selectedLocId, entryDate, onSaved)
   const calculatedCash = calculateCashRevenue(form)
 
   const yst = yesterdayMetrics(form)
@@ -178,7 +178,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-100 dark:border-tm-dark-border">
               <div>
 
-                <BudgetRevenueSummary revenue={mtdRevenue} historical={entry?.mtd_revenue_actual} />
+                <BudgetRevenueSummary revenue={mtdRevenue} historical={historicalRevenue} />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">MTD Membership Actual</label>
