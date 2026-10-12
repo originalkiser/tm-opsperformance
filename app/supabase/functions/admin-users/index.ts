@@ -16,6 +16,10 @@
 //                                                               → { ok }
 //   anything else / not allowed               → { ok: false, error }
 
+// NOTE: the platform's verify_jwt check is off for this function (see supabase/config.toml),
+// so the auth.getUser() check below is the ONLY thing keeping out callers who aren't
+// signed in. Don't remove or weaken it.
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { projectKeys } from '../_shared/keys.ts'
 

@@ -1,0 +1,12 @@
+# Only the settings the CLI needs to deploy edge functions to the linked project.
+project_id = "qbdvixxooofdlfurcpqy"
+
+# The platform's built-in "Verify JWT" check is off for these two because it can break
+# under Supabase's asymmetric JWT signing keys. They don't rely on it: each one requires
+# a signed-in caller and verifies it with the auth server (auth.getUser) before doing
+# anything, returning 401 otherwise. Keep that check in the function code.
+[functions.submit-downtime-jotform]
+verify_jwt = false
+
+[functions.admin-users]
+verify_jwt = false

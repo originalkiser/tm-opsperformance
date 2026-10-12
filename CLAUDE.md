@@ -145,7 +145,7 @@ These are restored on page load so users land where they left off.
 
 Set in `.env` locally and as GitHub repository secrets (and Cloudflare Pages env vars) for builds.
 
-**Never put the service-role key in a `VITE_*` variable.** Vite inlines every `VITE_*` value into the public JavaScript bundle, and the service-role key bypasses all row-level security. Anything that needs it runs in an edge function instead, where Supabase injects it server-side (functions read the keys through `supabase/functions/_shared/keys.ts`, which prefers the new-style keys and falls back to the legacy ones): user create / reset password / change email / permanent delete go through the `admin-users` function (`app/supabase/functions/admin-users/`), which checks the caller's role first; the Jotform hand-off goes through `submit-downtime-jotform`.
+**Never put the service-role key in a `VITE_*` variable.** Vite inlines every `VITE_*` value into the public JavaScript bundle, and the service-role key bypasses all row-level security. Anything that needs it runs in an edge function instead (their platform-level Verify JWT check is off via `app/supabase/config.toml`, so each function must authenticate the caller itself with `auth.getUser()` — keep that check), where Supabase injects it server-side (functions read the keys through `supabase/functions/_shared/keys.ts`, which prefers the new-style keys and falls back to the legacy ones): user create / reset password / change email / permanent delete go through the `admin-users` function (`app/supabase/functions/admin-users/`), which checks the caller's role first; the Jotform hand-off goes through `submit-downtime-jotform`.
 
 ## Development
 

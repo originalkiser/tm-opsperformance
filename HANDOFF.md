@@ -62,7 +62,7 @@ The database also contains tables this app doesn't use (`dvt_*`, `kiosk_summary`
 
 The "Deletes in N days" countdown on deleted users and deleted downtime logs is display-only — nothing purges them; they stay until an admin permanently deletes them.
 
-**Edge functions** (both require a signed-in caller and check roles inside):
+**Edge functions** (both require a signed-in caller and check roles inside). Supabase's built-in "Verify JWT" check is deliberately **off** for them (`app/supabase/config.toml`) because it can break under Supabase's asymmetric JWT signing keys, which means the `auth.getUser()` check at the top of each function is the only thing keeping out callers who aren't signed in — never remove or weaken it, and any new function that acts on someone's behalf needs the same check:
 - `submit-downtime-jotform` — posts a resolved downtime to Jotform; see the "Downtime → Jotform hand-off" section of `CLAUDE.md`.
 - `admin-users` — create user, reset password, change email, permanent delete.
 - `invite-user` is in the repo but is not deployed and nothing calls it.
