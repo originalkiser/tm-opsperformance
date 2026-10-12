@@ -72,7 +72,7 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
     { ...form, location_id: locationId, entry_date: entryDate },
   ], locationId, entryDate, startingBalance), [entries, form, locationId, entryDate, startingBalance])
   const missing = countMissing(form)
-  const historicalRevenue = useMemo(() => latestHistoricalRevenue(entries, locationId, entryDate), [entries, locationId, entryDate])
+  const historicalRevenue = useMemo(() => latestHistoricalRevenue(entries, locationId, entryDate, mtdRevenue.startingBalance), [entries, locationId, entryDate, mtdRevenue.startingBalance])
   const revenueError = validateRevenue(form)
 
   const handleSave = async () => {

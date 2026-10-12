@@ -43,7 +43,7 @@ test('October balance never applies to earlier dates, other sites or November', 
   assert.equal(calculateMtdRevenue([], 'test', '2026-11-01', baseline).total, 0)
   assert.equal(calculateMtdRevenue([row('2026-11-02', 500)], 'test', '2026-11-02', baseline).total, 500)
   assert.equal(calculateMtdRevenue([row('2026-10-12', 0)], 'test', '2026-10-12', { ...baseline, amount: 0 }).total, 0)
-  assert.throws(() => calculateMtdRevenue([], 'test', '2026-10-12', { ...baseline, cutoff_business_date: '2026-10-11' }))
+  assert.throws(() => calculateMtdRevenue([], 'test', '2026-10-12', { ...baseline, cutoff_business_date: '2026-11-01' }))
 })
 test('starting-balance read errors cannot silently fall back; November skips October reads', async () => {
   const client = { from() { return { select() { return this }, in() { return this }, eq() { return { data: null, error: new Error('denied') } } } } }

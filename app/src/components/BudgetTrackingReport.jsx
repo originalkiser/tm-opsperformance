@@ -1,4 +1,6 @@
 import BudgetRevenueFields from './BudgetRevenueFields'
+import AdminStartingBalancePanel from './AdminStartingBalancePanel'
+import { reportedRevenuePace } from '../utils/budgetRevenueReporting'
 import { useAuth } from '../contexts/AuthContext'
 import RevenueStartingBalanceEditor from './RevenueStartingBalanceEditor'
 import { calculateMtdRevenue, fetchRevenueEntries, latestHistoricalRevenue, fetchStartingBalances } from '../utils/budgetRevenue'
@@ -9,8 +11,8 @@ import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
 import { PaceBadge, BonusBadge } from './BudgetTrackingSection'
 import {
-  toDateStr, firstOfMonth, monthProgress,
-  yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus, membershipPace,
+  toDateStr, firstOfMonth,
+  yesterdayMetrics, mtdMetrics, membershipStatus, membershipPace,
   computeScore, rankByScore, pct1,
 } from '../utils/budgetMath'
 import {
@@ -35,6 +37,7 @@ function DailyEntryPane({ location }) {
   const [entryDate, setEntryDate] = useState(todayStr)
   const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave, startingBalance, updateStartingBalance } = useBudgetDailyEntry(location.id, entryDate)
   const calculatedCash = calculateCashRevenue(form)
+  const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal)
 
   const baseInputCls = 'w-full border-2 rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
   const fieldCls = (key) => {
@@ -64,7 +67,7 @@ function DailyEntryPane({ location }) {
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       {revenueError && <p role="alert" className="text-sm text-red-600">{revenueError}</p>}
       {saved && <p role="status" className="text-sm text-green-600">Entry saved.</p>}
-      {profile?.role === 'admin' && entryDate.startsWith('2026-10') && <RevenueStartingBalanceEditor locationId={location.id} balance={startingBalance} disabled={saving || loading || !!error} onSaved={updateStartingBalance} />}
+      {profile?.role === 'admin' && entryDate.startsWith('2026-10') && <RevenueStartingBalanceEditor locationId={location.id} timeZone={location.timezone} balance={startingBalance} disabled={saving || loading || !!error} onSaved={updateStartingBalance} />}
       <fieldset disabled={saving || loading || !!error}>
       <div className="grid grid-cols-2 gap-3">
         {[...YESTERDAY_FIELDS, ...MTD_FIELDS].map(f => (
@@ -97,6 +100,7 @@ function DailyEntryPane({ location }) {
          <div>
 
           <BudgetRevenueSummary revenue={mtdRevenue} historical={historicalRevenue} />
+          <div className="mt-2 text-xs text-gray-800 dark:text-gray-100">Revenue %: {pct1(rev.pct)} · Revenue Pace: {rev.onTrack == null ? '—' : rev.onTrack ? 'On Track' : 'Off Track'}{rev.reported.provisional && <span className="block text-amber-800 dark:text-amber-300">Provisional · through {rev.reported.throughDate}</span>}</div>
         </div>
         <div>
           <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">MTD Membership Actual</label>
@@ -149,7 +153,8 @@ function EditModal({ location, onClose }) {
 // ── Main report ───────────────────────────────────────────────────────────────
 
 export default function BudgetTrackingReport({ locations }) {
-
+  const { profile } = useAuth()
+  const [balancePanelOpen, setBalancePanelOpen] = useState(false)
   const [targets, setTargets]     = useState([])
   const [dailyEntries, setDailyEntries] = useState([])
   const [startingBalances, setStartingBalances] = useState([])
@@ -184,15 +189,14 @@ export default function BudgetTrackingReport({ locations }) {
   }
 
   const rows = useMemo(() => {
-    const progress = monthProgress(todayStr())
     const built = locations.map(loc => {
       const target = targets.find(t => t.location_id === loc.id)
       const entry  = dailyEntries.filter(e => e.location_id === loc.id).sort((a, b) => b.entry_date.localeCompare(a.entry_date))[0]
       const yst    = yesterdayMetrics(entry)
       const mtd    = mtdMetrics(entry)
       const revenue = calculateMtdRevenue(dailyEntries, loc.id, todayStr(), startingBalances.find(balance => balance.location_id === loc.id))
-      const historicalRevenue = latestHistoricalRevenue(dailyEntries, loc.id, todayStr())
-      const rev    = revenuePace(revenue.total, target?.revenue_goal, progress)
+      const historicalRevenue = latestHistoricalRevenue(dailyEntries, loc.id, todayStr(), revenue.startingBalance)
+      const rev    = reportedRevenuePace(revenue, historicalRevenue, target?.revenue_goal)
       const mem    = membershipStatus(entry?.mtd_membership_actual, target?.membership_goal, todayStr())
       const memPace = membershipPace(entry?.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, todayStr())
       const score  = computeScore({
@@ -204,12 +208,17 @@ export default function BudgetTrackingReport({ locations }) {
     return rankByScore(built)
   }, [locations, targets, dailyEntries, startingBalances])
 
-  if (loading) return <div className="flex justify-center py-12"><TmLoader /></div>
-  if (reportError) return <p role="alert" className="text-red-600">{reportError}</p>
+  const balanceTools = profile?.role === 'admin' && <>
+    <button onClick={() => setBalancePanelOpen(open => !open)} className="mb-3 rounded bg-tm-teal text-tm-navy px-3 py-2 font-bold text-sm">Admin starting balances</button>
+    {balancePanelOpen && <AdminStartingBalancePanel locations={locations} onClose={() => setBalancePanelOpen(false)} onSaved={data => setStartingBalances(old => [...old.filter(balance => balance.location_id !== data.location_id), data])} />}
+  </>
+  if (loading) return <div>{balanceTools}<div className="flex justify-center py-12"><TmLoader /></div></div>
+  if (reportError) return <div>{balanceTools}<p role="alert" className="text-red-600">{reportError}</p></div>
   if (!locations.length) return <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-10 text-center">No sites have Budget Tracking enabled yet. Turn it on in Admin → Locations.</div>
 
   return (
     <div>
+      {balanceTools}
       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-tm-dark-border">
         <table className="w-full text-xs font-brand border-collapse">
           <thead>
@@ -240,8 +249,8 @@ export default function BudgetTrackingReport({ locations }) {
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.mtd.conversion)}</td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.mtd.pmix)}</td>
                 <td className="px-3 py-2 text-left"><BudgetRevenueSummary revenue={r.revenue} historical={r.historicalRevenue} /></td>
-                <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.rev.pct)}</td>
-                <td className="px-3 py-2 text-center"><PaceBadge onTrack={r.rev.onTrack} label={r.rev.onTrack ? 'On Track' : 'Off Track'} /></td>
+                <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.rev.pct)}{r.rev.reported.provisional && <div className="text-amber-800 dark:text-amber-300">Provisional · through {r.rev.reported.throughDate}</div>}</td>
+                <td className="px-3 py-2 text-center"><PaceBadge onTrack={r.rev.onTrack} label={`${r.rev.reported.provisional ? 'Provisional · ' : ''}${r.rev.onTrack ? 'On Track' : 'Off Track'}`} /></td>
                 <td className="px-3 py-2 text-center"><BonusBadge tier={r.mem.tier} /></td>
                 <td className="px-3 py-2 text-center"><PaceBadge onTrack={r.memPace.onTrack} label={r.memPace.onTrack ? 'On Track' : 'Off Track'} /></td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{r.entry?.current_rating ?? '—'}</td>
