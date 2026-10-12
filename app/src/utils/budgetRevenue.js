@@ -48,7 +48,7 @@ export function revenueError(form) {
 }
 
 export const TRANSITION_MONTH = '2026-10-01'
-export const TRANSITION_CUTOFF = '2026-10-11'
+export const TRANSITION_CUTOFF = '2026-10-10'
 
 export function calculateMtdRevenue(entries, locationId, entryDate, startingBalance = null) {
   const monthStart = revenueMonthStart(entryDate)
@@ -57,7 +57,7 @@ export function calculateMtdRevenue(entries, locationId, entryDate, startingBala
   if (baseline && (baseline.cutoff_business_date !== TRANSITION_CUTOFF || revenueCents(baseline.amount) == null)) {
     throw new Error('Invalid October revenue starting balance.')
   }
-  // A balance through October 11 cannot describe an earlier as-of date.
+  // A balance through October 10 cannot describe an earlier as-of date.
   const activeBaseline = baseline && entryDate > TRANSITION_CUTOFF ? baseline : null
   const firstBusinessDate = activeBaseline ? shiftDate(TRANSITION_CUTOFF, 1) : monthStart
   const byDate = new Map()
