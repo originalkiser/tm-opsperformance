@@ -1,4 +1,5 @@
 import { cashRevenue, revenueError } from './budgetRevenue.js'
+import { creditCardInputError } from './creditCardCalculator.js'
 // Shared field metadata + validation for the Budget Tracking daily entry
 // form, used both on the Site Entry page (BudgetTrackingSection.jsx) and the
 // Reports-page admin override (BudgetTrackingReport.jsx), so the two stay in
@@ -28,10 +29,14 @@ export const MTD_FIELDS = [
   { key: 'mtd_best',        label: 'MTD Best',   hint: 'Memberships Sold' },
 ]
 
+export const REVENUE_FIELDS = [
+  { key: 'yesterday_total_revenue', label: 'YESTERDAY TOTAL TO ACCOUNT FOR / TOTAL PAYMENTS ($)' },
+  { key: 'yesterday_cc_revenue', label: 'YESTERDAY CREDIT CARD REVENUE ($)' },
+  { key: 'yesterday_house_revenue', label: 'YESTERDAY HOUSE ACCOUNT / OTHER TENDERS ($)' },
+]
+
 export const EXTRA_FIELDS = [
-  { key: 'yesterday_total_revenue', label: 'Yesterday Total Revenue ($)' },
-  { key: 'yesterday_cc_revenue', label: 'Yesterday CC Revenue ($)' },
-  { key: 'yesterday_house_revenue', label: 'Yesterday House Account Revenue ($)' },
+  ...REVENUE_FIELDS,
   { key: 'mtd_membership_actual', label: 'MTD Membership Actual' },
   { key: 'current_rating', label: 'Current Rating' },
   { key: 'current_reviews', label: 'Current Reviews' },
@@ -53,4 +58,4 @@ export const isDayComplete = (entry) =>
   !!entry && ALL_DAILY_FIELDS.every(f => !isFieldMissing(entry, f.key)) && !validateRevenue(entry)
 
 export const calculateCashRevenue = cashRevenue
-export const validateRevenue = revenueError
+export const validateRevenue = form => creditCardInputError(form.yesterday_cc_revenue) || revenueError(form)

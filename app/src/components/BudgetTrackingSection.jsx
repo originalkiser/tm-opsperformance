@@ -1,3 +1,4 @@
+import BudgetRevenueFields from './BudgetRevenueFields'
 import useBudgetDailyEntry from '../hooks/useBudgetDailyEntry'
 import BudgetRevenueSummary from './BudgetRevenueSummary'
 import { useState, useEffect } from 'react'
@@ -137,25 +138,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
-  {[
-    ['yesterday_total_revenue', 'Yesterday Total Revenue ($)'],
-    ['yesterday_cc_revenue', 'Yesterday CC Revenue ($)'],
-    ['yesterday_house_revenue', 'Yesterday House Account Revenue ($)'],
-  ].map(([key, label]) => (
-    <div key={key}>
-      <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">
-        {label}
-      </label>
-      <input
-        type="number"
-        min="0"
-        step="0.01"
-        aria-label={label} value={form[key]}
-        onChange={e => set(key, e.target.value)}
-        className={fieldCls(key)}
-      />
-    </div>
-  ))}
+  <BudgetRevenueFields form={form} set={set} fieldCls={fieldCls} />
 </div>
    <div className="mt-3 rounded-lg bg-gray-50 dark:bg-tm-dark-card px-3 py-2 text-sm">
   <span className="text-gray-500 dark:text-tm-dark-muted">
