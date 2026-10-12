@@ -1,12 +1,13 @@
 import BudgetRevenueFields from './BudgetRevenueFields'
+import { reportedRevenuePace } from '../utils/budgetRevenueReporting'
 import useBudgetDailyEntry from '../hooks/useBudgetDailyEntry'
 import BudgetRevenueSummary from './BudgetRevenueSummary'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
 import {
-  toDateStr, firstOfMonth, monthProgress,
-  yesterdayMetrics, mtdMetrics, revenuePace, membershipStatus, membershipPace, pct1,
+  toDateStr, firstOfMonth,
+  yesterdayMetrics, mtdMetrics, membershipStatus, membershipPace, pct1,
 } from '../utils/budgetMath'
 import {
   YESTERDAY_FIELDS, MTD_FIELDS,
@@ -48,8 +49,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
 
   const yst = yesterdayMetrics(form)
   const mtd = mtdMetrics(form)
-  const progress = monthProgress(entryDate)
-  const rev = revenuePace(error ? null : mtdRevenue.total, target?.revenue_goal, progress)
+  const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal)
   const mem = membershipStatus(form.mtd_membership_actual, target?.membership_goal, entryDate)
   const memPace = membershipPace(form.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, entryDate)
 
@@ -195,7 +195,8 @@ function DailyEntryTab({ locations, profile, onSaved }) {
             <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border p-4">
               <div className="text-[10px] font-brand font-semibold text-gray-400 uppercase tracking-wide mb-1">MTD Revenue %</div>
               <div className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal">{pct1(rev.pct)}</div>
-              <div className="mt-1"><PaceBadge onTrack={rev.onTrack} label={rev.onTrack ? 'On Track' : 'Off Track'} /></div>
+              {rev.reported.provisional && <div className="text-xs text-amber-800 dark:text-amber-300">Provisional · through {rev.reported.throughDate}</div>}
+              <div className="mt-1"><PaceBadge onTrack={rev.onTrack} label={`${rev.reported.provisional ? 'Provisional · ' : ''}${rev.onTrack ? 'On Track' : 'Off Track'}`} /></div>
             </div>
             <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border p-4">
               <div className="text-[10px] font-brand font-semibold text-gray-400 uppercase tracking-wide mb-1">MTD Membership Actual</div>

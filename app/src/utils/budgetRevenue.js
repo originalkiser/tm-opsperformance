@@ -8,13 +8,31 @@ export function shiftDate(date, days) {
 
 export const revenueMonthStart = date => `${date.slice(0, 7)}-01`
 
+// Presentation fallback is a dated cumulative figure, NEVER a partial daily
+// subtotal or a sum of overlapping reported/verified amounts.
+export function revenuePresentation(revenue, historical) {
+  if (revenue.complete) return { amount: revenue.total, throughDate: revenue.throughDate,
+    reportingDate: shiftDate(revenue.throughDate, 1), provisional: false, source: 'automatic' }
+  if (revenue.startingBalance) return { amount: Number(revenue.startingBalance.amount),
+    throughDate: revenue.startingBalance.cutoff_business_date,
+    reportingDate: shiftDate(revenue.startingBalance.cutoff_business_date, 1), provisional: true, source: 'verified balance' }
+  if (historical && revenueCents(historical.amount) != null) return { amount: Number(historical.amount),
+    throughDate: shiftDate(historical.entryDate, -1), reportingDate: historical.entryDate,
+    provisional: true, source: 'reported MTD' }
+  return { amount: null, reportingDate: null, throughDate: null, provisional: false, source: null }
+}
+
 // Historical references belong to the selected month/site and never enter totals.
-export function latestHistoricalRevenue(entries, locationId, entryDate) {
+export function latestHistoricalRevenue(entries, locationId, entryDate, activeStartingBalance = null) {
+  // A verified balance is authoritative; do not substitute or combine an
+  // overlapping reported cumulative figure, even when later daily days are missing.
+  if (activeStartingBalance?.location_id === locationId
+    && activeStartingBalance.revenue_month === revenueMonthStart(entryDate)
+    && entryDate > activeStartingBalance.cutoff_business_date) return null
   const monthStart = revenueMonthStart(entryDate)
   const latest = entries.filter(row => row.location_id === locationId
-    && row.entry_date >= monthStart && row.entry_date <= entryDate
-    && row.mtd_revenue_actual != null && row.mtd_revenue_actual !== ''
-    && Number.isFinite(Number(row.mtd_revenue_actual)) && Number(row.mtd_revenue_actual) >= 0)
+    && (row.entry_date > monthStart || (row.entry_date === monthStart && revenueCents(row.mtd_revenue_actual) === 0)) && row.entry_date <= entryDate
+    && revenueCents(row.mtd_revenue_actual) != null)
     .sort((a, b) => b.entry_date.localeCompare(a.entry_date))[0]
   return latest ? { amount: Number(latest.mtd_revenue_actual), entryDate: latest.entry_date } : null
 }
@@ -48,18 +66,33 @@ export function revenueError(form) {
 }
 
 export const TRANSITION_MONTH = '2026-10-01'
-export const TRANSITION_CUTOFF = '2026-10-10'
+export const DEFAULT_TRANSITION_CUTOFF = '2026-10-10'
+
+export function startingBalanceCutoffError(cutoff, month = TRANSITION_MONTH, lastCompletedDate = null) {
+  if (typeof cutoff !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(cutoff)
+    || !Number.isFinite(Date.parse(`${cutoff}T00:00:00Z`))
+    || new Date(`${cutoff}T00:00:00Z`).toISOString().slice(0, 10) !== cutoff) return 'Choose a valid cutoff business date.'
+  if (revenueMonthStart(cutoff) !== month) return 'The cutoff must be within October 2026.'
+  if (lastCompletedDate && cutoff > lastCompletedDate) return 'The cutoff cannot be later than the last completed business day.'
+  return null
+}
+
+export function lastCompletedBusinessDate(timeZone = 'America/Chicago', now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: timeZone || 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now)
+  const part = type => parts.find(value => value.type === type).value
+  return shiftDate(`${part('year')}-${part('month')}-${part('day')}`, -1)
+}
 
 export function calculateMtdRevenue(entries, locationId, entryDate, startingBalance = null) {
   const monthStart = revenueMonthStart(entryDate)
   const baseline = monthStart === TRANSITION_MONTH && startingBalance?.location_id === locationId
     && startingBalance?.revenue_month === TRANSITION_MONTH ? startingBalance : null
-  if (baseline && (baseline.cutoff_business_date !== TRANSITION_CUTOFF || revenueCents(baseline.amount) == null)) {
+  if (baseline && (startingBalanceCutoffError(baseline.cutoff_business_date) || revenueCents(baseline.amount) == null)) {
     throw new Error('Invalid October revenue starting balance.')
   }
-  // A balance through October 10 cannot describe an earlier as-of date.
-  const activeBaseline = baseline && entryDate > TRANSITION_CUTOFF ? baseline : null
-  const firstBusinessDate = activeBaseline ? shiftDate(TRANSITION_CUTOFF, 1) : monthStart
+  // A later cutoff cannot describe an earlier historical as-of date.
+  const activeBaseline = baseline && entryDate > baseline.cutoff_business_date ? baseline : null
+  const firstBusinessDate = activeBaseline ? shiftDate(activeBaseline.cutoff_business_date, 1) : monthStart
   const byDate = new Map()
   for (const row of entries) {
     if (row.location_id !== locationId) continue
