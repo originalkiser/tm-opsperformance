@@ -5,37 +5,45 @@ import { calculateCashRevenue, validateRevenue, emptyDailyForm, countMissing, is
 import { revenuePace } from '../src/utils/budgetMath.js'
 
 const row = (date, total, location = 'test') => ({ location_id: location, entry_date: date, yesterday_total_revenue: total, yesterday_cc_revenue: 0, yesterday_house_revenue: 0 })
-const baseline = { location_id: 'test', revenue_month: '2026-10-01', cutoff_business_date: '2026-10-11', amount: '63638.80' }
+const baseline = { location_id: 'test', revenue_month: '2026-10-01', cutoff_business_date: '2026-10-10', amount: '63638.80' }
 test('October cutoff includes October 11 exactly once, including later manager corrections', () => {
   const entries = [row('2026-10-12', 7000), row('2026-10-13', '100.10'), row('2026-10-14', '200.20')]
-  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-12', baseline).total, 63638.8)
-  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', baseline).total, 63939.1)
+  entries.push(row('2026-10-11', 9000)) // October 10 is already in the balance.
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-12', baseline).total, 70638.8)
+  entries[3].yesterday_total_revenue = 9500
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-12', baseline).total, 70638.8)
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', baseline).total, 70939.1)
   entries[0].yesterday_total_revenue = 9999
-  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', baseline).total, 63939.1)
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', baseline).total, 73938.1)
   entries[1].yesterday_total_revenue = '150.10'
-  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', baseline).total, 63989.1)
-  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', { ...baseline, amount: '64000' }).total, 64350.3)
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', baseline).total, 73988.1)
+  assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', { ...baseline, amount: '64000' }).total, 74349.3)
 })
 test('post-cutoff missing or invalid figures suppress totals and pace until corrected', () => {
+  const firstMissing = calculateMtdRevenue([], 'test', '2026-10-12', baseline)
+  assert.deepEqual(firstMissing.missingDates, ['2026-10-11'])
+  assert.equal(firstMissing.total, null)
   const entries = [row('2026-10-14', 100)]
   let result = calculateMtdRevenue(entries, 'test', '2026-10-14', baseline)
-  assert.deepEqual(result.missingDates, ['2026-10-12'])
+  assert.deepEqual(result.missingDates, ['2026-10-11', '2026-10-12'])
   assert.equal(result.total, null)
   assert.equal(revenuePace(result.total, 100000, 0.4).onTrack, null)
   entries.push({ ...row('2026-10-13', 200), yesterday_cc_revenue: 201 })
   assert.equal(calculateMtdRevenue(entries, 'test', '2026-10-14', baseline).total, null)
   entries[1].yesterday_cc_revenue = 0
+  entries.push(row('2026-10-12', 50)) // Returning manager fills missed October 11.
   result = calculateMtdRevenue(entries, 'test', '2026-10-14', baseline)
-  assert.equal(result.total, 63938.8)
+  assert.equal(result.total, 63988.8)
   assert.equal(revenuePace(result.total, 100000, 0.4).onTrack, true)
 })
 test('October balance never applies to earlier dates, other sites or November', () => {
-  assert.equal(calculateMtdRevenue([], 'test', '2026-10-11', baseline).startingBalance, null)
+  assert.equal(calculateMtdRevenue([], 'test', '2026-10-10', baseline).startingBalance, null)
+  assert.equal(calculateMtdRevenue([], 'test', '2026-10-11', baseline).total, 63638.8)
   assert.equal(calculateMtdRevenue([], 'other', '2026-10-12', baseline).total, null)
   assert.equal(calculateMtdRevenue([], 'test', '2026-11-01', baseline).total, 0)
   assert.equal(calculateMtdRevenue([row('2026-11-02', 500)], 'test', '2026-11-02', baseline).total, 500)
-  assert.equal(calculateMtdRevenue([], 'test', '2026-10-12', { ...baseline, amount: 0 }).total, 0)
-  assert.throws(() => calculateMtdRevenue([], 'test', '2026-10-12', { ...baseline, cutoff_business_date: '2026-10-10' }))
+  assert.equal(calculateMtdRevenue([row('2026-10-12', 0)], 'test', '2026-10-12', { ...baseline, amount: 0 }).total, 0)
+  assert.throws(() => calculateMtdRevenue([], 'test', '2026-10-12', { ...baseline, cutoff_business_date: '2026-10-11' }))
 })
 test('starting-balance read errors cannot silently fall back; November skips October reads', async () => {
   const client = { from() { return { select() { return this }, in() { return this }, eq() { return { data: null, error: new Error('denied') } } } } }
