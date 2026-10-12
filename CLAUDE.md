@@ -45,7 +45,7 @@ app/                        # Vite app root
       useDarkMode.js        # Dark mode persistence
       useVersionCheck.js    # Polls for new deployments
     lib/
-      supabase.js           # Anon client (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
+      supabase.js           # Public-key client (VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY)
     utils/
       logMath.js            # Core metric calculations (shopTotals, employeeDeltasByDay)
 .github/workflows/deploy.yml  # Build → GitHub Pages on push to main
@@ -140,10 +140,12 @@ These are restored on page load so users land where they left off.
 | Variable | Used by | Purpose |
 |----------|---------|---------|
 | `VITE_SUPABASE_URL` | All clients | Project URL |
-| `VITE_SUPABASE_ANON_KEY` | `supabase.js` | Legacy public (anon) key — row-level security enforced |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | `supabase.js` | Optional. New-style public key (`sb_publishable_…`); when set it is used instead of the anon key |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | `supabase.js` | Public key (`sb_publishable_…`) — row-level security enforced. This is the one to set |
+| `VITE_SUPABASE_ANON_KEY` | `supabase.js` | **Disabled legacy key** — rejected by Supabase since the key rotation; only read as a fallback, don't rely on it |
 
 Set in `.env` locally and as GitHub repository secrets (and Cloudflare Pages env vars) for builds.
+
+The API keys have been rotated: the legacy anon/service-role keys are disabled and the legacy JWT signing secret is revoked (see [`HANDOFF.md`](HANDOFF.md)), so only the publishable key works from a browser. There is no `VITE_SUPABASE_SERVICE_KEY` any more.
 
 **Never put the service-role key in a `VITE_*` variable.** Vite inlines every `VITE_*` value into the public JavaScript bundle, and the service-role key bypasses all row-level security. Anything that needs it runs in an edge function instead (their platform-level Verify JWT check is off via `app/supabase/config.toml`, so each function must authenticate the caller itself with `auth.getUser()` — keep that check), where Supabase injects it server-side (functions read the keys through `supabase/functions/_shared/keys.ts`, which prefers the new-style keys and falls back to the legacy ones): user create / reset password / change email / permanent delete go through the `admin-users` function (`app/supabase/functions/admin-users/`), which checks the caller's role first; the Jotform hand-off goes through `submit-downtime-jotform`.
 
@@ -159,7 +161,7 @@ npm run preview   # serve the dist build locally
 
 ## Deployment
 
-Push to `main` → GitHub Actions builds and deploys to GitHub Pages automatically. The live app uses `HashRouter` so that deep links work without server-side routing.
+Push to `main` → GitHub Actions builds and deploys to GitHub Pages automatically. Cloudflare Pages (`ops.tmcw.app`) independently builds the same push through its own GitHub integration; nothing in this repo triggers or configures it, so never try to deploy to Cloudflare manually (no wrangler, deploy hooks or extra workflows), and contributors don't need Cloudflare access (HANDOFF.md explains what a "Cloudflare Deploy failed" check means). The live app uses `HashRouter` so that deep links work without server-side routing.
 
 Supabase changes are **not** part of that pipeline. From `app/` (the Supabase CLI is already logged in on this machine; always pass the project explicitly — the same login can see other projects):
 
