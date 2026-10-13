@@ -1,3 +1,5 @@
+import AdminCashOnHandPanel from './AdminCashOnHandPanel'
+import CashReconciliationSection from './CashReconciliationSection'
 import BudgetRevenueFields from './BudgetRevenueFields'
 import AdminStartingBalancePanel from './AdminStartingBalancePanel'
 import { reportedRevenuePace } from '../utils/budgetRevenueReporting'
@@ -18,7 +20,7 @@ import {
 import {
   YESTERDAY_FIELDS, MTD_FIELDS,
   isFieldMissing, isDayComplete,
-  calculateCashRevenue,
+
 } from '../utils/budgetDailyFields'
 const todayStr = () => toDateStr(new Date())
 
@@ -36,7 +38,6 @@ function DailyEntryPane({ location }) {
   const { profile } = useAuth()
   const [entryDate, setEntryDate] = useState(todayStr)
   const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave, startingBalance, updateStartingBalance } = useBudgetDailyEntry(location.id, entryDate)
-  const calculatedCash = calculateCashRevenue(form)
   const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal)
 
   const baseInputCls = 'w-full border-2 rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
@@ -79,24 +80,7 @@ function DailyEntryPane({ location }) {
           </div>
         ))}
         <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"><BudgetRevenueFields form={form} set={set} fieldCls={fieldCls} /></div>
-        <div className="col-span-2 rounded-lg bg-gray-50 dark:bg-tm-dark-card px-3 py-2 text-xs">
-  <span className="text-gray-500 dark:text-tm-dark-muted">
-    Yesterday Cash Revenue (Calculated):
-  </span>
-  <strong className="ml-2 text-tm-blue dark:text-tm-teal">
-    {calculatedCash === null
-      ? '—'
-      : calculatedCash.toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-        })}
-  </strong>
-  {calculatedCash < 0 && (
-    <span className="ml-2 text-red-500">
-      Check revenue entries
-    </span>
-  )}
-</div>
+        <CashReconciliationSection locationId={location.id} timeZone={location.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
          <div>
 
           <BudgetRevenueSummary revenue={mtdRevenue} historical={historicalRevenue} />
@@ -208,17 +192,18 @@ export default function BudgetTrackingReport({ locations }) {
     return rankByScore(built)
   }, [locations, targets, dailyEntries, startingBalances])
 
+  const cashTools = profile?.role === 'admin' && <AdminCashOnHandPanel locations={locations} />
   const balanceTools = profile?.role === 'admin' && <>
     <button onClick={() => setBalancePanelOpen(open => !open)} className="mb-3 rounded bg-tm-teal text-tm-navy px-3 py-2 font-bold text-sm">Admin starting balances</button>
     {balancePanelOpen && <AdminStartingBalancePanel locations={locations} onClose={() => setBalancePanelOpen(false)} onSaved={data => setStartingBalances(old => [...old.filter(balance => balance.location_id !== data.location_id), data])} />}
   </>
-  if (loading) return <div>{balanceTools}<div className="flex justify-center py-12"><TmLoader /></div></div>
-  if (reportError) return <div>{balanceTools}<p role="alert" className="text-red-600">{reportError}</p></div>
+  if (loading) return <div>{cashTools}{balanceTools}<div className="flex justify-center py-12"><TmLoader /></div></div>
+  if (reportError) return <div>{cashTools}{balanceTools}<p role="alert" className="text-red-600">{reportError}</p></div>
   if (!locations.length) return <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-10 text-center">No sites have Budget Tracking enabled yet. Turn it on in Admin → Locations.</div>
 
   return (
     <div>
-      {balanceTools}
+      {cashTools}{balanceTools}
       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-tm-dark-border">
         <table className="w-full text-xs font-brand border-collapse">
           <thead>

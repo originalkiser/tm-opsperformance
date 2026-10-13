@@ -1,3 +1,4 @@
+import CashReconciliationSection from './CashReconciliationSection'
 import BudgetRevenueFields from './BudgetRevenueFields'
 import { reportedRevenuePace } from '../utils/budgetRevenueReporting'
 import useBudgetDailyEntry from '../hooks/useBudgetDailyEntry'
@@ -12,7 +13,7 @@ import {
 import {
   YESTERDAY_FIELDS, MTD_FIELDS,
   isFieldMissing, isDayComplete,
-  calculateCashRevenue,
+
 } from '../utils/budgetDailyFields'
 
 const todayStr = () => toDateStr(new Date())
@@ -45,7 +46,6 @@ function DailyEntryTab({ locations, profile, onSaved }) {
   const [selectedLocId, setSelectedLocId] = useState(() => profile?.location_id || locations[0]?.id || '')
   const [entryDate, setEntryDate] = useState(todayStr)
   const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(selectedLocId, entryDate, onSaved)
-  const calculatedCash = calculateCashRevenue(form)
 
   const yst = yesterdayMetrics(form)
   const mtd = mtdMetrics(form)
@@ -140,24 +140,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
   <BudgetRevenueFields form={form} set={set} fieldCls={fieldCls} />
 </div>
-   <div className="mt-3 rounded-lg bg-gray-50 dark:bg-tm-dark-card px-3 py-2 text-sm">
-  <span className="text-gray-500 dark:text-tm-dark-muted">
-    Yesterday Cash Revenue (Calculated):
-  </span>
-  <strong className="ml-2 text-tm-blue dark:text-tm-teal">
-    {calculatedCash === null
-      ? '—'
-      : calculatedCash.toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-        })}
-  </strong>
-  {calculatedCash < 0 && (
-    <span className="ml-2 text-red-500">
-      Check revenue entries
-    </span>
-  )}
-</div>
+   <CashReconciliationSection locationId={selectedLocId} timeZone={locations.find(site => site.id === selectedLocId)?.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-100 dark:border-tm-dark-border">
               <div>
 
