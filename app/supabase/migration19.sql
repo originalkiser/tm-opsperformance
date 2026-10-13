@@ -49,7 +49,11 @@ alter table public.budget_daily_entries
   add column if not exists cash_deposit_cents bigint,
   add column if not exists cash_variance_cents bigint;
 
-create or replace function public.stamp_cash_on_hand() returns trigger language plpgsql set search_path='' as $$
+-- These two functions run as the caller, not the owner. Existing RLS calls
+-- user_can_edit_location(), whose production body uses unqualified public tables.
+-- Keep pg_catalog first and pg_temp last so that helper resolves correctly.
+-- The audit SECURITY DEFINER functions below retain their empty search_path.
+create or replace function public.stamp_cash_on_hand() returns trigger language plpgsql set search_path=pg_catalog,public,pg_temp as $$
 declare prior public.cash_on_hand_versions; site_today date;
 begin
   if not exists(select 1 from public.user_profiles where id=auth.uid() and role='admin') then raise exception 'Admin required' using errcode='42501'; end if;
@@ -76,7 +80,7 @@ end $$;
 drop trigger if exists audit_cash_on_hand on public.cash_on_hand_versions;
 create trigger audit_cash_on_hand after insert on public.cash_on_hand_versions for each row execute function public.audit_cash_on_hand();
 
-create or replace function public.reconcile_daily_cash() returns trigger language plpgsql set search_path='' as $$
+create or replace function public.reconcile_daily_cash() returns trigger language plpgsql set search_path=pg_catalog,public,pg_temp as $$
 declare version public.cash_on_hand_versions; recalc boolean; submitted jsonb;
 begin
   if auth.uid() is null then

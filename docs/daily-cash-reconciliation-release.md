@@ -22,6 +22,14 @@ Actual Manager and Admin components were exercised in an isolated browser with f
 
 ## Migration and release
 
+### Production-helper compatibility correction
+
+Read-only production inspection confirmed user_can_edit_location(uuid) is a SQL SECURITY DEFINER helper with unqualified user_profiles and manager_locations references and no function search_path setting. The original new cash trigger's empty search_path propagated into that helper, producing relation "user_profiles" does not exist. Cash on Hand reads inside the new setting trigger also invoke that helper through RLS.
+
+Only the new stamp_cash_on_hand and reconcile_daily_cash functions now use pg_catalog,public,pg_temp as their search_path. Both remain caller-permission functions; audit SECURITY DEFINER functions retain empty search_path. Kiser's helper, its definition, and every existing production policy remain unchanged.
+
+Correction verification used the exact production helper definition (including absence of search_path configuration) and production budget_daily_entries_all policy in a rollback-only tm-ops-dev fixture. The original empty-path failure was reproduced first; corrected Manager and Admin cash saves, missed historical counts, audit old/new values, assigned/unassigned location enforcement, and ordinary Budget/revenue saves without a cash count passed. The helper definition was compared before/after the new migration and remained identical. All 47 automated tests and GitHub Pages/Cloudflare production builds passed again. No production migration, merge or deployment was performed.
+
 Migration19 is additive and rerunnable. It adds cash columns to budget_daily_entries, cash_on_hand_versions and cash_reconciliation_audit, protected triggers and new-table RLS. It does not seed production Cash on Hand, alter existing policies or rewrite existing daily/history values. Existing count-null entries receive no invented cash values. cash snapshots are frozen only on count submission, not unrelated legacy daily saves.
 
 Before release: review PR and verify actual production schema/access helper, backup readiness and migration19 filename still unused. Owner must approve migration/merge/deployment. Apply migration19 once before merging reviewed UI. Confirm automatic GitHub Pages and Cloudflare deployments (no manual Cloudflare deployment). Verify live with owner-approved Cash on Hand values; no fictional production entries.
