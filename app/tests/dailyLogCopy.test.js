@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fmtNum } from '../src/utils/format.js'
 
-test('actual image Copy draws zero counts and totals; text fallback preserves zero cells', async () => {
+test('Copy preserves entered numeric/string zeros while blank cells and calculated zeros stay blank', async () => {
   const source = readFileSync(new URL('../src/components/DailyLogTable.jsx', import.meta.url), 'utf8')
   const start = source.indexOf('  const copyTableAsImage = async () => {')
   const end = source.indexOf('  // ── Paste from table', start)
@@ -18,10 +18,10 @@ test('actual image Copy draws zero counts and totals; text fallback preserves ze
   const run = new Function('document', 'navigator', 'ClipboardItem', 'orderedCols', 'displayRows', 'compute', 'opportunitiesFormula', 'TIME_SLOTS', 'groupInfo', 'toInt', 'totals', 'totComputed', 'fmtNum', 'selectedDate', 'locationName', 'metricThresholds', 'setCopyFeedback', 'setTimeout', source.slice(start, end) + '\nreturn copyTableAsImage()')
   await run({ createElement: () => canvas }, navigator, class {}, columns, rows, compute, 'detailed', [{ value: '08:00:00', label: '8:00 AM' }, { value: '09:00:00', label: '9:00 AM' }], { '08:00:00': { first: 0 }, '09:00:00': { first: 1 } }, value => Math.max(0, parseInt(value) || 0), { total_washes: 12, basic: 0 }, { memberships_sold: 0, opportunities: 12, p_mix: '', conversion: '0.0%' }, fmtNum, '2026-10-13', 'Fictional Wash', null, () => {}, () => {})
   await completed
-  // First data row has four zero counts; undefined percentages stay blank.
-  assert.equal(drawn.filter(cell => cell.y === 88 && cell.value === '0').length, 4)
-  assert.equal(drawn.filter(cell => cell.y === 136 && cell.value === '0').length, 2)
+  // Only the two explicitly entered zeros render; calculated zero counts stay blank.
+  assert.equal(drawn.filter(cell => cell.y === 88 && cell.value === '0').length, 2)
+  assert.equal(drawn.filter(cell => cell.y === 136 && cell.value === '0').length, 0)
   const lines = copiedText[0].split('\n').map(line => line.split('\t'))
-  assert.deepEqual(lines[1].slice(2), ['0', '0', '0', '0', '', ''])
-  assert.deepEqual(lines[2].slice(2), ['12', '0', '0', '12', '', '0.0%'])
+  assert.deepEqual(lines[1].slice(2), ['0', '0', '', '', '', ''])
+  assert.deepEqual(lines[2].slice(2), ['12', '', '', '12', '', '0.0%'])
 })
