@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import tmLogo from '../assets/TM-Logo 1-1.png'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import SettingsModal from './SettingsModal'
@@ -33,6 +33,11 @@ function MoonIcon() {
 export default function NavBar() {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const navClass = path => `flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md border transition-colors font-brand font-semibold text-xs tracking-wide focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tm-teal ${pathname === path
+    ? 'bg-tm-teal border-tm-teal text-tm-navy font-bold'
+    : 'bg-tm-blue/60 border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white'}`
+  const currentPage = path => pathname === path ? 'page' : undefined
   const isManager = ['admin', 'area_manager'].includes(profile?.role)
   const [showSettings, setShowSettings] = useState(false)
   const [dark, setDark] = useDarkModeCtx()
@@ -53,7 +58,8 @@ export default function NavBar() {
           {isManager ? (
             <Link
               to="/insights"
-              className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-blue/60 border border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white transition-colors font-brand font-semibold text-xs tracking-wide"
+              className={navClass('/insights')}
+              aria-current={currentPage('/insights')}
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                 <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3zm5-4a1 1 0 011-1h2a1 1 0 011 1v7a1 1 0 01-1 1H8a1 1 0 01-1-1V7zm5-5a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V2z"/>
@@ -63,7 +69,8 @@ export default function NavBar() {
           ) : (
             <button
               onClick={() => navigate('/insights')}
-              className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-blue/60 border border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white transition-colors font-brand font-semibold text-xs tracking-wide"
+              className={navClass('/insights')}
+              aria-current={currentPage('/insights')}
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                 <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3zm5-4a1 1 0 011-1h2a1 1 0 011 1v7a1 1 0 01-1 1H8a1 1 0 01-1-1V7zm5-5a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V2z"/>
@@ -76,7 +83,8 @@ export default function NavBar() {
           {isManager && (
             <Link
               to="/reports"
-              className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-blue/60 border border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white transition-colors font-brand font-semibold text-xs tracking-wide"
+              className={navClass('/reports')}
+              aria-current={currentPage('/reports')}
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                 <path d="M4 11a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zm5-4a1 1 0 011-1h2a1 1 0 011 1v7a1 1 0 01-1 1h-2a1 1 0 01-1-1V7zm-5 1a1 1 0 00-1 1v2a1 1 0 102 0V9a1 1 0 00-1-1z"/>
@@ -89,7 +97,8 @@ export default function NavBar() {
           {isManager && (
             <Link
               to="/am-entry"
-              className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-blue/60 border border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white transition-colors font-brand font-semibold text-xs tracking-wide"
+              className={navClass('/am-entry')}
+              aria-current={currentPage('/am-entry')}
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                 <path fillRule="evenodd" d="M8 8a3 3 0 100-6 3 3 0 000 6zm2 1a1 1 0 011 1v.5c0 1.5-1.5 3-3 3s-3-1.5-3-3V10a1 1 0 011-1h4zm3.5-2a1.5 1.5 0 10-.001-3.001A1.5 1.5 0 0013.5 7zm-11 0a1.5 1.5 0 10-.001-3.001A1.5 1.5 0 002.5 7zM16 9.5a1 1 0 00-1-1h-1.35c.222.418.35.895.35 1.4v.6a2.97 2.97 0 01-.5 1.65 3.5 3.5 0 002.5-3.35v-.3zM0 9.8c0 1.457.964 2.693 2.5 3.35A2.97 2.97 0 012 11.5v-.6c0-.505.128-.982.35-1.4H1a1 1 0 00-1 1v.3z" clipRule="evenodd"/>
@@ -101,7 +110,8 @@ export default function NavBar() {
           {/* Site Entry — everyone */}
           <button
             onClick={() => navigate('/')}
-            className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md bg-tm-teal text-tm-navy hover:brightness-110 transition-colors font-brand font-bold text-xs tracking-wide"
+            className={navClass('/')}
+            aria-current={currentPage('/')}
           >
             <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
               <path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 8h1v5a1 1 0 001 1h3v-3h2v3h3a1 1 0 001-1V8h1a.5.5 0 00.354-.854l-6-6z"/>
@@ -120,7 +130,8 @@ export default function NavBar() {
           {isManager && (
             <Link
               to="/admin"
-              className="flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md border border-tm-teal/30 text-tm-sky hover:border-tm-teal hover:text-white transition-colors font-brand font-semibold text-xs tracking-wide"
+              className={navClass('/admin')}
+              aria-current={currentPage('/admin')}
             >
               {profile?.role === 'admin' ? 'Admin' : 'Manager'}
             </Link>
