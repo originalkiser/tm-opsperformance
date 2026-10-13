@@ -1,3 +1,4 @@
+import { cashCountError } from '../utils/cashReconciliation.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { emptyDailyForm, countMissing, validateRevenue } from '../utils/budgetDailyFields'
@@ -73,7 +74,7 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
   ], locationId, entryDate, startingBalance), [entries, form, locationId, entryDate, startingBalance])
   const missing = countMissing(form)
   const historicalRevenue = useMemo(() => latestHistoricalRevenue(entries, locationId, entryDate, mtdRevenue.startingBalance), [entries, locationId, entryDate, mtdRevenue.startingBalance])
-  const revenueError = validateRevenue(form)
+  const revenueError = validateRevenue(form) || cashCountError(form.yesterday_cash_counted)
 
   const handleSave = async () => {
     setAttemptedSave(true)

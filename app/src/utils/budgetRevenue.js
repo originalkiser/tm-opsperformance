@@ -130,6 +130,9 @@ export async function fetchStartingBalances(client, locationIds, entryDate) {
 
 // Live totals are derived, never written over historical cumulative values.
 export function dailyPayload(form, locationId, entryDate) {
+  if (form.yesterday_cash_counted !== '' && form.yesterday_cash_counted != null && revenueCents(form.yesterday_cash_counted) == null) {
+    throw new Error('Invalid cash count.')
+  }
   const error = revenueError(form)
   if (error) throw new Error(error)
   return {

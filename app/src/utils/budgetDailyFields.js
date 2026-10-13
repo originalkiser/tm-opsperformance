@@ -45,7 +45,7 @@ export const EXTRA_FIELDS = [
 export const ALL_DAILY_FIELDS = [...YESTERDAY_FIELDS, ...MTD_FIELDS, ...EXTRA_FIELDS]
 
 export function emptyDailyForm() {
-  return Object.fromEntries(ALL_DAILY_FIELDS.map(f => [f.key, '']))
+  return { ...Object.fromEntries(ALL_DAILY_FIELDS.map(f => [f.key, ''])), yesterday_cash_counted: '' }
 }
 
 export const isFieldMissing = (form, key) => form[key] === '' || form[key] == null
