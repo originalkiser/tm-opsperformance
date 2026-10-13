@@ -867,9 +867,9 @@ export default function DailyLogTable({
       const vals = {
         employee_name: row.employee_name || '',
         _time:  ordinal > 1 ? `${slotLabel} (${ordinal})` : slotLabel,
-        ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: toInt(row[c.key]) > 0 ? String(row[c.key]) : '' }), {}),
-        _ms:   memberships_sold > 0 ? String(memberships_sold) : '',
-        _opp:  opportunities    > 0 ? String(opportunities)    : '',
+        ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: String(toInt(row[c.key])) }), {}),
+        _ms:   String(memberships_sold),
+        _opp:  String(opportunities),
         _pmix: p_mix       || '',
         _conv: conversion  || '',
       }
@@ -903,9 +903,9 @@ export default function DailyLogTable({
     const totY  = BANNER_H + HEADER_H + displayRows.length * ROW_H
     const totVs = {
       employee_name: 'Totals', _time: '',
-      ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: fmtNum(totals[c.key]) }), {}),
-      _ms:   fmtNum(totComputed.memberships_sold),
-      _opp:  fmtNum(totComputed.opportunities),
+      ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: (fmtNum(totals[c.key]) || '0') }), {}),
+      _ms:   (fmtNum(totComputed.memberships_sold) || '0'),
+      _opp:  (fmtNum(totComputed.opportunities) || '0'),
       _pmix: totComputed.p_mix       || '',
       _conv: totComputed.conversion  || '',
     }
@@ -969,9 +969,9 @@ export default function DailyLogTable({
           const ordinal   = i - groupInfo[row.time_slot].first + 1
           return [
             row.employee_name || '', ordinal > 1 ? `${slotLabel} (${ordinal})` : slotLabel,
-            ...orderedCols.map(col => toInt(row[col.key]) > 0 ? row[col.key] : ''),
-            memberships_sold > 0 ? memberships_sold : '',
-            opportunities    > 0 ? opportunities    : '',
+            ...orderedCols.map(col => String(toInt(row[col.key]))),
+            String(memberships_sold),
+            String(opportunities),
             p_mix || '', conversion || '',
           ].join('\t')
         })
@@ -1454,7 +1454,7 @@ export default function DailyLogTable({
                       </td>
                     ))}
                     <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-sky/30 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-semibold font-brand ${topCls} ${bottomCls}`}>
-                      {memberships_sold > 0 ? memberships_sold : ''}
+                      {String(memberships_sold)}
                     </td>
                     <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-sky/30 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-semibold font-brand ${topCls} ${bottomCls}`}>
                       {opportunities > 0 ? opportunities : ''}
