@@ -44,9 +44,7 @@ export default function CashReconciliationSection({ locationId, entryDate, form,
     </label>
     {validation && <p role="alert" className="text-red-800 dark:text-red-300">{validation}</p>}
     {error && <p role="alert">{error}</p>}
-    {loadedScope === scope && !error && cents == null && <p className="text-xs mt-1">{entry?.cash_first_submitted_at
-      ? 'This submission has no Cash on Hand snapshot and remains incomplete. Later settings do not rewrite it.'
-      : 'An Admin must set Cash on Hand for this business date. The actual count can still be saved, but its missing setting will remain part of the submission history.'}</p>}
+    {loadedScope === scope && !error && cents == null && <p className="text-xs mt-1">Cash on Hand not configured for this date.</p>}
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
       <div>Cash Available for Deposit: <strong>{money(result.deposit)}</strong></div>
       <div className={statusClass} role="status">Cash Variance: <strong>{money(result.variance)}</strong> · {result.status === 'green' ? 'Reconciled' : result.status === 'red' ? `${result.variance < 0 ? 'Shortage' : 'Overage'} ${money(Math.abs(result.variance))}` : 'Incomplete or invalid'}</div>
