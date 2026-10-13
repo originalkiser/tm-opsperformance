@@ -1,3 +1,4 @@
+import OwnershipWashGoals from './OwnershipWashGoals'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
@@ -33,7 +34,7 @@ function StatusBadge({ status }) {
   return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${cls}`}>{STATUS_LABEL[status]}</span>
 }
 
-const emptyForm = () => ({ yesterday_conversion_pct: '', biggest_challenge: '', what_you_did: '', plan_for_today: '', comments: '' })
+const emptyForm = () => ({ yesterday_conversion_pct: '', biggest_challenge: '', what_you_did: '', plan_for_today: '', goal_action_today: '' })
 
 // Admin/AM override modal — unlike the self-service form, any date can be edited.
 function EditModal({ location, onClose, onSaved }) {
@@ -41,6 +42,7 @@ function EditModal({ location, onClose, onSaved }) {
   const [form, setForm]     = useState(emptyForm())
   const [existing, setExisting] = useState(null)
   const [loading, setLoading]   = useState(true)
+  const [error, setError] = useState('')
   const [saving, setSaving]     = useState(false)
 
   useEffect(() => { fetchEntry() }, [date])
@@ -55,25 +57,26 @@ function EditModal({ location, onClose, onSaved }) {
       biggest_challenge: data.biggest_challenge || '',
       what_you_did:      data.what_you_did      || '',
       plan_for_today:    data.plan_for_today     || '',
-      comments:          data.comments           || '',
+      goal_action_today: data.goal_action_today || '',
     } : emptyForm())
     setLoading(false)
   }
 
   const handleSave = async () => {
     setSaving(true)
-    await supabase.from('ownership_log_entries').upsert({
+    const { error: saveError } = await supabase.from('ownership_log_entries').upsert({
       location_id: location.id,
       log_date: date,
       yesterday_conversion_pct: form.yesterday_conversion_pct === '' ? null : parseFloat(form.yesterday_conversion_pct),
       biggest_challenge: form.biggest_challenge || null,
       what_you_did:      form.what_you_did      || null,
       plan_for_today:    form.plan_for_today     || null,
-      comments:          form.comments           || null,
+      goal_action_today: form.goal_action_today || null,
       submitted_at:      existing?.submitted_at || new Date().toISOString(),
       updated_at:        new Date().toISOString(),
     }, { onConflict: 'location_id,log_date' })
     setSaving(false)
+    if (saveError) { setError('Post was not saved. Please try again.'); return }
     onSaved()
   }
 
@@ -111,12 +114,14 @@ function EditModal({ location, onClose, onSaved }) {
                 <textarea rows={2} value={form.plan_for_today} onChange={e => setForm(f => ({ ...f, plan_for_today: e.target.value }))} className={inputCls + ' resize-none'} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Comments</label>
-                <textarea rows={2} value={form.comments} onChange={e => setForm(f => ({ ...f, comments: e.target.value }))} className={inputCls + ' resize-none'} />
+                <OwnershipWashGoals key={location.id} locationId={location.id} />
+            <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">WHAT WILL WE DO TODAY TO HELP ACHIEVE OUR GOALS</label>
+                <textarea aria-label="WHAT WILL WE DO TODAY TO HELP ACHIEVE OUR GOALS" rows={2} value={form.goal_action_today} onChange={e => setForm(f => ({ ...f, goal_action_today: e.target.value }))} className={inputCls + ' resize-none'} />
               </div>
             </>
           )}
         </div>
+        {error && <p role="alert" className="px-5 text-red-700 dark:text-red-300">{error}</p>}
         <div className="px-5 pb-5 pt-3 border-t border-gray-100 dark:border-tm-dark-border flex gap-2 shrink-0">
           <button onClick={handleSave} disabled={saving || loading}
             className="flex-1 py-2.5 rounded-xl bg-tm-teal text-tm-navy font-bold text-sm hover:brightness-110 transition-colors disabled:opacity-50">

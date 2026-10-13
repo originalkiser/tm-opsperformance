@@ -1,3 +1,4 @@
+import OwnershipWashGoals from './OwnershipWashGoals'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
@@ -49,7 +50,7 @@ export function PercentInput({ value, onChange, className }) {
   )
 }
 
-const EMPTY_DRAFT = { yesterday_conversion_pct: '', biggest_challenge: '', what_you_did: '', plan_for_today: '', comments: '' }
+const EMPTY_DRAFT = { yesterday_conversion_pct: '', biggest_challenge: '', what_you_did: '', plan_for_today: '', goal_action_today: '' }
 
 export default function OwnershipLogSection({ locations, profile, onSaved }) {
   const [selectedLocId, setSelectedLocId] = useState(() => profile?.location_id || locations[0]?.id || '')
@@ -57,6 +58,7 @@ export default function OwnershipLogSection({ locations, profile, onSaved }) {
   const [loading, setLoading] = useState(true)
   const [editingDate, setEditingDate] = useState(todayStr())
   const [draft, setDraft]     = useState(EMPTY_DRAFT)
+  const [saveError, setSaveError] = useState('')
   const [saving, setSaving]   = useState(false)
   const [now, setNow]         = useState(new Date())
 
@@ -87,7 +89,7 @@ export default function OwnershipLogSection({ locations, profile, onSaved }) {
       biggest_challenge: editingEntry.biggest_challenge || '',
       what_you_did:      editingEntry.what_you_did      || '',
       plan_for_today:    editingEntry.plan_for_today     || '',
-      comments:          editingEntry.comments           || '',
+      goal_action_today: editingEntry.goal_action_today || '',
     } : EMPTY_DRAFT)
   }, [editingEntry?.id, editingDate, selectedLocId])
 
@@ -117,11 +119,13 @@ export default function OwnershipLogSection({ locations, profile, onSaved }) {
       biggest_challenge: draft.biggest_challenge || null,
       what_you_did:      draft.what_you_did      || null,
       plan_for_today:    draft.plan_for_today     || null,
-      comments:          draft.comments           || null,
+      goal_action_today: draft.goal_action_today || null,
       submitted_at:      editingEntry?.submitted_at || new Date().toISOString(),
       updated_at:        new Date().toISOString(),
     }
-    await supabase.from('ownership_log_entries').upsert(payload, { onConflict: 'location_id,log_date' })
+    const { error: saveError } = await supabase.from('ownership_log_entries').upsert(payload, { onConflict: 'location_id,log_date' })
+    if (saveError) { setSaving(false); setSaveError('Post was not saved. Please try again.'); return }
+    setSaveError('')
     setSaving(false)
     fetchEntries()
     if (isEditingToday) onSaved?.()
@@ -190,14 +194,16 @@ export default function OwnershipLogSection({ locations, profile, onSaved }) {
             <textarea rows={2} value={draft.plan_for_today} onChange={e => setDraft(d => ({ ...d, plan_for_today: e.target.value }))} className={inputCls + ' resize-none'} />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Comments</label>
-            <textarea rows={2} value={draft.comments} onChange={e => setDraft(d => ({ ...d, comments: e.target.value }))} className={inputCls + ' resize-none'} />
+            <OwnershipWashGoals key={selectedLocId} locationId={selectedLocId} />
+            <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">WHAT WILL WE DO TODAY TO HELP ACHIEVE OUR GOALS</label>
+            <textarea aria-label="WHAT WILL WE DO TODAY TO HELP ACHIEVE OUR GOALS" rows={2} value={draft.goal_action_today} onChange={e => setDraft(d => ({ ...d, goal_action_today: e.target.value }))} className={inputCls + ' resize-none'} />
           </div>
         </div>
+        {saveError && <p role="alert" className="text-red-700 dark:text-red-300">{saveError}</p>}
         <div className="mt-4 flex items-center gap-3">
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || loading}
             className="px-5 py-2 rounded-lg bg-tm-teal text-tm-navy font-bold text-sm hover:brightness-110 transition-colors disabled:opacity-50"
           >
             {saving ? 'Saving…' : editingEntry ? 'Update Post' : 'Submit Post'}
@@ -225,7 +231,7 @@ export default function OwnershipLogSection({ locations, profile, onSaved }) {
                   <th className="px-3 py-2 text-left">Biggest Challenge</th>
                   <th className="px-3 py-2 text-left">What You Did</th>
                   <th className="px-3 py-2 text-left">Plan</th>
-                  <th className="px-3 py-2 text-left">Comments</th>
+                  <th className="px-3 py-2 text-left">Daily goal action / historical notes</th>
                   <th className="px-3 py-2" />
                 </tr>
               </thead>
@@ -239,7 +245,7 @@ export default function OwnershipLogSection({ locations, profile, onSaved }) {
                       <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[200px] truncate" title={e.biggest_challenge}>{e.biggest_challenge || '—'}</td>
                       <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[200px] truncate" title={e.what_you_did}>{e.what_you_did || '—'}</td>
                       <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[200px] truncate" title={e.plan_for_today}>{e.plan_for_today || '—'}</td>
-                      <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[160px] truncate" title={e.comments}>{e.comments || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600 dark:text-tm-dark-muted max-w-[160px] truncate" title={e.goal_action_today || e.comments}>{e.goal_action_today || e.comments || '—'}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">
                         {editable && (
                           <button onClick={() => setEditingDate(e.log_date)} className="text-[10px] font-semibold text-tm-teal hover:text-tm-blue dark:hover:text-white uppercase tracking-wide transition-colors">
