@@ -3,6 +3,7 @@ import BudgetRevenueFields from './BudgetRevenueFields'
 import { reportedRevenuePace } from '../utils/budgetRevenueReporting'
 import useBudgetDailyEntry from '../hooks/useBudgetDailyEntry'
 import BudgetRevenueSummary from './BudgetRevenueSummary'
+import { displayCount } from '../utils/budgetDisplay'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
@@ -140,15 +141,16 @@ function DailyEntryTab({ locations, profile, onSaved }) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
   <BudgetRevenueFields form={form} set={set} fieldCls={fieldCls} />
 </div>
-   <CashReconciliationSection locationId={selectedLocId} timeZone={locations.find(site => site.id === selectedLocId)?.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
+   <CashReconciliationSection showExpected={profile?.role === 'admin'} locationId={selectedLocId} timeZone={locations.find(site => site.id === selectedLocId)?.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-100 dark:border-tm-dark-border">
               <div>
 
-                <BudgetRevenueSummary revenue={mtdRevenue} historical={historicalRevenue} />
+                <BudgetRevenueSummary revenue={mtdRevenue} historical={historicalRevenue} monthlyGoal={target?.revenue_goal} showGoal />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">MTD Membership Actual</label>
-                <input type="number" min="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={fieldCls('mtd_membership_actual')} />
+                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Current Total Members</label>
+                <input aria-label="Current Total Members" type="number" min="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={fieldCls('mtd_membership_actual')} />
+                <div className="text-xs text-gray-800 dark:text-gray-100 mt-1">{displayCount(form.mtd_membership_actual)} / {displayCount(target?.membership_goal)} · End-of-Month Member Goal</div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Current Rating</label>
@@ -182,8 +184,8 @@ function DailyEntryTab({ locations, profile, onSaved }) {
               <div className="mt-1"><PaceBadge onTrack={rev.onTrack} label={`${rev.reported.provisional ? 'Provisional · ' : ''}${rev.onTrack ? 'On Track' : 'Off Track'}`} /></div>
             </div>
             <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border p-4">
-              <div className="text-[10px] font-brand font-semibold text-gray-400 uppercase tracking-wide mb-1">MTD Membership Actual</div>
-              <div className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal">{form.mtd_membership_actual || 0}</div>
+              <div className="text-[10px] font-brand font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Current Total Members / End-of-Month Member Goal</div>
+              <div className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal">{displayCount(form.mtd_membership_actual)} / {displayCount(target?.membership_goal)}</div>
               <div className="text-[10px] text-gray-400 mt-0.5">
                 {memPace.expected != null ? `pace ${Math.round(memPace.expected)} · ` : ''}goal {target?.membership_goal ?? '—'}
               </div>
