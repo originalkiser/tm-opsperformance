@@ -1,14 +1,17 @@
 import { revenuePresentation } from '../utils/budgetRevenue'
+import { revenueDisplayPlan, displayMoney } from '../utils/budgetDisplay'
 const currency = value => value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
-export default function BudgetRevenueSummary({ revenue, historical }) {
+export default function BudgetRevenueSummary({ revenue, historical, monthlyGoal, showGoal = false }) {
   const reported = revenuePresentation(revenue, historical)
+  const plan = revenueDisplayPlan(revenue, historical, monthlyGoal)
   return <div className="text-xs space-y-1 text-gray-800 dark:text-gray-100" aria-live="polite">
     <div className="font-semibold">MTD Revenue ({reported.provisional ? `Provisional ${reported.source}` : revenue.startingBalance ? 'October transition' : 'Automatic'})</div>
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span className="font-semibold">{reported.amount != null ? currency(reported.amount) : '—'}</span>
+      <span className="font-semibold">{reported.amount != null ? currency(reported.amount) : '—'}{showGoal && ` / ${displayMoney(plan.expected)}`}</span>
       {!revenue.complete && <span className="text-amber-800 dark:text-amber-300">Incomplete · {revenue.missingDates.length} missing revenue {revenue.missingDates.length === 1 ? 'day' : 'days'}</span>}
     </div>
+    {showGoal && <div>Actual MTD / Goal MTD{reported.throughDate ? ` · through ${reported.throughDate}` : ''}</div>}
     {reported.provisional && <div className="text-amber-800 dark:text-amber-300">Provisional · {reported.source} through {reported.throughDate}. Revenue % and pace use this reporting date; daily totals remain incomplete.</div>}
     {!revenue.complete && <details>
       <summary className="cursor-pointer text-gray-700 dark:text-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">View details</summary>

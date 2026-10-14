@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { applicableCashCents, CASH_COUNT_LABEL, cashBusinessDate, cashCountError, fetchCashSetting, reconcileCash } from '../utils/cashReconciliation.js'
 
 const money = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-export default function CashReconciliationSection({ locationId, entryDate, form, entry, set, disabled, timeZone = 'America/Chicago' }) {
+export default function CashReconciliationSection({ locationId, entryDate, form, entry, set, disabled, showExpected = true, timeZone = 'America/Chicago' }) {
   const [setting, setSetting] = useState(null)
   const [loadedScope, setLoadedScope] = useState(null)
   const [error, setError] = useState('')
@@ -36,7 +36,7 @@ export default function CashReconciliationSection({ locationId, entryDate, form,
   return <section className="my-3 p-3 rounded-lg border border-gray-200 dark:border-tm-dark-border bg-gray-50 dark:bg-tm-dark-card text-sm text-gray-800 dark:text-gray-100">
     <h3 className="font-bold">Daily Cash Reconciliation · business date {businessDate}</h3>
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
-      {[['Calculated Cash Revenue', result.revenue], ['Admin Cash on Hand', result.hand], ['Expected Total Cash on Site', result.expected]].map(([label, value]) => <div key={label}><div className="text-xs">{label}</div><strong>{money(value)}</strong></div>)}
+      {[['Calculated Cash Revenue', result.revenue], ['Admin Cash on Hand', result.hand], ...(showExpected ? [['Expected Total Cash on Site', result.expected]] : [])].map(([label, value]) => <div key={label}><div className="text-xs">{label}</div><strong>{money(value)}</strong></div>)}
     </div>
     <label className="block text-xs font-semibold mt-3">{CASH_COUNT_LABEL}
       <input aria-label={CASH_COUNT_LABEL} type="number" step="0.01" min="0" value={form.yesterday_cash_counted ?? ''} onChange={event => set('yesterday_cash_counted', event.target.value)} disabled={disabled} aria-invalid={!!validation}

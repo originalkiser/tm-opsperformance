@@ -8,6 +8,8 @@ import RevenueStartingBalanceEditor from './RevenueStartingBalanceEditor'
 import { calculateMtdRevenue, fetchRevenueEntries, latestHistoricalRevenue, fetchStartingBalances } from '../utils/budgetRevenue'
 import useBudgetDailyEntry from '../hooks/useBudgetDailyEntry'
 import BudgetRevenueSummary from './BudgetRevenueSummary'
+import BudgetRevenueNotes from './BudgetRevenueNotes'
+import { displayMoney, displayCount, revenueDisplayPlan } from '../utils/budgetDisplay'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
@@ -80,14 +82,14 @@ function DailyEntryPane({ location }) {
           </div>
         ))}
         <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"><BudgetRevenueFields form={form} set={set} fieldCls={fieldCls} /></div>
-        <CashReconciliationSection locationId={location.id} timeZone={location.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
+        <CashReconciliationSection showExpected={profile?.role === 'admin'} locationId={location.id} timeZone={location.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
          <div>
 
           <BudgetRevenueSummary revenue={mtdRevenue} historical={historicalRevenue} />
           <div className="mt-2 text-xs text-gray-800 dark:text-gray-100">Revenue %: {pct1(rev.pct)} · Revenue Pace: {rev.onTrack == null ? '—' : rev.onTrack ? 'On Track' : 'Off Track'}{rev.reported.provisional && <span className="block text-amber-800 dark:text-amber-300">Provisional · through {rev.reported.throughDate}</span>}</div>
         </div>
         <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">MTD Membership Actual</label>
+          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">Current Total Members</label>
           <input type="number" min="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={fieldCls('mtd_membership_actual')} />
         </div>
         <div>
@@ -187,7 +189,8 @@ export default function BudgetTrackingReport({ locations }) {
         yesterdayConv: yst.conversion, mtdConv: mtd.conversion, mtdPmix: mtd.pmix,
         membershipProgressRatio: mem.progressRatio, currentRating: entry?.current_rating,
       })
-      return { loc, target, entry, yst, mtd, rev, mem, memPace, score, revenue, historicalRevenue }
+      const plan = revenueDisplayPlan(revenue, historicalRevenue, target?.revenue_goal)
+      return { loc, target, entry, yst, mtd, rev, mem, memPace, score, revenue, historicalRevenue, plan }
     })
     return rankByScore(built)
   }, [locations, targets, dailyEntries, startingBalances])
@@ -216,9 +219,11 @@ export default function BudgetTrackingReport({ locations }) {
               <th className="px-3 py-2 text-center">MTD P-Mix</th>
               <th className="px-3 py-2 text-center">MTD Revenue</th>
               <th className="px-3 py-2 text-center">Revenue %</th>
-              <th className="px-3 py-2 text-center">Revenue Pace</th>
-              <th className="px-3 py-2 text-center">Membership</th>
+              <th className="px-3 py-2 text-center">MTD Goal %</th>
+              <th className="px-3 py-2 text-center">Active Members</th>
               <th className="px-3 py-2 text-center">Membership Pace</th>
+              <th className="px-3 py-2 text-center">Membership Bonus</th>
+              <th className="px-3 py-2 text-left">Notes</th>
               <th className="px-3 py-2 text-center">Rating</th>
               <th className="px-3 py-2 text-center">Score</th>
               <th className="px-2 py-2" />
@@ -233,11 +238,13 @@ export default function BudgetTrackingReport({ locations }) {
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.yst.pmix)}</td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.mtd.conversion)}</td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.mtd.pmix)}</td>
-                <td className="px-3 py-2 text-left"><BudgetRevenueSummary revenue={r.revenue} historical={r.historicalRevenue} /></td>
-                <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.rev.pct)}{r.rev.reported.provisional && <div className="text-amber-800 dark:text-amber-300">Provisional · through {r.rev.reported.throughDate}</div>}</td>
-                <td className="px-3 py-2 text-center"><PaceBadge onTrack={r.rev.onTrack} label={`${r.rev.reported.provisional ? 'Provisional · ' : ''}${r.rev.onTrack ? 'On Track' : 'Off Track'}`} /></td>
-                <td className="px-3 py-2 text-center"><BonusBadge tier={r.mem.tier} /></td>
+                <td className="px-3 py-2 text-right whitespace-nowrap w-28 text-gray-800 dark:text-gray-100" aria-label={`${r.rev.reported.provisional ? 'Provisional ' : ''}MTD Revenue through ${r.rev.reported.throughDate || 'unavailable'}`}>{displayMoney(r.rev.reported.amount)}</td>
+                <td className={`px-3 py-2 text-center font-semibold ${r.plan.onTrack == null ? 'text-gray-700 dark:text-gray-200' : r.plan.onTrack ? 'text-green-800 dark:text-green-300' : 'text-red-800 dark:text-red-300'}`}>{pct1(r.rev.pct)}</td>
+                <td className="px-3 py-2 text-center text-gray-800 dark:text-gray-100">{pct1(r.plan.progress)}</td>
+                <td className="px-3 py-2 text-center text-gray-800 dark:text-gray-100">{displayCount(r.entry?.mtd_membership_actual)}</td>
                 <td className="px-3 py-2 text-center"><PaceBadge onTrack={r.memPace.onTrack} label={r.memPace.onTrack ? 'On Track' : 'Off Track'} /></td>
+                <td className="px-3 py-2 text-center"><BonusBadge tier={r.mem.tier} /></td>
+                <td className="px-3 py-2"><BudgetRevenueNotes revenue={r.revenue} historical={r.historicalRevenue} monthlyGoal={r.target?.revenue_goal} /></td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{r.entry?.current_rating ?? '—'}</td>
                 <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{r.entry ? r.score : '—'}</td>
                 <td className="px-2 py-2 text-center">
