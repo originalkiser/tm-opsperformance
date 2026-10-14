@@ -9,6 +9,9 @@ import { calculateMtdRevenue, fetchRevenueEntries, latestHistoricalRevenue, fetc
 import useBudgetDailyEntry from '../hooks/useBudgetDailyEntry'
 import BudgetRevenueSummary from './BudgetRevenueSummary'
 import BudgetRevenueNotes from './BudgetRevenueNotes'
+import BudgetScoreDetails from './BudgetScoreDetails'
+import { scoreBudgetLocations } from '../utils/budgetScoring'
+import { watchBudgetReport } from '../utils/budgetReportRefresh'
 import { displayMoney, displayCount, revenueDisplayPlan } from '../utils/budgetDisplay'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
@@ -17,7 +20,7 @@ import { PaceBadge, BonusBadge } from './BudgetTrackingSection'
 import {
   toDateStr, firstOfMonth,
   yesterdayMetrics, mtdMetrics, membershipStatus, membershipPace,
-  computeScore, rankByScore, pct1,
+  pct1,
 } from '../utils/budgetMath'
 import {
   YESTERDAY_FIELDS, MTD_FIELDS,
@@ -148,19 +151,20 @@ export default function BudgetTrackingReport({ locations }) {
   const [reportError, setReportError] = useState('')
   const [editingLoc, setEditingLoc] = useState(null)
 
-  const currentMonth = firstOfMonth(todayStr())
+  useEffect(() => {
+    fetchAll()
+    return watchBudgetReport(() => fetchAll(false))
+  }, [locations])
 
-  useEffect(() => { fetchAll() }, [locations])
-
-  const fetchAll = async () => {
-    setLoading(true)
+  const fetchAll = async (showLoading = true) => {
+    if (showLoading) setLoading(true)
     const locIds = locations.map(l => l.id)
     if (!locIds.length) { setLoading(false); return }
 
     setReportError('')
     try {
       const [result, entries, balances] = await Promise.all([
-        supabase.from('budget_targets').select('*').in('location_id', locIds).eq('target_month', currentMonth),
+        supabase.from('budget_targets').select('*').in('location_id', locIds).eq('target_month', firstOfMonth(todayStr())),
         fetchRevenueEntries(supabase, locIds, todayStr()),
         fetchStartingBalances(supabase, locIds, todayStr()),
       ])
@@ -175,7 +179,9 @@ export default function BudgetTrackingReport({ locations }) {
   }
 
   const rows = useMemo(() => {
-    const built = locations.map(loc => {
+    const scoring = scoreBudgetLocations({ locations, targets, entries: dailyEntries, balances: startingBalances }, todayStr())
+    return scoring.rows.map(scoringResult => {
+      const loc = scoringResult.loc
       const target = targets.find(t => t.location_id === loc.id)
       const entry  = dailyEntries.filter(e => e.location_id === loc.id).sort((a, b) => b.entry_date.localeCompare(a.entry_date))[0]
       const yst    = yesterdayMetrics(entry)
@@ -185,14 +191,9 @@ export default function BudgetTrackingReport({ locations }) {
       const rev    = reportedRevenuePace(revenue, historicalRevenue, target?.revenue_goal)
       const mem    = membershipStatus(entry?.mtd_membership_actual, target?.membership_goal, todayStr())
       const memPace = membershipPace(entry?.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, todayStr())
-      const score  = computeScore({
-        yesterdayConv: yst.conversion, mtdConv: mtd.conversion, mtdPmix: mtd.pmix,
-        membershipProgressRatio: mem.progressRatio, currentRating: entry?.current_rating,
-      })
       const plan = revenueDisplayPlan(revenue, historicalRevenue, target?.revenue_goal)
-      return { loc, target, entry, yst, mtd, rev, mem, memPace, score, revenue, historicalRevenue, plan }
+      return { loc, target, entry, yst, mtd, rev, mem, memPace, score: scoringResult.score, rank: scoringResult.rank, scoringResult, revenue, historicalRevenue, plan }
     })
-    return rankByScore(built)
   }, [locations, targets, dailyEntries, startingBalances])
 
   const cashTools = profile?.role === 'admin' && <AdminCashOnHandPanel locations={locations} />
@@ -232,7 +233,7 @@ export default function BudgetTrackingReport({ locations }) {
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.loc.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-card'}>
-                <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{r.score != null && r.entry ? r.rank : '—'}</td>
+                <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{r.score != null && r.entry ? r.rank : 'Unranked'}</td>
                 <td className="px-3 py-2 font-semibold text-gray-700 dark:text-tm-dark-text whitespace-nowrap">{r.loc.name}</td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.yst.conversion)}</td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.yst.pmix)}</td>
@@ -246,7 +247,7 @@ export default function BudgetTrackingReport({ locations }) {
                 <td className="px-3 py-2 text-center"><BonusBadge tier={r.mem.tier} /></td>
                 <td className="px-3 py-2"><BudgetRevenueNotes revenue={r.revenue} historical={r.historicalRevenue} monthlyGoal={r.target?.revenue_goal} /></td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{r.entry?.current_rating ?? '—'}</td>
-                <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{r.entry ? r.score : '—'}</td>
+                <td className="px-3 py-2 text-center"><BudgetScoreDetails result={r.scoringResult} /></td>
                 <td className="px-2 py-2 text-center">
                   <button onClick={() => setEditingLoc(r.loc)} title="Edit this site's data"
                     className="text-gray-400 hover:text-tm-teal dark:hover:text-tm-teal transition-colors">
