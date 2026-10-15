@@ -10,13 +10,16 @@ import useBudgetDailyEntry from '../hooks/useBudgetDailyEntry'
 import BudgetRevenueSummary from './BudgetRevenueSummary'
 import BudgetRevenueNotes from './BudgetRevenueNotes'
 import BudgetScoreDetails from './BudgetScoreDetails'
+import BudgetCashCell from './BudgetCashCell'
+import { reportCash, reportMetricFormatting } from '../utils/budgetReportFormatting'
+import { REPORT_STATUS_CLS } from '../utils/metricColors'
 import { scoreBudgetLocations } from '../utils/budgetScoring'
 import { watchBudgetReport } from '../utils/budgetReportRefresh'
 import { displayMoney, displayCount, revenueDisplayPlan } from '../utils/budgetDisplay'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
-import { PaceBadge, BonusBadge } from './BudgetTrackingSection'
+import { PaceBadge } from './BudgetTrackingSection'
 import {
   toDateStr, firstOfMonth,
   yesterdayMetrics, mtdMetrics, membershipStatus, membershipPace,
@@ -85,7 +88,7 @@ function DailyEntryPane({ location }) {
           </div>
         ))}
         <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"><BudgetRevenueFields form={form} set={set} fieldCls={fieldCls} /></div>
-        <CashReconciliationSection showExpected={profile?.role === 'admin'} locationId={location.id} timeZone={location.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
+        <CashReconciliationSection attemptedSave={attemptedSave} showExpected={profile?.role === 'admin'} locationId={location.id} timeZone={location.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
          <div>
 
           <BudgetRevenueSummary revenue={mtdRevenue} historical={historicalRevenue} />
@@ -96,12 +99,12 @@ function DailyEntryPane({ location }) {
           <input type="number" min="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={fieldCls('mtd_membership_actual')} />
         </div>
         <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">Current Rating</label>
-          <input type="number" min="0" max="5" step="0.01" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={fieldCls('current_rating')} />
-        </div>
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">Current Reviews</label>
+          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">MTD REVIEWS</label>
           <input type="number" min="0" value={form.current_reviews} onChange={e => set('current_reviews', e.target.value)} className={fieldCls('current_reviews')} />
+        </div>
+              <div>
+          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">GOOGLE RATING</label>
+          <input type="number" min="0" max="5" step="0.01" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={fieldCls('current_rating')} />
         </div>
       </div>
 </fieldset>
@@ -192,7 +195,9 @@ export default function BudgetTrackingReport({ locations }) {
       const mem    = membershipStatus(entry?.mtd_membership_actual, target?.membership_goal, todayStr())
       const memPace = membershipPace(entry?.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, todayStr())
       const plan = revenueDisplayPlan(revenue, historicalRevenue, target?.revenue_goal)
-      return { loc, target, entry, yst, mtd, rev, mem, memPace, score: scoringResult.score, rank: scoringResult.rank, scoringResult, revenue, historicalRevenue, plan }
+      const formatting = reportMetricFormatting(entry, target, loc, todayStr(), plan, rev.reported)
+      const cash = reportCash(entry, todayStr())
+      return { loc, target, entry, yst, mtd, rev, mem, memPace, score: scoringResult.score, rank: scoringResult.rank, scoringResult, revenue, historicalRevenue, plan, formatting, cash }
     })
   }, [locations, targets, dailyEntries, startingBalances])
 
@@ -216,6 +221,7 @@ export default function BudgetTrackingReport({ locations }) {
               <th className="px-3 py-2 text-left">Site</th>
               <th className="px-3 py-2 text-center">Yesterday Conv</th>
               <th className="px-3 py-2 text-center">Yesterday P-Mix</th>
+              <th className="px-3 py-2 text-center">Yesterday CASH</th>
               <th className="px-3 py-2 text-center">MTD Conv</th>
               <th className="px-3 py-2 text-center">MTD P-Mix</th>
               <th className="px-3 py-2 text-center">MTD Revenue</th>
@@ -223,7 +229,6 @@ export default function BudgetTrackingReport({ locations }) {
               <th className="px-3 py-2 text-center">MTD Goal %</th>
               <th className="px-3 py-2 text-center">Active Members</th>
               <th className="px-3 py-2 text-center">Membership Pace</th>
-              <th className="px-3 py-2 text-center">Membership Bonus</th>
               <th className="px-3 py-2 text-left">Notes</th>
               <th className="px-3 py-2 text-center">Rating</th>
               <th className="px-3 py-2 text-center">Score</th>
@@ -235,16 +240,16 @@ export default function BudgetTrackingReport({ locations }) {
               <tr key={r.loc.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-card'}>
                 <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{r.score != null && r.entry ? r.rank : 'Unranked'}</td>
                 <td className="px-3 py-2 font-semibold text-gray-700 dark:text-tm-dark-text whitespace-nowrap">{r.loc.name}</td>
-                <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.yst.conversion)}</td>
-                <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.yst.pmix)}</td>
-                <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.mtd.conversion)}</td>
-                <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{pct1(r.mtd.pmix)}</td>
+                <td className={`px-3 py-2 text-center font-semibold ${REPORT_STATUS_CLS[r.formatting.yesterdayConversion]}`}>{pct1(r.formatting.yesterdayAvailable ? r.yst.conversion : null)}</td>
+                <td className={`px-3 py-2 text-center font-semibold ${REPORT_STATUS_CLS[r.formatting.yesterdayPmix]}`}>{pct1(r.formatting.yesterdayAvailable ? r.yst.pmix : null)}</td>
+                <td className="px-3 py-2 text-center"><BudgetCashCell cash={r.cash} /></td>
+                <td className={`px-3 py-2 text-center font-semibold ${REPORT_STATUS_CLS[r.formatting.mtdConversion]}`}>{pct1(r.formatting.mtdAvailable ? r.mtd.conversion : null)}</td>
+                <td className={`px-3 py-2 text-center font-semibold ${REPORT_STATUS_CLS[r.formatting.mtdPmix]}`}>{pct1(r.formatting.mtdAvailable ? r.mtd.pmix : null)}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap w-28 text-gray-800 dark:text-gray-100" aria-label={`${r.rev.reported.provisional ? 'Provisional ' : ''}MTD Revenue through ${r.rev.reported.throughDate || 'unavailable'}`}>{displayMoney(r.rev.reported.amount)}</td>
-                <td className={`px-3 py-2 text-center font-semibold ${r.plan.onTrack == null ? 'text-gray-700 dark:text-gray-200' : r.plan.onTrack ? 'text-green-800 dark:text-green-300' : 'text-red-800 dark:text-red-300'}`}>{pct1(r.rev.pct)}</td>
+                <td className={`px-3 py-2 text-center font-semibold ${REPORT_STATUS_CLS[r.formatting.revenue]}`}>{pct1(r.rev.pct)}{r.formatting.provisional && <span className="block text-[10px] font-normal">Provisional</span>}{r.formatting.stale && <span className="block text-[10px] font-normal">Stale entry</span>}</td>
                 <td className="px-3 py-2 text-center text-gray-800 dark:text-gray-100">{pct1(r.plan.progress)}</td>
                 <td className="px-3 py-2 text-center text-gray-800 dark:text-gray-100">{displayCount(r.entry?.mtd_membership_actual)}</td>
-                <td className="px-3 py-2 text-center"><PaceBadge onTrack={r.memPace.onTrack} label={r.memPace.onTrack ? 'On Track' : 'Off Track'} /></td>
-                <td className="px-3 py-2 text-center"><BonusBadge tier={r.mem.tier} /></td>
+                <td className="px-3 py-2 text-center">{r.formatting.membershipOnTrack == null ? <span className={REPORT_STATUS_CLS.neutral}>—</span> : <PaceBadge onTrack={r.formatting.membershipOnTrack} label={r.formatting.membershipOnTrack ? 'On Track' : 'Off Track'} />}</td>
                 <td className="px-3 py-2"><BudgetRevenueNotes revenue={r.revenue} historical={r.historicalRevenue} monthlyGoal={r.target?.revenue_goal} /></td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{r.entry?.current_rating ?? '—'}</td>
                 <td className="px-3 py-2 text-center"><BudgetScoreDetails result={r.scoringResult} /></td>

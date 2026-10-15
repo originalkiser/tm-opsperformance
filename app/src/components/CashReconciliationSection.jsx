@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { applicableCashCents, CASH_COUNT_LABEL, cashBusinessDate, cashCountError, fetchCashSetting, reconcileCash } from '../utils/cashReconciliation.js'
 
 const money = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-export default function CashReconciliationSection({ locationId, entryDate, form, entry, set, disabled, showExpected = true, timeZone = 'America/Chicago' }) {
+export default function CashReconciliationSection({ locationId, entryDate, form, entry, set, disabled, attemptedSave = false, showExpected = true, timeZone = 'America/Chicago' }) {
   const [setting, setSetting] = useState(null)
   const [loadedScope, setLoadedScope] = useState(null)
   const [error, setError] = useState('')
@@ -21,7 +21,7 @@ export default function CashReconciliationSection({ locationId, entryDate, form,
   }, [scope, locationId, businessDate])
   const cents = !error && loadedScope === scope ? applicableCashCents(entry, setting) : null
   const result = reconcileCash(form, cents)
-  const validation = cashCountError(form.yesterday_cash_counted)
+  const validation = cashCountError(form.yesterday_cash_counted) || (attemptedSave && (form.yesterday_cash_counted == null || form.yesterday_cash_counted === '') ? 'Enter TOTAL CASH ONSITE to complete this daily entry.' : '')
   async function loadAudit(event) {
     if (!event.currentTarget.open) return
     const { data, error } = await supabase.from('cash_reconciliation_audit').select('*')
@@ -35,13 +35,13 @@ export default function CashReconciliationSection({ locationId, entryDate, form,
   const statusClass = result.status === 'green' ? 'text-green-800 dark:text-green-300' : result.status === 'red' ? 'text-red-800 dark:text-red-300' : 'text-gray-700 dark:text-gray-200'
   return <section className="my-3 p-3 rounded-lg border border-gray-200 dark:border-tm-dark-border bg-gray-50 dark:bg-tm-dark-card text-sm text-gray-800 dark:text-gray-100">
     <h3 className="font-bold">Daily Cash Reconciliation · business date {businessDate}</h3>
+    <label className="block text-xs font-semibold mt-3">{CASH_COUNT_LABEL}
+      <input aria-label={CASH_COUNT_LABEL} required aria-required="true" type="number" step="0.01" min="0" value={form.yesterday_cash_counted ?? ''} onChange={event => set('yesterday_cash_counted', event.target.value)} disabled={disabled} aria-invalid={!!validation}
+        className="block w-full border rounded-lg p-2 mt-1 bg-white dark:bg-tm-dark-surface border-gray-300 dark:border-tm-dark-border focus:outline-none focus:ring-2 focus:ring-tm-teal" />
+    </label>
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
       {[['Calculated Cash Revenue', result.revenue], ['Admin Cash on Hand', result.hand], ...(showExpected ? [['Expected Total Cash on Site', result.expected]] : [])].map(([label, value]) => <div key={label}><div className="text-xs">{label}</div><strong>{money(value)}</strong></div>)}
     </div>
-    <label className="block text-xs font-semibold mt-3">{CASH_COUNT_LABEL}
-      <input aria-label={CASH_COUNT_LABEL} type="number" step="0.01" min="0" value={form.yesterday_cash_counted ?? ''} onChange={event => set('yesterday_cash_counted', event.target.value)} disabled={disabled} aria-invalid={!!validation}
-        className="block w-full border rounded-lg p-2 mt-1 bg-white dark:bg-tm-dark-surface border-gray-300 dark:border-tm-dark-border focus:outline-none focus:ring-2 focus:ring-tm-teal" />
-    </label>
     {validation && <p role="alert" className="text-red-800 dark:text-red-300">{validation}</p>}
     {error && <p role="alert">{error}</p>}
     {loadedScope === scope && !error && cents == null && <p className="text-xs mt-1">Cash on Hand not configured for this date.</p>}

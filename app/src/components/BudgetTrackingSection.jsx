@@ -141,7 +141,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
   <BudgetRevenueFields form={form} set={set} fieldCls={fieldCls} />
 </div>
-   <CashReconciliationSection showExpected={profile?.role === 'admin'} locationId={selectedLocId} timeZone={locations.find(site => site.id === selectedLocId)?.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
+   <CashReconciliationSection attemptedSave={attemptedSave} showExpected={profile?.role === 'admin'} locationId={selectedLocId} timeZone={locations.find(site => site.id === selectedLocId)?.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-100 dark:border-tm-dark-border">
               <div>
 
@@ -153,12 +153,12 @@ function DailyEntryTab({ locations, profile, onSaved }) {
                 <div className="text-xs text-gray-800 dark:text-gray-100 mt-1">{displayCount(form.mtd_membership_actual)} / {displayCount(target?.membership_goal)} · End-of-Month Member Goal</div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Current Rating</label>
-                <input type="number" min="0" max="5" step="0.01" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={fieldCls('current_rating')} />
+                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">MTD REVIEWS</label>
+                <input type="number" min="0" value={form.current_reviews} onChange={e => set('current_reviews', e.target.value)} className={fieldCls('current_reviews')} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Current Reviews</label>
-                <input type="number" min="0" value={form.current_reviews} onChange={e => set('current_reviews', e.target.value)} className={fieldCls('current_reviews')} />
+                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">GOOGLE RATING</label>
+                <input type="number" min="0" max="5" step="0.01" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={fieldCls('current_rating')} />
               </div>
             </div>
 

@@ -12,6 +12,7 @@ import BudgetTrackingSection from '../components/BudgetTrackingSection'
 import OwnershipLogSection from '../components/OwnershipLogSection'
 import { shopTotals } from '../utils/logMath'
 import { morningEntryStatus } from '../utils/morningStatus'
+import { isDayComplete } from '../utils/budgetDailyFields'
 
 const formatTimeSlot = (ts) => {
   if (!ts) return null
@@ -148,9 +149,9 @@ export default function Dashboard() {
     let cancelled = false
     ;(async () => {
       if (loc.show_budget_tracking) {
-        const { data } = await supabase.from('budget_daily_entries').select('id')
+        const { data } = await supabase.from('budget_daily_entries').select('*')
           .eq('location_id', loc.id).eq('entry_date', todayStr()).maybeSingle()
-        if (!cancelled) setHasBudgetToday(!!data)
+        if (!cancelled) setHasBudgetToday(isDayComplete(data))
       }
       if (loc.show_ownership_tools) {
         const { data } = await supabase.from('ownership_log_entries').select('submitted_at')
@@ -327,6 +328,7 @@ export default function Dashboard() {
                   locationId={selectedLocationId}
                   dateStart={dateRange.start}
                   dateEnd={dateRange.end}
+                  budgetLocation={location}
                   opportunitiesFormula={opportunitiesFormula}
                   metricThresholds={location?.metric_thresholds}
                 />

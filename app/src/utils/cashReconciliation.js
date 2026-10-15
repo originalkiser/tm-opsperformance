@@ -1,6 +1,6 @@
 import { REVENUE_KEYS, revenueCents, shiftDate } from './budgetRevenue.js'
 
-export const CASH_COUNT_LABEL = 'YESTERDAY TOTAL CASH COUNTED (BEFORE DEPOSIT) ($)'
+export const CASH_COUNT_LABEL = 'TOTAL CASH ONSITE (Before Deposit) ($)'
 export function cashCountError(value) {
   return value !== '' && value != null && revenueCents(value) == null
     ? 'Enter a non-negative cash count with up to two decimal places.' : ''

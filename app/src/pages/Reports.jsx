@@ -513,6 +513,7 @@ export default function Reports() {
                     dateEnd={dateRange.end}
                     opportunitiesFormula={monthlyLoc?.opportunities_formula}
                     metricThresholds={monthlyLoc?.metric_thresholds}
+                    budgetLocation={monthlyLoc}
                   />
                 </div>
               )

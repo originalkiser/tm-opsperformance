@@ -1,3 +1,5 @@
+import useBudgetPerformance from '../hooks/useBudgetPerformance'
+import BudgetSourceNote from './BudgetSourceNote'
 import { useState, useMemo } from 'react'
 import { employeeDeltasByDay, hourlyDeltasByDay } from '../utils/logMath'
 import { pmixCls, convCls, pmixHex, convHex } from '../utils/metricColors'
@@ -26,6 +28,7 @@ function ChevronIcon({ open }) {
 }
 
 export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
+  const source = useBudgetPerformance(logs, locations, dateRange)
   const [showTotals, setShowTotals]   = useState(false)
   const [expandedDow, setExpandedDow] = useState(null)
   const [expandedShops, setExpandedShops] = useState(new Set())
@@ -40,7 +43,7 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
   }
 
   const { dowStats, shopDowStats, empDowStats, hourlyDowRaw, hourlyAllRaw, dowDates, totalDates } = useMemo(() => {
-    if (!logs.length) return { dowStats: {}, shopDowStats: {}, empDowStats: {}, hourlyDowRaw: {}, hourlyAllRaw: {}, dowDates: {}, totalDates: 0 }
+    if (!logs.length && !source.daily.length) return { dowStats: {}, shopDowStats: {}, empDowStats: {}, hourlyDowRaw: {}, hourlyAllRaw: {}, dowDates: {}, totalDates: 0 }
 
     // Group raw hourly rows by location+date for employee delta calc
     const locDateGroups = {}
@@ -51,7 +54,7 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
     })
 
     // One row per (location, date) for shop-level aggregation
-    const dayTotals = toDayTotals(logs)
+    const dayTotals = source.daily
 
     // Count unique dates per DOW
     const dowDates = {}
@@ -72,7 +75,7 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
       const t = shopDowRaw[key]
       t.tw  += toInt(r.total_washes);    t.mw  += toInt(r.member_washes)
       t.ms  += toInt(r.memberships_sold); t.opp += toInt(r.opportunities)
-      t.gr  += toInt(r.google_reviews);  t.btr += toInt(r.better); t.bst += toInt(r.best)
+      t.gr = t.gr == null || r.google_reviews == null ? null : t.gr + toInt(r.google_reviews);  t.btr += toInt(r.better); t.bst += toInt(r.best)
       t.dates.add(r.log_date)
     })
 
@@ -82,7 +85,7 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
       if (!dowRaw[s.dow]) dowRaw[s.dow] = { tw: 0, mw: 0, ms: 0, opp: 0, gr: 0, btr: 0, bst: 0 }
       const t = dowRaw[s.dow]
       t.tw += s.tw; t.mw += s.mw; t.ms += s.ms; t.opp += s.opp
-      t.gr += s.gr; t.btr += s.btr; t.bst += s.bst
+      t.gr = t.gr == null || s.gr == null ? null : t.gr + s.gr; t.btr += s.btr; t.bst += s.bst
     })
 
     const makeStat = (raw, count) => {
@@ -93,7 +96,7 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
         avgTw:      Math.round(raw.tw  / n),
         avgMw:      Math.round(raw.mw  / n),
         avgMs:      Math.round(raw.ms  / n),
-        avgGr:      Math.round(raw.gr  / n),
+        avgGr:      raw.gr == null ? null : Math.round(raw.gr / n),
         p_mix:      pct(raw.btr + raw.bst, raw.ms),
         conversion: pct(raw.ms, raw.opp),
         pmixN:      pctN(raw.btr + raw.bst, raw.ms),
@@ -182,7 +185,7 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
     const totalDates = new Set(dayTotals.map(r => r.log_date)).size
 
     return { dowStats, shopDowStats, empDowStats, hourlyDowRaw, hourlyAllRaw, dowDates, totalDates }
-  }, [logs, locations])
+  }, [source.daily, logs, locations])
 
   const navyColor = dark ? '#D6E4F0' : '#1A3555'
 
@@ -276,11 +279,13 @@ export default function DayOfWeekSection({ logs, locations, dark, dateRange }) {
   }
 
   if (!Object.keys(dowStats).length) return (
-    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
+    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.<BudgetSourceNote source={source} daily /></div>
   )
 
   return (
     <div>
+      <BudgetSourceNote source={source} daily />
+      <p className="text-xs text-gray-700 dark:text-gray-200 mb-2">Employee and hourly breakdowns use Daily Logs.</p>
       {/* Avg / Total toggle + export */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-tm-dark-border shadow-sm">
