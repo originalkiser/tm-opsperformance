@@ -8,6 +8,20 @@ export const DEFAULT_THRESHOLDS = {
   conv_yellow: 10, // Conversion is yellow [red, yellow), green at or above
 }
 
+// Binary report presentation uses the same green boundary and palette as Daily
+// Log. Daily Log's existing yellow/orange intermediate bands stay unchanged.
+export const REPORT_STATUS_CLS = {
+  green: 'text-green-700 dark:text-green-300',
+  red: 'text-red-600 dark:text-red-400',
+  neutral: 'text-gray-600 dark:text-gray-300',
+}
+export function reportThresholdStatus(value, key, thresholds, fresh = true) {
+  const boundary = thresholds?.[key] ?? DEFAULT_THRESHOLDS[key]
+  if (!fresh || value == null || !Number.isFinite(value) || value < 0
+    || boundary === '' || !Number.isFinite(Number(boundary)) || Number(boundary) < 0) return 'neutral'
+  return value >= Number(boundary) / 100 ? 'green' : 'red'
+}
+
 // Parse "42.3%" or 42.3 → number, or NaN if empty/invalid
 const parsePct = (v) => parseFloat(v)
 

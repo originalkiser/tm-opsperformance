@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
 import { isCurrentlyOpen } from '../utils/operatingHours'
 import { yesterdayMetrics, mtdMetrics, pct1, toDateStr } from '../utils/budgetMath'
+import { isDayComplete } from '../utils/budgetDailyFields'
 import { morningEntryStatus, STATUS_LABEL } from '../utils/morningStatus'
 import { ownershipLogStatus } from '../utils/ownershipLog'
 
@@ -144,7 +145,7 @@ export default function AreaManagerOverview({ locations }) {
       let budget = null
       if (loc.show_budget_tracking) {
         const entry = budgetEntries.find(r => r.location_id === loc.id)
-        const hasToday = entry?.entry_date === todayStr()
+        const hasToday = entry?.entry_date === todayStr() && isDayComplete(entry)
         const status = morningEntryStatus(hasToday, loc.timezone, now)
         budget = { entry, status, yst: yesterdayMetrics(entry), mtd: mtdMetrics(entry) }
       }

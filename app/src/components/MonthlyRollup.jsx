@@ -1,3 +1,5 @@
+import useBudgetPerformance from '../hooks/useBudgetPerformance'
+import BudgetSourceNote from './BudgetSourceNote'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
@@ -56,10 +58,12 @@ function fmtDay(dateStr) {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' })
 }
 
-export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportunitiesFormula = 'detailed', metricThresholds }) {
+export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportunitiesFormula = 'detailed', metricThresholds, budgetLocation }) {
   const [logs, setLogs]       = useState([])
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
+  const source = useBudgetPerformance(logs, budgetLocation ? [budgetLocation] : [], { start: dateStart, end: dateEnd })
+  const budgetMtd = source.active ? source.totals.find(r => r.location_id === locationId) : null
 
   useEffect(() => { fetchData() }, [locationId, dateStart, dateEnd])
 
@@ -104,7 +108,7 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
     logs.filter(l => l.employee_name?.trim().toLowerCase() === emp.toLowerCase())
 
   const activeDays = allDates.filter(
-    d => logs.some(l => l.log_date === d) || d === today
+    d => logs.some(l => l.log_date === d) || source.daily.some(r => r.log_date === d) || d === today
   )
 
   const asOfTime = (dateStr) => {
@@ -125,7 +129,7 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
     return entry ? entry[1] : null
   }
 
-  const getDayShopRow = (dateStr) => shopTotals(dayLogs(dateStr))
+  const getDayShopRow = (dateStr) => source.active ? source.daily.find(r => r.location_id === locationId && r.log_date === dateStr) : shopTotals(dayLogs(dateStr))
 
   const deltaVal = (t, field) => {
     if (!t) return 0
@@ -139,12 +143,12 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
     return toInt(r[field])
   }
 
-  if (loading) return (
+  if (loading || source.loading) return (
     <div className="py-12 flex items-center justify-center">
       <TmLoader />
     </div>
   )
-  if (!logs.length) return (
+  if (!logs.length && !source.active) return (
     <div className="py-12 text-center text-gray-400 dark:text-tm-dark-muted text-sm font-brand">
       No data recorded for {rangeLabel}.
     </div>
@@ -199,9 +203,9 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
 
   const CountTable = ({ title, accentClass, field }) => {
     const empCellVal  = (d, emp) => deltaVal(getEmpDayTotal(d, emp), field)
-    const shopCellVal = (d)      => shopVal(getDayShopRow(d), field)
+    const shopCellVal = (d) => source.active && !getDayShopRow(d) ? null : shopVal(getDayShopRow(d), field)
     const empColTotal = (emp)    => activeDays.reduce((s, d) => s + empCellVal(d, emp), 0)
-    const grandTotal             = activeDays.reduce((s, d) => s + shopCellVal(d), 0)
+    const grandTotal = source.active ? (budgetMtd ? shopVal(budgetMtd, field) : null) : activeDays.reduce((s, d) => s + shopCellVal(d), 0)
 
     return (
       <div>
@@ -227,14 +231,14 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
                     )
                   })}
                   <td className="border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold font-brand dark:text-tm-dark-text">
-                    {fmtNum(shopCellVal(dateStr))}
+                    {shopCellVal(dateStr) == null ? '—' : fmtNum(shopCellVal(dateStr))}
                   </td>
                 </tr>
               ))}
               <TotalRow
                 cells={[
                   ...activeEmployees.map(emp => fmtNum(empColTotal(emp))),
-                  fmtNum(grandTotal),
+                  grandTotal == null ? '—' : fmtNum(grandTotal),
                 ]}
               />
             </tbody>
@@ -261,7 +265,7 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
       const r = getDayShopRow(dateStr)
       if (!r) return ''
       const ms  = toInt(r.basic) + toInt(r.good) + toInt(r.better) + toInt(r.best)
-      const opp = opportunitiesFormula === 'simple'
+      const opp = (r.budget_source || opportunitiesFormula === 'simple')
         ? Math.max(0, toInt(r.total_washes) - toInt(r.member_washes))
         : Math.max(0, toInt(r.total_washes) - toInt(r.member_washes) + ms)
       return pct(ms, opp)
@@ -322,8 +326,8 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
               <TotalRow
                 cells={activeEmployees.map(emp => empColConv(emp))}
                 extraCells={[{
-                  val: pct(grMS, grOpp),
-                  cls: convTotalsCls(pct(grMS, grOpp), metricThresholds),
+                  val: source.active ? (budgetMtd ? pct(budgetMtd.memberships_sold, budgetMtd.opportunities) : '—') : pct(grMS, grOpp),
+                  cls: convTotalsCls(source.active ? (budgetMtd ? pct(budgetMtd.memberships_sold, budgetMtd.opportunities) : '') : pct(grMS, grOpp), metricThresholds),
                 }]}
               />
             </tbody>
@@ -399,8 +403,8 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
               <TotalRow
                 cells={activeEmployees.map(emp => empColPmix(emp))}
                 extraCells={[{
-                  val: pct(grPrem, grMS),
-                  cls: pmixTotalsCls(pct(grPrem, grMS), metricThresholds),
+                  val: source.active ? (budgetMtd ? pct(budgetMtd.better + budgetMtd.best, budgetMtd.memberships_sold) : '—') : pct(grPrem, grMS),
+                  cls: pmixTotalsCls(source.active ? (budgetMtd ? pct(budgetMtd.better + budgetMtd.best, budgetMtd.memberships_sold) : '') : pct(grPrem, grMS), metricThresholds),
                 }]}
               />
             </tbody>
@@ -414,6 +418,8 @@ export default function MonthlyRollup({ locationId, dateStart, dateEnd, opportun
 
   return (
     <div>
+      <BudgetSourceNote source={source} daily />
+      {source.active && <p className="text-xs text-gray-700 dark:text-gray-200 mb-3">Shop MTD totals use one Budget Tracking snapshot. Daily shop rows show available daily entries; employee columns remain Daily Log based and may differ. Missing daily shop values are unavailable.</p>}
       <div className="flex items-center gap-3 mb-6">
         <span className="bg-tm-blue text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest">
           {allDates.length <= 7 ? 'WK' : allDates.length <= 31 ? 'MTH' : 'RNG'}

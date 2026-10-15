@@ -1,5 +1,6 @@
 import { cashRevenue, revenueError } from './budgetRevenue.js'
 import { creditCardInputError } from './creditCardCalculator.js'
+import { CASH_COUNT_LABEL, cashCountError } from './cashReconciliation.js'
 // Shared field metadata + validation for the Budget Tracking daily entry
 // form, used both on the Site Entry page (BudgetTrackingSection.jsx) and the
 // Reports-page admin override (BudgetTrackingReport.jsx), so the two stay in
@@ -38,11 +39,12 @@ export const REVENUE_FIELDS = [
 export const EXTRA_FIELDS = [
   ...REVENUE_FIELDS,
   { key: 'mtd_membership_actual', label: 'MTD Membership Actual' },
-  { key: 'current_rating', label: 'Current Rating' },
-  { key: 'current_reviews', label: 'Current Reviews' },
+  { key: 'current_reviews', label: 'MTD REVIEWS' },
+  { key: 'current_rating', label: 'GOOGLE RATING' },
 ]
 
-export const ALL_DAILY_FIELDS = [...YESTERDAY_FIELDS, ...MTD_FIELDS, ...EXTRA_FIELDS]
+export const PERFORMANCE_DAILY_FIELDS = [...YESTERDAY_FIELDS, ...MTD_FIELDS, ...EXTRA_FIELDS]
+export const ALL_DAILY_FIELDS = [...PERFORMANCE_DAILY_FIELDS, { key: 'yesterday_cash_counted', label: CASH_COUNT_LABEL }]
 
 export function emptyDailyForm() {
   return { ...Object.fromEntries(ALL_DAILY_FIELDS.map(f => [f.key, ''])), yesterday_cash_counted: '' }
@@ -55,7 +57,12 @@ export const countMissing = (form) => ALL_DAILY_FIELDS.filter(f => isFieldMissin
 // True once every field has an explicit value in the *saved* row (not the
 // in-progress form) — drives the "today's numbers are done" highlight.
 export const isDayComplete = (entry) =>
-  !!entry && ALL_DAILY_FIELDS.every(f => !isFieldMissing(entry, f.key)) && !validateRevenue(entry)
+  !!entry && ALL_DAILY_FIELDS.every(f => !isFieldMissing(entry, f.key)) && !validateRevenue(entry) && !cashCountError(entry.yesterday_cash_counted)
+
+// Cash completion is an entry-workflow requirement, not an eighth scoring
+// category. Preserve approved performance scoring and legacy saved records.
+export const isPerformanceEntryComplete = (entry) =>
+  !!entry && PERFORMANCE_DAILY_FIELDS.every(f => !isFieldMissing(entry, f.key)) && !validateRevenue(entry)
 
 export const calculateCashRevenue = cashRevenue
 export const validateRevenue = form => creditCardInputError(form.yesterday_cc_revenue) || revenueError(form)

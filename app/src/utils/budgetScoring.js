@@ -1,7 +1,7 @@
 import { computeScore, rankByScore, yesterdayMetrics, mtdMetrics, membershipStatus, daysElapsed, daysInMonth } from './budgetMath.js'
 import { calculateMtdRevenue, latestHistoricalRevenue, revenuePresentation, shiftDate } from './budgetRevenue.js'
 import { DEFAULT_THRESHOLDS } from './metricColors.js'
-import { ALL_DAILY_FIELDS, isDayComplete } from './budgetDailyFields.js'
+import { PERFORMANCE_DAILY_FIELDS, isPerformanceEntryComplete } from './budgetDailyFields.js'
 
 export const SCORE_WEIGHTS = Object.freeze({ conversion: 20, revenue: 20, pmix: 10, washes: 10, revenuePlan: 15, growth: 15, rating: 10 })
 export const SCORE_LABELS = { conversion: 'MTD Conversion', revenue: 'MTD Total Revenue', pmix: 'MTD P-Mix', washes: 'MTD Total Washes', revenuePlan: 'Revenue to Plan', growth: 'Membership Growth', rating: 'Google Rating' }
@@ -48,9 +48,9 @@ export function scoreBudgetLocations({ locations = [], targets = [], entries = [
     const exact = siteEntries.filter(e => e.entry_date === reportingDate)
     const entry = exact.length === 1 ? exact[0] : null
     if (!entry) issues.push(exact.length > 1 ? 'Duplicate entry for reporting date' : `Missing entry for ${reportingDate}${latest ? '; latest is ' + latest.entry_date : ''}`)
-    const dailyEntryComplete = isDayComplete(entry)
+    const dailyEntryComplete = isPerformanceEntryComplete(entry)
     if (entry && !dailyEntryComplete) issues.push('Daily reporting entry incomplete or invalid')
-    const missingEntryFields = entry ? ALL_DAILY_FIELDS.filter(f => entry[f.key] == null || entry[f.key] === '').map(f => f.label) : []
+    const missingEntryFields = entry ? PERFORMANCE_DAILY_FIELDS.filter(f => entry[f.key] == null || entry[f.key] === '').map(f => f.label) : []
     if (elapsed === 0) issues.push('No completed business days in this month yet')
     const balanceRows = balances.filter(b => b.location_id === loc.id && b.revenue_month === month)
     const revenue = calculateMtdRevenue(entries, loc.id, reportingDate, balanceRows.length === 1 ? balanceRows[0] : null)

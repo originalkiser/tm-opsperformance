@@ -1,3 +1,5 @@
+import useBudgetPerformance from '../hooks/useBudgetPerformance'
+import BudgetSourceNote from './BudgetSourceNote'
 import { useState } from 'react'
 import { convHex, pmixHex } from '../utils/metricColors'
 import { toInt, toDayTotals } from '../utils/insightsHelpers'
@@ -11,9 +13,10 @@ const TEAL   = '#8ECFCB'
 const ORANGE = '#ea580c'
 
 export default function DailyTrendsSection({ logs, dark, locations, selected, onSelectedChange, dateRange }) {
+  const source = useBudgetPerformance(logs, selected === null ? locations : locations.filter(l => selected.includes(l.id)), dateRange)
   const chartData = (() => {
     const locDateMap = {}
-    logs.forEach(r => {
+    source.daily.forEach(r => {
       const key = `${r.location_id}::${r.log_date}`
       if (!locDateMap[key]) locDateMap[key] = []
       locDateMap[key].push(r)
@@ -36,7 +39,7 @@ export default function DailyTrendsSection({ logs, dark, locations, selected, on
         const mw  = rows.reduce((s, r) => s + toInt(r.member_washes),   0)
         const ms  = rows.reduce((s, r) => s + toInt(r.memberships_sold),0)
         const opp = rows.reduce((s, r) => s + toInt(r.opportunities),   0)
-        const gr  = rows.reduce((s, r) => s + toInt(r.google_reviews),  0)
+        const gr = rows.some(r => r.google_reviews == null) ? null : rows.reduce((s, r) => s + toInt(r.google_reviews), 0)
         const btr = rows.reduce((s, r) => s + toInt(r.better),          0)
         const bst = rows.reduce((s, r) => s + toInt(r.best),            0)
         return {
@@ -93,6 +96,7 @@ export default function DailyTrendsSection({ logs, dark, locations, selected, on
 
   return (
     <div>
+      <BudgetSourceNote source={source} daily />
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <span className="text-sm text-gray-500 dark:text-tm-dark-muted">{shopsLabel}</span>
         <div className="flex items-center gap-2">
