@@ -3,7 +3,7 @@ import BudgetSourceNote from './BudgetSourceNote'
 import { useState } from 'react'
 import { pmixCls, pmixTotalsCls, convCls, convTotalsCls } from '../utils/metricColors'
 import { fmtNum } from '../utils/format'
-import { toInt, pct, pctN, parsePct, agg, toDayTotals, thCls } from '../utils/insightsHelpers'
+import { parsePct, agg, thCls } from '../utils/insightsHelpers'
 import { exportCsv, exportXlsx, exportPdf } from '../utils/exportTable'
 import { fmtDateRange } from './DateSelector'
 import ExportMenu from './ExportMenu'
@@ -44,24 +44,29 @@ const COLS = [
   { key: 'conversion', label: 'Conversion',       align: 'center' },
 ]
 
-export default function SiteMetricTable({ data, locations, dateRange }) {
-  const [sort, toggleSort] = useSortState('tw', 'desc')
+export default function SiteMetricTable({ data, locations, dateRange, title = 'Site Performance' }) {
   const source = useBudgetPerformance(data, locations, dateRange)
+  return <PerformanceTable source={source} locations={locations} dateRange={dateRange} title={title} />
+}
 
-  if (!data.length && !source.active) return (
-    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
-  )
+// Shared compact, sortable presentation; source selection stays outside the table.
+export function PerformanceTable({ source, locations, dateRange, title = 'Site Performance', daily = false }) {
+  const [sort, toggleSort] = useSortState('tw', 'desc')
 
   const dayData = source.totals
   const totals  = agg(dayData)
   const byLoc   = {}
   dayData.forEach(r => { ;(byLoc[r.location_id] = byLoc[r.location_id] || []).push(r) })
 
-  const rows = Object.entries(byLoc).map(([locId, rows]) => ({
-    name: locations.find(l => l.id === locId)?.name || locId,
-    ...agg(rows),
-    provisional: source.notes.some(n => n.id === locId && !n.complete),
+  const rows = locations.map(loc => ({
+    name: loc.name,
+    ...agg(byLoc[loc.id] || []),
+    missing: !byLoc[loc.id]?.length,
+    thresholds: loc.metric_thresholds,
+    status: source.statuses?.[loc.id],
+    provisional: source.notes.some(n => n.id === loc.id && !n.complete),
   }))
+  const incomplete = rows.some(r => r.missing || r.provisional)
 
   const sorted = [...rows].sort((a, b) => {
     const dir = sort.dir === 'asc' ? 1 : -1
@@ -74,8 +79,8 @@ export default function SiteMetricTable({ data, locations, dateRange }) {
   const maxWashes = Math.max(...sorted.map(r => r.tw), 1)
 
   const exportSpec = {
-    filename: `site-performance_${dateRange.start}_to_${dateRange.end}`,
-    title:    'Site Performance',
+    filename: `${daily ? 'todays-performance' : title === 'MTD Performance' ? 'mtd-performance' : 'site-performance'}_${dateRange.start}_to_${dateRange.end}`,
+    title,
     subtitle: fmtDateRange(dateRange.start, dateRange.end) + (source.active ? ' — Budget Tracking priority; stale/missing sites make totals provisional' : ''),
     columns: [
       { label: 'Location',         type: 'text' },
@@ -87,14 +92,14 @@ export default function SiteMetricTable({ data, locations, dateRange }) {
       { label: 'P-Mix',            type: 'pmix' },
       { label: 'Conversion',       type: 'conv' },
     ],
-    rows: sorted.map(r => [r.name + (r.provisional ? ' (Provisional)' : ''), r.tw, r.mw, r.ms, r.opp, r.gr, r.p_mix, r.conversion]),
-    totalsRow: [source.notes.some(n => !n.complete) ? 'Provisional subtotal' : 'Totals', totals.tw, totals.mw, totals.ms, totals.opp, totals.gr, totals.p_mix, totals.conversion],
+    rows: sorted.map(r => [r.name + (r.missing ? ' (Unavailable)' : r.provisional ? ' (Provisional)' : ''), ...[r.tw, r.mw, r.ms, r.opp, r.gr, r.p_mix, r.conversion].map(v => r.missing ? '' : v)]),
+    totalsRow: [incomplete ? 'Provisional subtotal' : 'Totals', totals.tw, totals.mw, totals.ms, totals.opp, totals.gr, totals.p_mix, totals.conversion],
   }
 
   return (
     <div>
       <BudgetSourceNote source={source} />
-      {source.notes.some(n => !n.complete) && <p className="text-xs mb-2 text-gray-700 dark:text-gray-200">Provisional subtotal: unavailable locations are excluded. See source details.</p>}
+      {incomplete && <p className="text-xs mb-2 text-gray-700 dark:text-gray-200">Provisional subtotal: unavailable locations are excluded. {daily ? 'Sites without a reported Daily Log are shown below.' : 'See source details where available.'}</p>}
       <div className="flex justify-end mb-3">
         <ExportMenu items={[
           { label: 'Excel (.xlsx)', run: () => exportXlsx(exportSpec) },
@@ -103,12 +108,12 @@ export default function SiteMetricTable({ data, locations, dateRange }) {
         ]} />
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
+        <table aria-label={title} className="w-full min-w-[800px] border-collapse text-xs">
           <thead>
             <tr className="bg-tm-blue dark:bg-tm-navy text-white">
               {COLS.map(c => (
-                <th key={c.key} className={`${thCls} text-${c.align}`} onClick={() => toggleSort(c.key)}>
-                  {c.label}<SortIcon active={sort.col === c.key} dir={sort.dir} />
+                <th key={c.key} scope="col" aria-sort={sort.col === c.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`${thCls} ${c.align === 'left' ? 'text-left' : 'text-center'}`}>
+                  <button className="w-full text-inherit" onClick={() => toggleSort(c.key)}>{c.label}<SortIcon active={sort.col === c.key} dir={sort.dir} /></button>
                 </th>
               ))}
             </tr>
@@ -116,25 +121,27 @@ export default function SiteMetricTable({ data, locations, dateRange }) {
           <tbody>
             {sorted.map((r, i) => (
               <tr key={r.name} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
-                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-medium font-brand dark:text-tm-dark-text">{r.name}</td>
-                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2"><MiniBar value={r.tw} max={maxWashes} /></td>
-                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.mw)}</td>
-                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.ms)}</td>
-                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.opp)}</td>
-                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(r.gr)}</td>
-                <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${r.provisional ? 'text-gray-600 dark:text-gray-300' : pmixCls(r.p_mix)}`}>{r.p_mix}</td>
-                <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${r.provisional ? 'text-gray-600 dark:text-gray-300' : convCls(r.conversion)}`}>{r.conversion}</td>
+                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 min-w-[180px] font-medium font-brand dark:text-tm-dark-text">{r.name}{daily && <div className="text-[10px] font-normal text-gray-500 dark:text-tm-dark-muted">{r.status?.date} · {r.missing ? 'Not reported yet / unavailable' : 'Reported'}<br />Last Updated: {r.status?.updatedAt ? new Date(r.status.updatedAt).toLocaleString('en-US', { timeZone: r.status.timezone, timeZoneName: 'short' }) : '—'}</div>}
+                  {!daily && r.missing && <div className="text-[10px] font-normal">MTD unavailable</div>}
+                </td>
+                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">{r.missing ? '—' : <MiniBar value={r.tw} max={maxWashes} />}</td>
+                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.missing ? '—' : (fmtNum(r.mw) || '0')}</td>
+                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.missing ? '—' : (fmtNum(r.ms) || '0')}</td>
+                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.missing ? '—' : (fmtNum(r.opp) || '0')}</td>
+                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.missing ? '—' : (fmtNum(r.gr) || '0')}</td>
+                <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${r.missing || r.provisional ? 'text-gray-600 dark:text-gray-300' : pmixCls(r.p_mix, r.thresholds)}`}>{r.missing ? '—' : r.p_mix}</td>
+                <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${r.missing || r.provisional ? 'text-gray-600 dark:text-gray-300' : convCls(r.conversion, r.thresholds)}`}>{r.missing ? '—' : r.conversion}</td>
               </tr>
             ))}
             <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
-              <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">{source.notes.some(n => !n.complete) ? 'Provisional subtotal' : 'Totals'}</td>
+              <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">{incomplete ? 'Provisional subtotal' : 'Totals'}</td>
               <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.tw)}</td>
               <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.mw)}</td>
               <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.ms)}</td>
               <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.opp)}</td>
               <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.gr)}</td>
-              <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${pmixTotalsCls(totals.p_mix)}`}>{totals.p_mix}</td>
-              <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${convTotalsCls(totals.conversion)}`}>{totals.conversion}</td>
+              <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${incomplete ? 'text-gray-600 dark:text-gray-300' : pmixTotalsCls(totals.p_mix)}`}>{totals.p_mix}</td>
+              <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${incomplete ? 'text-gray-600 dark:text-gray-300' : convTotalsCls(totals.conversion)}`}>{totals.conversion}</td>
             </tr>
           </tbody>
         </table>
