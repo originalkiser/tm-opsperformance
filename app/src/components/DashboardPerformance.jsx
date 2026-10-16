@@ -38,7 +38,7 @@ export default function DashboardPerformance({ locations, daily = false }) {
     {state.error && <p role="alert" className="text-sm text-red-600 dark:text-red-400 mb-3">{state.error}</p>}
     {current && state.range ? daily
       ? <PerformanceTable source={source} locations={locations} dateRange={state.range} title="Today's Performance" daily />
-      : <SiteMetricTable data={state.logs} locations={locations} dateRange={state.range} title="MTD Performance" />
+      : <SiteMetricTable data={state.logs} locations={locations} dateRange={state.range} title="MTD Performance" companyRead />
       : !state.error && <p className="text-sm py-3">Loading performance…</p>}
   </div>
 }
