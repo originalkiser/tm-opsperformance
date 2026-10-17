@@ -44,8 +44,8 @@ const COLS = [
   { key: 'conversion', label: 'Conversion',       align: 'center' },
 ]
 
-export default function SiteMetricTable({ data, locations, dateRange, title = 'Site Performance' }) {
-  const source = useBudgetPerformance(data, locations, dateRange)
+export default function SiteMetricTable({ data, locations, dateRange, title = 'Site Performance', companyRead = false }) {
+  const source = useBudgetPerformance(data, locations, dateRange, { companyRead })
   return <PerformanceTable source={source} locations={locations} dateRange={dateRange} title={title} />
 }
 
