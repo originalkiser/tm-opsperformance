@@ -50,8 +50,10 @@ begin
       ))
       and b.entry_date >= p_month_start + 1
       and b.entry_date <= p_through_date + 1
+      -- Missing/blank (including tabs/newlines) uses Chicago; valid zones are retained.
+      -- Invalid nonblank identifiers are rejected by AT TIME ZONE (SQLSTATE 22023).
       -- Never expose today's partial/future business day as completed MTD.
-      and b.entry_date <= (statement_timestamp() at time zone coalesce(l.timezone, 'America/Chicago'))::date
+      and b.entry_date <= (statement_timestamp() at time zone coalesce(nullif(btrim(l.timezone, E' \t\n\r\f\013'), ''), 'America/Chicago'))::date
     order by b.location_id, b.entry_date desc;
 end;
 $$;
