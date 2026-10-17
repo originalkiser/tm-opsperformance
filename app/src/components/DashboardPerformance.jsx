@@ -32,7 +32,7 @@ export default function DashboardPerformance({ locations, daily = false }) {
   const current = state.key === ids
   return <div>
     <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-3" role="status">
-      Last Updated: {current && state.updated ? state.updated.toLocaleString() : 'Not loaded yet'} · Refreshes every 60 seconds while this Dashboard is visible.
+      Last Refreshed: {current && state.updated ? state.updated.toLocaleString() : 'Not loaded yet'} · Refreshes every 60 seconds while this Dashboard is visible.
       {daily ? ' Current business day in each location’s time zone; hourly Daily Logs only.' : ' Current month to date; completed business-day cutoff applies.'}
     </p>
     {state.error && <p role="alert" className="text-sm text-red-600 dark:text-red-400 mb-3">{state.error}</p>}

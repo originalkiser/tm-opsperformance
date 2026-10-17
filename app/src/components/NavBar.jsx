@@ -34,28 +34,28 @@ export default function NavBar() {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const navClass = path => `flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md border transition-colors font-brand font-semibold text-xs tracking-wide focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tm-teal ${pathname === path
+  const navClass = path => `flex shrink-0 whitespace-nowrap items-center gap-1.5 px-3 py-1.5 my-auto rounded-md border transition-colors font-brand font-semibold text-xs tracking-wide focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tm-teal ${pathname === path
     ? 'bg-tm-teal border-tm-teal text-tm-navy font-bold'
     : 'bg-tm-blue/60 border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white'}`
   const currentPage = path => pathname === path ? 'page' : undefined
-  const isManager = ['admin', 'area_manager'].includes(profile?.role)
+  const isAdmin = profile?.role === 'admin'
   const [showSettings, setShowSettings] = useState(false)
   const [dark, setDark] = useDarkModeCtx()
 
   return (
     <>
-      <nav className="bg-tm-navy dark:bg-tm-dark-nav text-white px-4 py-0 flex items-stretch justify-between shadow-lg border-b border-tm-teal/20 min-h-[52px]">
+      <nav className="bg-tm-navy dark:bg-tm-dark-nav text-white px-4 py-2 xl:py-0 flex flex-wrap xl:flex-nowrap gap-y-2 items-stretch justify-between shadow-lg border-b border-tm-teal/20 min-h-[52px]">
 
         {/* ── Left: Logo + action buttons ── */}
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap xl:flex-nowrap w-full xl:w-auto items-center gap-1">
           {/* Brand badge */}
-          <Link to="/" className="flex items-center gap-3 pr-4 border-r border-tm-teal/20 mr-2 py-1.5">
+          <Link to="/" className="flex shrink-0 items-center gap-3 pr-4 border-r border-tm-teal/20 mr-2 py-1.5">
             <img src={tmLogo} alt="Trademark Car Wash" className="h-8 w-auto" />
             <span className="font-brand font-bold text-sm tracking-wide hidden sm:block">TM Operations</span>
           </Link>
 
-          {/* Dashboard — managers → Insights; store users → Snapshot tab */}
-          {isManager ? (
+          {/* Dashboard — company performance for both roles */}
+          {isAdmin ? (
             <Link
               to="/insights"
               className={navClass('/insights')}
@@ -75,12 +75,12 @@ export default function NavBar() {
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                 <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3zm5-4a1 1 0 011-1h2a1 1 0 011 1v7a1 1 0 01-1 1H8a1 1 0 01-1-1V7zm5-5a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V2z"/>
               </svg>
-              My Dashboard
+              Dashboard
             </button>
           )}
 
-          {/* Reports — managers only */}
-          {isManager && (
+          {/* Reports — admins only */}
+          {isAdmin && (
             <Link
               to="/reports"
               className={navClass('/reports')}
@@ -93,17 +93,17 @@ export default function NavBar() {
             </Link>
           )}
 
-          {/* AM Entry — admins/area managers only */}
-          {isManager && (
+          {/* Admin Entry — admins only */}
+          {isAdmin && (
             <Link
-              to="/am-entry"
-              className={navClass('/am-entry')}
-              aria-current={currentPage('/am-entry')}
+              to="/admin-entry"
+              className={navClass('/admin-entry')}
+              aria-current={currentPage('/admin-entry')}
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                 <path fillRule="evenodd" d="M8 8a3 3 0 100-6 3 3 0 000 6zm2 1a1 1 0 011 1v.5c0 1.5-1.5 3-3 3s-3-1.5-3-3V10a1 1 0 011-1h4zm3.5-2a1.5 1.5 0 10-.001-3.001A1.5 1.5 0 0013.5 7zm-11 0a1.5 1.5 0 10-.001-3.001A1.5 1.5 0 002.5 7zM16 9.5a1 1 0 00-1-1h-1.35c.222.418.35.895.35 1.4v.6a2.97 2.97 0 01-.5 1.65 3.5 3.5 0 002.5-3.35v-.3zM0 9.8c0 1.457.964 2.693 2.5 3.35A2.97 2.97 0 012 11.5v-.6c0-.505.128-.982.35-1.4H1a1 1 0 00-1 1v.3z" clipRule="evenodd"/>
               </svg>
-              AM Entry
+              Admin Entry
             </Link>
           )}
 
@@ -121,24 +121,24 @@ export default function NavBar() {
         </div>
 
         {/* ── Right: User info + actions ── */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap xl:flex-nowrap w-full xl:w-auto justify-end items-center gap-2">
           {profile?.name && (
             <span className="text-tm-sky text-xs hidden md:block font-brand">{profile.name}</span>
           )}
 
-          {/* Admin/Manager panel — managers only */}
-          {isManager && (
+          {/* Admin panel — admins only */}
+          {isAdmin && (
             <Link
               to="/admin"
               className={navClass('/admin')}
               aria-current={currentPage('/admin')}
             >
-              {profile?.role === 'admin' ? 'Admin' : 'Manager'}
+              Admin
             </Link>
           )}
 
-          {/* Budget targets bell — admins/area managers only, appears when a site needs targets set */}
-          {isManager && <TargetsBell />}
+          {/* Budget targets bell — admins only, appears when a site needs targets set */}
+          {isAdmin && <TargetsBell />}
 
           {/* Dark mode toggle */}
           <button

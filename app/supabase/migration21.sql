@@ -19,7 +19,7 @@ begin
   if not exists (
     select 1 from public.user_profiles p
     where p.id = auth.uid() and p.is_active = true and p.deleted_at is null
-      and (p.role in ('admin', 'area_manager') or (p.role = 'store' and p.location_id is not null))
+      and p.role in ('admin', 'store')
   ) then
     raise exception 'An active reporting account is required' using errcode = '42501';
   end if;

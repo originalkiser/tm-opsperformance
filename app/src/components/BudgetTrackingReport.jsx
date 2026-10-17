@@ -133,7 +133,7 @@ function EditModal({ location, onClose }) {
         </div>
         <div className="overflow-y-auto flex-1 p-5">
           <p className="text-[10px] text-gray-400 dark:text-tm-dark-muted mb-3">
-            Editing daily entries — monthly targets are managed on the <strong>AM Entry</strong> page.
+            Editing daily entries — monthly targets are managed on the <strong>Admin Entry</strong> page.
           </p>
           <DailyEntryPane location={location} />
         </div>

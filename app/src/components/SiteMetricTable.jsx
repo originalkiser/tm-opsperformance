@@ -121,7 +121,7 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
           <tbody>
             {sorted.map((r, i) => (
               <tr key={r.name} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
-                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 min-w-[180px] font-medium font-brand dark:text-tm-dark-text">{r.name}{daily && <div className="text-[10px] font-normal text-gray-500 dark:text-tm-dark-muted">{r.status?.date} · {r.missing ? 'Not reported yet / unavailable' : 'Reported'}<br />Last Updated: {r.status?.updatedAt ? new Date(r.status.updatedAt).toLocaleString('en-US', { timeZone: r.status.timezone, timeZoneName: 'short' }) : '—'}</div>}
+                <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 min-w-[180px] font-medium font-brand dark:text-tm-dark-text">{r.name}{daily && <div className="text-[10px] font-normal text-gray-500 dark:text-tm-dark-muted">{r.status?.date} · {r.missing ? 'No Update Yet' : 'Reported'}{!r.missing && <><br />Last Updated: {r.status?.updatedAt ? new Date(r.status.updatedAt).toLocaleTimeString('en-US', { timeZone: r.status.timezone, timeZoneName: 'short' }) : 'Unavailable'}</>}</div>}
                   {!daily && r.missing && <div className="text-[10px] font-normal">MTD unavailable</div>}
                 </td>
                 <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">{r.missing ? '—' : <MiniBar value={r.tw} max={maxWashes} />}</td>

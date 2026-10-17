@@ -7,14 +7,15 @@ import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
 import Insights from './pages/Insights'
 import Reports from './pages/Reports'
-import AmEntry from './pages/AmEntry'
+import AdminEntry from './pages/AdminEntry'
 import UpdateBanner from './components/UpdateBanner'
 import TargetsBanner from './components/TargetsBanner'
 import TmLoader from './components/TmLoader'
 import { useVersionCheck } from './hooks/useVersionCheck'
+import { isActiveProfile, isSupportedRole } from './utils/permissions'
 
 function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth()
+  const { user, profile, loading, signOut } = useAuth()
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-tm-cream dark:bg-tm-dark-bg">
@@ -22,19 +23,20 @@ function ProtectedRoute({ children }) {
       </div>
     )
   }
-  return user ? children : <Navigate to="/login" replace />
+  if (!user) return <Navigate to="/login" replace />
+  if (!isActiveProfile(profile) || !isSupportedRole(profile.role)) return (
+    <div className="p-8 bg-tm-cream dark:bg-tm-dark-bg text-tm-navy dark:text-tm-dark-text min-h-screen">
+      <p role="alert">Your account requires administrator review before accessing TM Operations.</p>
+      <button className="mt-4 underline" onClick={signOut}>Sign Out</button>
+    </div>
+  )
+  return children
 }
 
 function AdminRoute({ children }) {
   const { profile } = useAuth()
   if (!profile) return null
   return profile.role === 'admin' ? children : <Navigate to="/" replace />
-}
-
-function ManagerRoute({ children }) {
-  const { profile } = useAuth()
-  if (!profile) return null
-  return ['admin', 'area_manager'].includes(profile.role) ? children : <Navigate to="/" replace />
 }
 
 function VersionWatcher() {
@@ -60,16 +62,17 @@ export default function App() {
             />
             <Route
               path="/reports"
-              element={<ProtectedRoute><ManagerRoute><Reports /></ManagerRoute></ProtectedRoute>}
+              element={<ProtectedRoute><AdminRoute><Reports /></AdminRoute></ProtectedRoute>}
             />
             <Route
               path="/admin"
-              element={<ProtectedRoute><ManagerRoute><Admin /></ManagerRoute></ProtectedRoute>}
+              element={<ProtectedRoute><AdminRoute><Admin /></AdminRoute></ProtectedRoute>}
             />
             <Route
-              path="/am-entry"
-              element={<ProtectedRoute><ManagerRoute><AmEntry /></ManagerRoute></ProtectedRoute>}
+              path="/admin-entry"
+              element={<ProtectedRoute><AdminRoute><AdminEntry /></AdminRoute></ProtectedRoute>}
             />
+            <Route path="/am-entry" element={<Navigate to="/admin-entry" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </HashRouter>

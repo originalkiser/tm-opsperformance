@@ -43,7 +43,8 @@ test('first of month with no completed day and non-Budget locations do not issue
 test('proposed SQL boundary explicitly authenticates active users, narrows the projection and revokes public execution',()=>{
  const sql=readFileSync(new URL('../supabase/migration21.sql',import.meta.url),'utf8')
  assert.match(sql,/p\.id = auth\.uid\(\) and p\.is_active = true and p\.deleted_at is null/)
- assert.match(sql,/p\.role = 'store' and p\.location_id is not null/)
+ assert.match(sql,/p\.role in \('admin', 'store'\)/)
+ assert.doesNotMatch(sql,/area_manager/)
  assert.match(sql,/stable security definer/)
  assert.match(sql,/set search_path = ''/)
  assert.match(sql,/owner to postgres/)

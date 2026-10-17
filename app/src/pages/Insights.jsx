@@ -11,7 +11,7 @@ import TeamSalesTable from '../components/TeamSalesTable'
 import DailyTrendsSection from '../components/DailyTrendsSection'
 import DayOfWeekSection from '../components/DayOfWeekSection'
 import DowntimeSection from '../components/DowntimeSection'
-import AreaManagerOverview from '../components/AreaManagerOverview'
+import SiteHealthOverview from '../components/SiteHealthOverview'
 
 // ── Layout persistence ────────────────────────────────────────────────────────
 
@@ -236,7 +236,7 @@ export default function Insights() {
   const [trendLocIds, setTrendLocIds]         = useState(null)
   const [selectedMarkets, setSelectedMarkets] = useState(() => {
     try {
-      const raw = localStorage.getItem('tm_market_filter')
+      const raw = localStorage.getItem('tm_reporting_market_filter')
       if (!raw) return null
       const parsed = JSON.parse(raw)
       return Array.isArray(parsed) ? parsed : null
@@ -331,12 +331,12 @@ export default function Insights() {
 
   const rangeLabel = fmtDateRange(dateRange.start, dateRange.end)
 
-  const isManager = ['admin', 'area_manager'].includes(profile?.role)
+  const isAdmin = profile?.role === 'admin'
 
   const SECTION_CFG = {
-    ...(isManager ? {
+    ...(isAdmin ? {
       site_health: {
-        content: <AreaManagerOverview locations={visibleLocations} />,
+        content: <SiteHealthOverview locations={visibleLocations} />,
       },
     } : {}),
     network: {
@@ -437,7 +437,7 @@ export default function Insights() {
                 selected={selectedMarkets}
                 onChange={v => {
                   setSelectedMarkets(v)
-                  localStorage.setItem('tm_market_filter', JSON.stringify(v))
+                  localStorage.setItem('tm_reporting_market_filter', JSON.stringify(v))
                 }}
               />
             )}

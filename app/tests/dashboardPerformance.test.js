@@ -63,7 +63,7 @@ test('shared daily table lists unreported company sites, timestamps, thresholds,
  const source=selectTodayPerformance([row()],sites,now)
  const Table=tableModule().PerformanceTable
  const html=renderToStaticMarkup(React.createElement(Table,{source,locations:sites,dateRange:{},title:"Today's Performance",daily:true}))
- assert.match(html,/Fictional West/);assert.match(html,/Not reported yet/);assert.match(html,/Last Updated/)
+ assert.match(html,/Fictional West/);assert.match(html,/No Update Yet/);assert.match(html,/Last Updated/)
  assert.match(html,/2026-10-16/);assert.match(html,/2026-10-15/)
  assert.match(html,/bg-yellow-100/,'site-specific conversion threshold applied')
  assert.match(html,/overflow-x-auto/);assert.match(html,/min-w-\[800px\]/)
@@ -78,13 +78,28 @@ test('sorting uses selected numeric column and direction',()=>{
  assert(html.indexOf('Fictional West')<html.indexOf('Fictional East'))
 })
 
-test('company reporting does not expand entry scope, routes or database security',()=>{
+test('company reporting stays separate from primary/additional assigned entry scope',()=>{
  const insights=readFileSync(new URL('../src/pages/Insights.jsx',import.meta.url),'utf8')
  assert.match(insights,/from\('locations'\)\.select\('\*'\)/)
  assert.match(insights,/<DashboardPerformance locations=\{performanceLocations\} daily/)
  assert.match(insights,/<DashboardPerformance locations=\{performanceLocations\} \/>/)
  const auth=readFileSync(new URL('../src/contexts/AuthContext.jsx',import.meta.url),'utf8')
- assert.match(auth,/setLocations\(\[prof.locations\]\.filter\(Boolean\)\)/)
+ assert.match(auth,/setLocations\(assignedStoreLocations\(prof, ml \|\| \[\]\)\)/)
  const entry=readFileSync(new URL('../src/pages/Dashboard.jsx',import.meta.url),'utf8')
- assert.match(entry,/profile\?\.location_id === selectedLocationId/)
+ assert.match(entry,/canEditOperationalLocation\(profile, locations, selectedLocationId\)/)
+})
+
+test('reporting status uses latest genuine timestamp and never substitutes fetch time', () => {
+ const source = selectTodayPerformance([row({ updated_at: 'invalid' }), row({ time_slot: '09:00', updated_at: '2026-10-16T04:55:00Z' })], sites, now)
+ assert.equal(source.statuses.east.updatedAt, '2026-10-16T04:55:00Z')
+ const Table = tableModule().PerformanceTable
+ const html = renderToStaticMarkup(React.createElement(Table, { source, locations: sites, dateRange: {}, daily: true }))
+ const westCell = html.split('Fictional West')[1].split('</td>')[0]
+ assert.match(westCell, /No Update Yet/)
+ assert.doesNotMatch(westCell, /Last Updated/)
+ const invalid = selectTodayPerformance([row({ updated_at: 'invalid' })], sites, now)
+ assert.equal(invalid.statuses.east.updatedAt, undefined)
+ const unknownHtml = renderToStaticMarkup(React.createElement(Table, { source: invalid, locations: sites, dateRange: {}, daily: true }))
+ assert.match(unknownHtml, /Last Updated: Unavailable/)
+ assert.doesNotMatch(unknownHtml, /Invalid Date/)
 })
