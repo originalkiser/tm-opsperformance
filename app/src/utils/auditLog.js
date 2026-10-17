@@ -1,5 +1,5 @@
 // Append-only audit trail for Budget Target and Ownership Scorecard edits.
-// Every save on the AM Entry page logs a diff so a mid-month change shows
+// Every save on the Admin Entry page logs a diff so a mid-month change shows
 // who touched it, when, and exactly what moved.
 
 import { supabase } from '../lib/supabase'

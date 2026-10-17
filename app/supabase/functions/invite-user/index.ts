@@ -15,7 +15,7 @@ serve(async (req) => {
     const { email, name } = await req.json()
     if (!email) throw new Error('email is required')
 
-    // Verify caller is admin or area_manager
+    // Verify an active Admin caller
     const authHeader = req.headers.get('Authorization')
     const userClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -28,12 +28,12 @@ serve(async (req) => {
 
     const { data: prof } = await userClient
       .from('user_profiles')
-      .select('role')
+      .select('role, is_active, deleted_at')
       .eq('id', user.id)
       .single()
 
-    if (!prof || !['admin', 'area_manager'].includes(prof.role)) {
-      throw new Error('Forbidden: only admins and area managers can invite users')
+    if (!prof || prof.role !== 'admin' || prof.is_active !== true || prof.deleted_at) {
+      throw new Error('Forbidden: only active admins can invite users')
     }
 
     // Use service role to invite

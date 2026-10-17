@@ -1,3 +1,4 @@
+import { entryLocations, canEditOperationalLocation } from '../utils/permissions'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -50,13 +51,11 @@ export default function Dashboard() {
   )
   const [liveRows, setLiveRows] = useState([])
   const [selectedMarket, setSelectedMarket] = useState(
-    () => localStorage.getItem('tm_market_filter') || ''
+    () => localStorage.getItem('tm_entry_market_filter') || ''
   )
 
   const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
-  const filteredLocations = selectedMarket
-    ? locations.filter(l => l.market === selectedMarket)
-    : locations
+  const filteredLocations = entryLocations(profile, locations, selectedMarket)
 
   // Persist selections
   useEffect(() => {
@@ -87,13 +86,12 @@ export default function Dashboard() {
 
   // Drop saved location if it no longer exists in accessible locations
   useEffect(() => {
-    if (!locations.length) return
     if (selectedLocationId && !locations.find(l => l.id === selectedLocationId)) {
       setSelectedLocationId(null)
     }
   }, [locations])
 
-  // Auto-select the only available location (store users always have exactly one)
+  // Auto-select when this user has only one assigned location.
   useEffect(() => {
     if (!selectedLocationId && filteredLocations.length === 1) {
       setSelectedLocationId(filteredLocations[0].id)
@@ -166,13 +164,10 @@ export default function Dashboard() {
   const budgetStatus    = location?.show_budget_tracking ? morningEntryStatus(hasBudgetToday, location.timezone, statusNow) : null
   const ownershipStatus = location?.show_ownership_tools ? morningEntryStatus(hasOwnershipToday, location.timezone, statusNow) : null
   const latestHour = formatTimeSlot(shopTotals(liveRows)?.time_slot ?? null)
-  const canEdit =
-    profile?.role === 'admin' ||
-    profile?.role === 'area_manager' ||
-    profile?.location_id === selectedLocationId
+  const canEdit = canEditOperationalLocation(profile, locations, selectedLocationId)
 
   const opportunitiesFormula = location?.opportunities_formula ?? 'detailed'
-  const isManager = ['admin', 'area_manager'].includes(profile?.role)
+  const isAdmin = profile?.role === 'admin'
 
   const headerDateLabel = activeTab === 'monthly'
     ? fmtDateRange(dateRange.start, dateRange.end)
@@ -187,12 +182,12 @@ export default function Dashboard() {
       <div className="max-w-screen-2xl mx-auto px-4 py-4">
         {/* Controls */}
         <div className="flex flex-wrap gap-3 items-center mb-4">
-          {isManager && markets.length > 0 && (
+          {isAdmin && markets.length > 0 && (
             <select
               value={selectedMarket}
               onChange={e => {
                 setSelectedMarket(e.target.value)
-                localStorage.setItem('tm_market_filter', e.target.value)
+                localStorage.setItem('tm_entry_market_filter', e.target.value)
               }}
               className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal font-brand"
             >

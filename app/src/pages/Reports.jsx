@@ -246,7 +246,7 @@ export default function Reports() {
   // Budget-Tracking / Ownership-Tools scoped location lists
   const budgetLocations    = locations.filter(l => l.show_budget_tracking)
   const ownershipLocations = locations.filter(l => l.show_ownership_tools)
-  const canManageTargets   = profile?.role === 'admin' || profile?.role === 'area_manager'
+  const canManageTargets   = profile?.role === 'admin'
 
   const marketLocations = selectedMarkets === null
     ? locations
@@ -551,7 +551,7 @@ export default function Reports() {
               <div>
                 {canManageTargets && (
                   <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-3">
-                    View only here — scores are entered on the <strong>AM Entry</strong> page.
+                    View only here — scores are entered on the <strong>Admin Entry</strong> page.
                   </p>
                 )}
                 <OwnershipScorecardSection

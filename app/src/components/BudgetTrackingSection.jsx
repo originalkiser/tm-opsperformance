@@ -369,7 +369,7 @@ function TargetsTab({ locations, allLocations }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function BudgetTrackingSection({ locations, allLocations, profile, initialTab, onSaved }) {
-  const canManageTargets = profile?.role === 'admin' || profile?.role === 'area_manager'
+  const canManageTargets = profile?.role === 'admin'
   const [tab, setTab] = useState(initialTab || 'daily')
 
   const TABS = [

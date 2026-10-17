@@ -56,7 +56,7 @@ function StatusBadge({ status, onClick }) {
   return <AlertBadge tone="gray">{STATUS_LABEL.none}</AlertBadge>
 }
 
-export default function AreaManagerOverview({ locations }) {
+export default function SiteHealthOverview({ locations }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(() => {
     try {

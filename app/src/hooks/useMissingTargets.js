@@ -1,3 +1,4 @@
+import { canAdminister } from '../utils/permissions'
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -11,7 +12,7 @@ export function useMissingTargets() {
   const [missing, setMissing] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const canSetTargets = profile?.role === 'admin' || profile?.role === 'area_manager'
+  const canSetTargets = canAdminister(profile)
   const trackedLocations = canSetTargets ? locations.filter(l => l.show_budget_tracking) : []
   const trackedIds = trackedLocations.map(l => l.id)
 

@@ -234,7 +234,7 @@ export default function OwnershipScorecardSection({ locations, canManage, profil
           <span className="font-brand font-semibold text-tm-blue dark:text-tm-teal text-sm w-36 text-center">{monthLabel(month)}</span>
           <button onClick={() => shiftMonth(1)} className="px-2 py-1 rounded border border-gray-200 dark:border-tm-dark-border text-gray-500 hover:text-tm-blue dark:hover:text-tm-teal transition-colors">›</button>
         </div>
-        {!canManage && <span className="text-xs text-gray-400 dark:text-tm-dark-muted">View only — area managers and admins can enter scores</span>}
+        {!canManage && <span className="text-xs text-gray-400 dark:text-tm-dark-muted">View only — admins can enter scores</span>}
       </div>
 
       {loading ? (

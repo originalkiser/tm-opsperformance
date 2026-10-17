@@ -25,9 +25,8 @@ function daysLeft(deletedAt) {
 }
 
 export default function Admin() {
-  const { profile: currentProfile, locations: myLocations } = useAuth()
+  const { profile: currentProfile } = useAuth()
   const isAdmin   = currentProfile?.role === 'admin'
-  const isAreaMgr = currentProfile?.role === 'area_manager'
 
   const [locations,    setLocations]    = useState([])
   const [users,        setUsers]        = useState([])
@@ -95,6 +94,9 @@ export default function Admin() {
   }
 
   const updateUser = async (userId, updates) => {
+    const existing = users.find(user => user.id === userId)
+    if (!existing || !['admin', 'store'].includes(existing.role)) return
+    if (updates.role && !['admin', 'store'].includes(updates.role)) return
     await supabase.from('user_profiles').update(updates).eq('id', userId)
     fetchUsers()
   }
@@ -232,11 +234,7 @@ export default function Admin() {
     }))
   }
 
-  const canResetUser = (u) => {
-    if (isAdmin) return true
-    if (isAreaMgr && u.location_id) return myLocations.some(l => l.id === u.location_id)
-    return false
-  }
+  const canResetUser = () => isAdmin
 
   const addEmployee = async () => {
     const name = newEmpName.trim()
@@ -257,7 +255,7 @@ export default function Admin() {
     fetchEmployees()
   }
 
-  const areaManagers = users.filter(u => u.role === 'area_manager')
+  const storeUsers = users.filter(u => u.role === 'store')
 
   if (loading) return (
     <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
@@ -280,7 +278,7 @@ export default function Admin() {
       <NavBar />
       <div className="max-w-6xl mx-auto px-4 py-6">
         <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal mb-6 tracking-wide">
-          {isAdmin ? 'Admin Panel' : 'Manager Panel'}
+          Admin Panel
         </h1>
 
         {/* Tabs */}
@@ -306,9 +304,7 @@ export default function Admin() {
           {tab === 'users' && (
             <div>
               <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-3">
-                {isAdmin
-                  ? 'Manage roles, locations, passwords, and account status.'
-                  : 'Reset passwords for users at your assigned locations.'}
+                Manage Admin and Store accounts, assigned locations, passwords, and account status.
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -374,11 +370,12 @@ export default function Admin() {
                             <td className="px-3 py-2">
                               <select
                                 value={u.role}
+                                disabled={!['admin', 'store'].includes(u.role)}
                                 onChange={e => updateUser(u.id, { role: e.target.value })}
                                 className="border border-gray-300 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal"
                               >
+                                {!['admin', 'store'].includes(u.role) && <option value={u.role}>Legacy role — migration review required</option>}
                                 <option value="store">Store</option>
-                                <option value="area_manager">Area Manager</option>
                                 <option value="admin">Admin</option>
                               </select>
                             </td>
@@ -386,6 +383,7 @@ export default function Admin() {
                           {isAdmin && (
                             <td className="px-3 py-2">
                               <select
+                                disabled={!['admin', 'store'].includes(u.role)}
                                 value={u.location_id || ''}
                                 onChange={e => updateUser(u.id, { location_id: e.target.value || null })}
                                 className="border border-gray-300 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal"
@@ -592,7 +590,7 @@ export default function Admin() {
                   className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
                 >
                   <option value="">Select a location</option>
-                  {(isAdmin ? locations : myLocations).map(l => (
+                  {locations.map(l => (
                     <option key={l.id} value={l.id}>{l.name}</option>
                   ))}
                 </select>
@@ -648,7 +646,7 @@ export default function Admin() {
             <LocationsTab
               locations={locations}
               users={users}
-              areaManagers={areaManagers}
+              storeUsers={storeUsers}
               managerLocs={managerLocs}
               onUpdateFormula={updateLocationFormula}
               onUpdateMarket={updateLocationMarket}
@@ -676,7 +674,7 @@ export default function Admin() {
 }
 
 // ── Locations tab ─────────────────────────────────────────────────────────────
-function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled, onUpdateEmail, onUpdateTimezone, onUpdateHoursOverride, onUpdateBudgetTracking, onUpdateOwnershipTools }) {
+function LocationsTab({ locations, users, storeUsers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled, onUpdateEmail, onUpdateTimezone, onUpdateHoursOverride, onUpdateBudgetTracking, onUpdateOwnershipTools }) {
   const [marketInputs,    setMarketInputs]    = useState({})
   const [addMgrOpen,      setAddMgrOpen]      = useState({})
   const [thresholdInputs, setThresholdInputs] = useState({})
@@ -686,7 +684,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
 
   const existingMarkets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
 
-  // Close AM dropdown on outside click
+  // Close assignment dropdown on outside click
   useEffect(() => {
     const handler = (e) => {
       setAddMgrOpen(prev => {
@@ -722,7 +720,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
     users.filter(u => u.location_id === locId && u.role === 'store')
 
   const unassignedMgrs = (locId) =>
-    areaManagers.filter(am => !managerLocs.some(ml => ml.manager_id === am.id && ml.location_id === locId))
+    storeUsers.filter(am => am.location_id !== locId && !managerLocs.some(ml => ml.manager_id === am.id && ml.location_id === locId))
 
   const getThresholds = (loc) => ({
     pmix_green:  loc.metric_thresholds?.pmix_green  ?? DEFAULT_THRESHOLDS.pmix_green,
@@ -747,7 +745,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
   return (
     <div>
       <p className="text-xs text-gray-500 dark:text-tm-dark-muted mb-4">
-        Configure each location's opportunities formula and area manager assignments.
+        Configure each location's opportunities formula and Store assignments.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
@@ -766,8 +764,8 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
               <th className="px-3 py-2 text-left">Time Zone</th>
               <th className="px-3 py-2 text-left">Hours Override</th>
               <th className="px-3 py-2 text-left">Site Email</th>
-              <th className="px-3 py-2 text-left">Area Manager(s)</th>
-              <th className="px-3 py-2 text-left">Store User(s)</th>
+              <th className="px-3 py-2 text-left">Additional Store User(s)</th>
+              <th className="px-3 py-2 text-left">Primary Store User(s)</th>
             </tr>
           </thead>
           <tbody>
@@ -907,18 +905,19 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                           <button
                             onClick={() => onRemoveManager(am.id, loc.id)}
                             className="text-tm-blue/50 hover:text-red-500 transition-colors leading-none"
-                            title="Remove"
+                            disabled={am.role !== 'store'}
+                            title={am.role === 'store' ? 'Remove additional assignment' : 'Legacy assignment preserved pending migration review'}
                           >
                             ×
                           </button>
                         </span>
                       ))}
-                      {/* Inline add AM button */}
+                      {/* Inline add assignment button */}
                       {availableMgrs.length > 0 && (
                         <div className="relative" ref={el => dropdownRefs.current[loc.id] = el}>
                           <button
                             onClick={() => setAddMgrOpen(p => ({ ...p, [loc.id]: !p[loc.id] }))}
-                            title="Add area manager"
+                            title="Assign Store user"
                             className="inline-flex items-center gap-0.5 text-gray-400 dark:text-tm-dark-muted hover:text-tm-teal transition-colors"
                           >
                             {/* Headshot silhouette */}
@@ -1615,7 +1614,7 @@ function DowntimeAdminTab({ locations }) {
                       <td className="px-3 py-2 text-gray-500 dark:text-tm-dark-muted max-w-[140px] truncate" title={log.details}>{log.details || ''}</td>
                       <td className="px-3 py-2 text-gray-500 dark:text-tm-dark-muted max-w-[160px] truncate" title={log.resolution_notes}>{log.resolution_notes || ''}</td>
                       <td className="px-3 py-2 text-center">
-                        {log.corrective_action_needed === true  && <span title={log.corrective_action || ''} className="text-amber-600 dark:text-amber-400 font-bold cursor-default" title="Corrective action needed">✓</span>}
+                        {log.corrective_action_needed === true  && <span title={log.corrective_action || ''} className="text-amber-600 dark:text-amber-400 font-bold cursor-default">✓</span>}
                         {log.corrective_action_needed === false && <span className="text-gray-400">—</span>}
                         {log.corrective_action_needed == null  && <span className="text-gray-300 dark:text-tm-dark-muted text-[10px]">n/a</span>}
                       </td>

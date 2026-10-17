@@ -57,20 +57,23 @@ Deno.serve(async (req) => {
   const { data: log } = await admin.from('downtime_logs').select('*').eq('id', downtimeLogId).maybeSingle()
   if (!log) return json({ ok: false, error: 'Downtime not found' }, 404)
 
-  const { data: prof } = await admin.from('user_profiles').select('role, location_id').eq('id', user.id).maybeSingle()
-  let allowed = false
-  if (prof?.role === 'admin') allowed = true
-  else if (prof?.role === 'area_manager') {
-    const { data: link } = await admin.from('manager_locations').select('location_id')
-      .eq('manager_id', user.id).eq('location_id', log.location_id).maybeSingle()
-    allowed = !!link
-  } else if (prof?.role === 'store') allowed = prof.location_id === log.location_id
+  const { data: prof } = await admin.from('user_profiles').select('role, location_id, is_active, deleted_at').eq('id', user.id).maybeSingle()
+  if (!prof || prof.is_active !== true || prof.deleted_at) return json({ ok: false, error: 'Forbidden' }, 403)
+  let allowed = prof.role === 'admin'
+  if (prof.role === 'store') {
+    if (prof.location_id === log.location_id) allowed = true
+    else {
+      const { data: link } = await admin.from('manager_locations').select('location_id')
+        .eq('manager_id', user.id).eq('location_id', log.location_id).maybeSingle()
+      allowed = !!link
+    }
+  }
   if (!allowed) return json({ ok: false, error: 'Forbidden' }, 403)
 
   if (log.status !== 'resolved' || !log.ended_at) {
     return json({ ok: false, error: 'This downtime has not been resolved yet' }, 400)
   }
-  if (dryRun && !['admin', 'area_manager'].includes(prof?.role)) {
+  if (dryRun && prof.role !== 'admin') {
     return json({ ok: false, error: 'Forbidden' }, 403)
   }
 

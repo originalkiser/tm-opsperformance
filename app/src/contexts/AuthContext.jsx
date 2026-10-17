@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { assignedStoreLocations, canAdminister, isActiveProfile } from '../utils/permissions'
 
 const AuthContext = createContext({})
 
@@ -53,20 +54,20 @@ export function AuthProvider({ children }) {
 
     setProfile(prof)
 
-    if (prof?.role === 'admin') {
+    if (canAdminister(prof)) {
       const { data: locs } = await supabase
         .from('locations')
         .select('*')
         .order('site_code')
       setLocations(locs || [])
-    } else if (prof?.role === 'area_manager') {
+    } else if (isActiveProfile(prof) && prof.role === 'store') {
       const { data: ml } = await supabase
         .from('manager_locations')
         .select('locations(*)')
         .eq('manager_id', userId)
-      setLocations((ml || []).map(m => m.locations).filter(Boolean))
-    } else if (prof?.location_id) {
-      setLocations([prof.locations].filter(Boolean))
+      setLocations(assignedStoreLocations(prof, ml || []))
+    } else {
+      setLocations([])
     }
 
     setLoading(false)
