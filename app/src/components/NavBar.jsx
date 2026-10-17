@@ -34,7 +34,7 @@ export default function NavBar() {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const navClass = path => `flex items-center gap-1.5 px-3 py-1.5 my-auto rounded-md border transition-colors font-brand font-semibold text-xs tracking-wide focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tm-teal ${pathname === path
+  const navClass = path => `flex shrink-0 whitespace-nowrap items-center gap-1.5 px-3 py-1.5 my-auto rounded-md border transition-colors font-brand font-semibold text-xs tracking-wide focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tm-teal ${pathname === path
     ? 'bg-tm-teal border-tm-teal text-tm-navy font-bold'
     : 'bg-tm-blue/60 border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white'}`
   const currentPage = path => pathname === path ? 'page' : undefined
@@ -44,12 +44,12 @@ export default function NavBar() {
 
   return (
     <>
-      <nav className="bg-tm-navy dark:bg-tm-dark-nav text-white px-4 py-0 flex items-stretch justify-between shadow-lg border-b border-tm-teal/20 min-h-[52px]">
+      <nav className="bg-tm-navy dark:bg-tm-dark-nav text-white px-4 py-2 xl:py-0 flex flex-wrap xl:flex-nowrap gap-y-2 items-stretch justify-between shadow-lg border-b border-tm-teal/20 min-h-[52px]">
 
         {/* ── Left: Logo + action buttons ── */}
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap xl:flex-nowrap w-full xl:w-auto items-center gap-1">
           {/* Brand badge */}
-          <Link to="/" className="flex items-center gap-3 pr-4 border-r border-tm-teal/20 mr-2 py-1.5">
+          <Link to="/" className="flex shrink-0 items-center gap-3 pr-4 border-r border-tm-teal/20 mr-2 py-1.5">
             <img src={tmLogo} alt="Trademark Car Wash" className="h-8 w-auto" />
             <span className="font-brand font-bold text-sm tracking-wide hidden sm:block">TM Operations</span>
           </Link>
@@ -121,7 +121,7 @@ export default function NavBar() {
         </div>
 
         {/* ── Right: User info + actions ── */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap xl:flex-nowrap w-full xl:w-auto justify-end items-center gap-2">
           {profile?.name && (
             <span className="text-tm-sky text-xs hidden md:block font-brand">{profile.name}</span>
           )}
