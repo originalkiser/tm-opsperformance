@@ -1,10 +1,8 @@
 import AdminCashOnHandPanel from './AdminCashOnHandPanel'
 import CashReconciliationSection from './CashReconciliationSection'
 import BudgetRevenueFields from './BudgetRevenueFields'
-import AdminStartingBalancePanel from './AdminStartingBalancePanel'
 import { reportedRevenuePace } from '../utils/budgetRevenueReporting'
 import { useAuth } from '../contexts/AuthContext'
-import RevenueStartingBalanceEditor from './RevenueStartingBalanceEditor'
 import { calculateMtdRevenue, fetchRevenueEntries, latestHistoricalRevenue, fetchStartingBalances } from '../utils/budgetRevenue'
 import useBudgetDailyEntry from '../hooks/useBudgetDailyEntry'
 import BudgetRevenueSummary from './BudgetRevenueSummary'
@@ -45,7 +43,7 @@ function EditIcon() {
 function DailyEntryPane({ location }) {
   const { profile } = useAuth()
   const [entryDate, setEntryDate] = useState(todayStr)
-  const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave, startingBalance, updateStartingBalance } = useBudgetDailyEntry(location.id, entryDate)
+  const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(location.id, entryDate)
   const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal)
 
   const baseInputCls = 'w-full border-2 rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
@@ -76,7 +74,6 @@ function DailyEntryPane({ location }) {
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       {revenueError && <p role="alert" className="text-sm text-red-600">{revenueError}</p>}
       {saved && <p role="status" className="text-sm text-green-600">Entry saved.</p>}
-      {profile?.role === 'admin' && entryDate.startsWith('2026-10') && <RevenueStartingBalanceEditor locationId={location.id} timeZone={location.timezone} balance={startingBalance} disabled={saving || loading || !!error} onSaved={updateStartingBalance} />}
       <fieldset disabled={saving || loading || !!error}>
       <div className="grid grid-cols-2 gap-3">
         {[...YESTERDAY_FIELDS, ...MTD_FIELDS].map(f => (
@@ -146,7 +143,6 @@ function EditModal({ location, onClose }) {
 
 export default function BudgetTrackingReport({ locations }) {
   const { profile } = useAuth()
-  const [balancePanelOpen, setBalancePanelOpen] = useState(false)
   const [targets, setTargets]     = useState([])
   const [dailyEntries, setDailyEntries] = useState([])
   const [startingBalances, setStartingBalances] = useState([])
@@ -202,17 +198,13 @@ export default function BudgetTrackingReport({ locations }) {
   }, [locations, targets, dailyEntries, startingBalances])
 
   const cashTools = profile?.role === 'admin' && <AdminCashOnHandPanel locations={locations} />
-  const balanceTools = profile?.role === 'admin' && <>
-    <button onClick={() => setBalancePanelOpen(open => !open)} className="mb-3 rounded bg-tm-teal text-tm-navy px-3 py-2 font-bold text-sm">Admin starting balances</button>
-    {balancePanelOpen && <AdminStartingBalancePanel locations={locations} onClose={() => setBalancePanelOpen(false)} onSaved={data => setStartingBalances(old => [...old.filter(balance => balance.location_id !== data.location_id), data])} />}
-  </>
-  if (loading) return <div>{cashTools}{balanceTools}<div className="flex justify-center py-12"><TmLoader /></div></div>
-  if (reportError) return <div>{cashTools}{balanceTools}<p role="alert" className="text-red-600">{reportError}</p></div>
+  if (loading) return <div>{cashTools}<div className="flex justify-center py-12"><TmLoader /></div></div>
+  if (reportError) return <div>{cashTools}<p role="alert" className="text-red-600">{reportError}</p></div>
   if (!locations.length) return <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-10 text-center">No sites have Budget Tracking enabled yet. Turn it on in Admin → Locations.</div>
 
   return (
     <div>
-      {cashTools}{balanceTools}
+      {cashTools}
       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-tm-dark-border">
         <table className="w-full text-xs font-brand border-collapse">
           <thead>
