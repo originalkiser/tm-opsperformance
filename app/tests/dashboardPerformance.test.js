@@ -78,17 +78,18 @@ test('sorting uses selected numeric column and direction',()=>{
  assert(html.indexOf('Fictional West')<html.indexOf('Fictional East'))
 })
 
-test('display fetching retains existing assignment scope and has no new RPC dependency', () => {
+test('company reporting is Store-only and never replaces assigned entry or other-section scope', () => {
  const insights=readFileSync(new URL('../src/pages/Insights.jsx',import.meta.url),'utf8')
- assert.match(insights, /<DashboardPerformance locations=\{visibleLocations\} daily/)
- assert.match(insights, /<DashboardPerformance locations=\{visibleLocations\} \/>/)
- assert.doesNotMatch(insights, /companyLocations|companyRead|from\('locations'\)/)
- const component=readFileSync(new URL('../src/components/DashboardPerformance.jsx',import.meta.url),'utf8')
- const table=readFileSync(new URL('../src/components/SiteMetricTable.jsx',import.meta.url),'utf8')
- const hook=readFileSync(new URL('../src/hooks/useBudgetPerformance.js',import.meta.url),'utf8')
- assert.doesNotMatch(component + table + hook, /companyRead|dashboard_mtd_performance|\.rpc\(/)
- assert.match(hook, /from\('budget_daily_entries'\)/)
+ assert.match(insights, /companyRead = profile\?\.role === 'store'/)
+ assert.match(insights, /reportingLocations = companyRead \? companyLocations : locations/)
+ assert.match(insights, /<DashboardPerformance locations=\{performanceLocations\} daily/)
+ assert.match(insights, /<DashboardPerformance locations=\{performanceLocations\} companyRead=\{companyRead\}/)
  assert.match(insights, /tm_reporting_market_filter/)
+ const auth=readFileSync(new URL('../src/contexts/AuthContext.jsx',import.meta.url),'utf8')
+ assert.doesNotMatch(auth, /loadCompanyReportingLocations|companyLocations|dashboard_mtd_performance/)
+ assert.match(auth, /prof\?\.role === 'area_manager'/)
+ const entry=readFileSync(new URL('../src/pages/Dashboard.jsx',import.meta.url),'utf8')
+ assert.doesNotMatch(entry, /tm_reporting_market_filter|companyLocations/)
 })
 
 test('reporting status uses latest genuine timestamp and never substitutes fetch time', () => {
@@ -104,4 +105,15 @@ test('reporting status uses latest genuine timestamp and never substitutes fetch
  const unknownHtml = renderToStaticMarkup(React.createElement(Table, { source: invalid, locations: sites, dateRange: {}, daily: true }))
  assert.match(unknownHtml, /Last Updated: Unavailable/)
  assert.doesNotMatch(unknownHtml, /Invalid Date/)
+})
+
+test('company Today and MTD presentations retain all four reporting locations including no-data D', () => {
+ const company = [...sites, {id:'third',name:'Fictional Third',timezone:'America/New_York'}, {id:'empty',name:'Fictional Empty',timezone:'America/New_York'}]
+ const Table = tableModule().PerformanceTable
+ const source = selectTodayPerformance([row()], company, now)
+ for (const daily of [true, false]) {
+  const html = renderToStaticMarkup(React.createElement(Table, { source, locations:company, dateRange:{}, daily }))
+  for (const site of company) assert(html.includes(site.name))
+  assert.match(html, daily ? /No Update Yet/ : /MTD unavailable/)
+ }
 })

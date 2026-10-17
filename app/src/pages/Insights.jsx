@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
 import DashboardPerformance from '../components/DashboardPerformance'
+import { loadCompanyReportingLocations } from '../utils/dashboardMtdRead'
 import TmLoader from '../components/TmLoader'
 import DateSelector, { fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
 import { MarketMultiSelect, ShopMultiSelect } from '../components/FilterControls'
@@ -213,6 +214,21 @@ export default function Insights() {
     () => allLocations.filter(l => !l.exclude_from_reporting),
     [allLocations],
   )
+  // Store company reporting is separate from existing assigned operational locations.
+  const companyRead = profile?.role === 'store'
+  const [companyLocations, setCompanyLocations] = useState([])
+  const [companyError, setCompanyError] = useState(null)
+  useEffect(() => {
+    if (!companyRead) return
+    let live = true
+    setCompanyLocations([])
+    setCompanyError(null)
+    loadCompanyReportingLocations(supabase).then(sites => {
+      if (live) setCompanyLocations(sites)
+    }).catch(error => { if (live) setCompanyError(error.message) })
+    return () => { live = false }
+  }, [companyRead, profile?.id])
+  const reportingLocations = companyRead ? companyLocations : locations
   const [dark] = useDarkModeCtx()
 
   const [logs, setLogs]               = useState([])
@@ -232,7 +248,7 @@ export default function Insights() {
   const [layout, setLayout]       = useState(loadLayout)
   const [showCustomize, setShowCustomize] = useState(false)
 
-  const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
+  const markets = [...new Set(reportingLocations.map(l => l.market).filter(Boolean))].sort()
 
   const marketLocations = selectedMarkets === null
     ? locations
@@ -312,6 +328,11 @@ export default function Insights() {
     ? filterLogs(logs)
     : logs.filter(r => trendLocIds.includes(r.location_id))
 
+  const reportingMarketLocations = selectedMarkets === null
+    ? reportingLocations : reportingLocations.filter(l => selectedMarkets.includes(l.market))
+  const performanceLocations = selectedShops === null
+    ? reportingMarketLocations : reportingMarketLocations.filter(l => selectedShops.includes(l.id))
+
   const rangeLabel = fmtDateRange(dateRange.start, dateRange.end)
 
   const isManager = ['admin', 'area_manager'].includes(profile?.role)
@@ -327,7 +348,7 @@ export default function Insights() {
       subtitle: 'Live daily activity',
       content: (
         <div className="mt-3">
-          <DashboardPerformance locations={visibleLocations} daily />
+          <DashboardPerformance locations={performanceLocations} daily />
         </div>
       ),
     },
@@ -336,7 +357,7 @@ export default function Insights() {
       subtitle: 'Current month to date',
       content: (
         <div className="mt-3">
-          <DashboardPerformance locations={visibleLocations} />
+          <DashboardPerformance locations={performanceLocations} companyRead={companyRead} />
         </div>
       ),
     },
@@ -424,8 +445,8 @@ export default function Insights() {
                 }}
               />
             )}
-            {marketLocations.length > 1 && (
-              <ShopMultiSelect locations={marketLocations} selected={selectedShops} onChange={setSelectedShops} />
+            {reportingMarketLocations.length > 1 && (
+              <ShopMultiSelect locations={reportingMarketLocations} selected={selectedShops} onChange={setSelectedShops} />
             )}
             <div><DateSelector dateRange={dateRange} onChange={handleDateRangeChange} /><p className="text-[10px] text-gray-500 dark:text-tm-dark-muted mt-1">Date filter: other sections. Performance tables show today / current MTD.</p></div>
           </div>
@@ -433,6 +454,7 @@ export default function Insights() {
       </div>
 
       <div className="max-w-screen-2xl mx-auto px-4 py-6">
+        {companyError && <p role="alert" className="text-red-600 dark:text-red-400 mb-3">{companyError}</p>}
         {loading ? (
           <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-12 flex items-center justify-center">
             <TmLoader />
