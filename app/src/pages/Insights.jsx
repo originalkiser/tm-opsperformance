@@ -3,28 +3,22 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
-import NetworkDayView from '../components/NetworkDayView'
+import DashboardPerformance from '../components/DashboardPerformance'
 import TmLoader from '../components/TmLoader'
 import DateSelector, { fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
 import { MarketMultiSelect, ShopMultiSelect } from '../components/FilterControls'
-import SiteMetricTable from '../components/SiteMetricTable'
 import TeamSalesTable from '../components/TeamSalesTable'
 import DailyTrendsSection from '../components/DailyTrendsSection'
 import DayOfWeekSection from '../components/DayOfWeekSection'
 import DowntimeSection from '../components/DowntimeSection'
 import AreaManagerOverview from '../components/AreaManagerOverview'
 
-const todayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 // ── Layout persistence ────────────────────────────────────────────────────────
 
 const DEFAULT_SECTIONS = [
   { id: 'site_health', label: 'Site Health' },
-  { id: 'network',   label: 'Network Day View' },
-  { id: 'sites',     label: 'Sites Performance' },
+  { id: 'network',   label: "Today's Performance" },
+  { id: 'sites',     label: 'MTD Performance' },
   { id: 'team',      label: 'Team Sales' },
   { id: 'daily',     label: 'Daily Trends' },
   { id: 'dow',       label: 'Day of Week' },
@@ -41,7 +35,7 @@ function loadLayout() {
         const newSections = DEFAULT_SECTIONS
           .filter(d => !savedIds.has(d.id))
           .map(d => ({ ...d, visible: true }))
-        return [...saved, ...newSections]
+        return [...saved, ...newSections].map(s => ({ ...s, label: DEFAULT_SECTIONS.find(d => d.id === s.id)?.label || s.label }))
       }
     }
   } catch {}
@@ -84,7 +78,7 @@ function Section({ id, badge, badgeCls, subtitle, children, defaultOpen = true }
         onClick={toggle}
         className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-tm-dark-card transition-colors"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 text-left">
           <span className={`text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest ${badgeCls}`}>{badge}</span>
           <span className="text-sm text-gray-500 dark:text-tm-dark-muted">{subtitle}</span>
         </div>
@@ -228,7 +222,7 @@ export default function Insights() {
   const [trendLocIds, setTrendLocIds]         = useState(null)
   const [selectedMarkets, setSelectedMarkets] = useState(() => {
     try {
-      const raw = localStorage.getItem('tm_market_filter')
+      const raw = localStorage.getItem('tm_reporting_market_filter')
       if (!raw) return null
       const parsed = JSON.parse(raw)
       return Array.isArray(parsed) ? parsed : null
@@ -246,6 +240,7 @@ export default function Insights() {
 
   useEffect(() => {
     if (locations.length) fetchData()
+    else setLoading(false)
   }, [locations, dateRange])
 
   useEffect(() => { setSelectedShops(null) }, [selectedMarkets])
@@ -328,20 +323,20 @@ export default function Insights() {
       },
     } : {}),
     network: {
-      badge: 'NETWORK', badgeCls: 'bg-tm-blue',
-      subtitle: 'Day view across sites',
+      badge: "Today's Performance", badgeCls: 'bg-tm-blue',
+      subtitle: 'Live daily activity',
       content: (
         <div className="mt-3">
-          <NetworkDayView locations={visibleLocations} date={todayStr()} />
+          <DashboardPerformance locations={visibleLocations} daily />
         </div>
       ),
     },
     sites: {
-      badge: 'SITES', badgeCls: 'bg-tm-blue',
-      subtitle: `Site Performance — ${rangeLabel}`,
+      badge: 'MTD Performance', badgeCls: 'bg-tm-blue',
+      subtitle: 'Current month to date',
       content: (
         <div className="mt-3">
-          <SiteMetricTable data={filterLogs(logs)} locations={visibleLocations} dateRange={dateRange} />
+          <DashboardPerformance locations={visibleLocations} />
         </div>
       ),
     },
@@ -406,7 +401,7 @@ export default function Insights() {
 
       <div className="sticky top-0 z-30 bg-tm-cream dark:bg-tm-dark-bg border-b border-gray-200 dark:border-tm-dark-border shadow-sm">
         <div className="max-w-screen-2xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3 text-left">
             <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Dashboard</h1>
             <button
               onClick={() => setShowCustomize(true)}
@@ -425,14 +420,14 @@ export default function Insights() {
                 selected={selectedMarkets}
                 onChange={v => {
                   setSelectedMarkets(v)
-                  localStorage.setItem('tm_market_filter', JSON.stringify(v))
+                  localStorage.setItem('tm_reporting_market_filter', JSON.stringify(v))
                 }}
               />
             )}
             {marketLocations.length > 1 && (
               <ShopMultiSelect locations={marketLocations} selected={selectedShops} onChange={setSelectedShops} />
             )}
-            <DateSelector dateRange={dateRange} onChange={handleDateRangeChange} />
+            <div><DateSelector dateRange={dateRange} onChange={handleDateRangeChange} /><p className="text-[10px] text-gray-500 dark:text-tm-dark-muted mt-1">Date filter: other sections. Performance tables show today / current MTD.</p></div>
           </div>
         </div>
       </div>
