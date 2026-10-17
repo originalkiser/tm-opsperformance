@@ -3,6 +3,7 @@ import { supabase, supabasePublicKey } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
 import TmLoader from '../components/TmLoader'
+import HistoricalMtdStartingBalances from '../components/HistoricalMtdStartingBalances'
 import { DEFAULT_THRESHOLDS } from '../utils/metricColors'
 import { DEFAULT_STANDARD_HOURS, DEFAULT_WINTER_HOURS, TIMEZONE_OPTIONS } from '../utils/operatingHours'
 
@@ -267,11 +268,12 @@ export default function Admin() {
   )
 
   const tabs = isAdmin
-    ? ['users', 'add_user', 'employees', 'locations', 'downtime']
+    ? ['users', 'add_user', 'employees', 'locations', 'budget_tracking', 'downtime']
     : ['users', 'employees']
 
   const tabLabel = (t) => {
     if (t === 'add_user') return 'Add User'
+    if (t === 'budget_tracking') return 'Budget Tracking'
     return t.charAt(0).toUpperCase() + t.slice(1)
   }
 
@@ -666,6 +668,10 @@ export default function Admin() {
           )}
 
           {/* ── Downtime ── */}
+          {isAdmin && tab === 'budget_tracking' && (
+            <HistoricalMtdStartingBalances locations={locations.filter(location => location.show_budget_tracking)} />
+          )}
+
           {tab === 'downtime' && (
             <DowntimeAdminTab locations={locations} />
           )}
