@@ -45,22 +45,28 @@ function EditModal({ location, onClose, onSaved }) {
   const [error, setError] = useState('')
   const [saving, setSaving]     = useState(false)
 
-  useEffect(() => { fetchEntry() }, [date])
-
-  const fetchEntry = async () => {
-    setLoading(true)
-    const { data } = await supabase.from('ownership_log_entries').select('*')
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true); setError('')
+    supabase.from('ownership_log_entries').select('*')
       .eq('location_id', location.id).eq('log_date', date).maybeSingle()
-    setExisting(data || null)
-    setForm(data ? {
-      yesterday_conversion_pct: data.yesterday_conversion_pct ?? '',
-      biggest_challenge: data.biggest_challenge || '',
-      what_you_did:      data.what_you_did      || '',
-      plan_for_today:    data.plan_for_today     || '',
-      goal_action_today: data.goal_action_today || '',
-    } : emptyForm())
-    setLoading(false)
-  }
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) { setError('Unable to load post. Reload before submitting.'); setLoading(false); return }
+        setExisting(data || null)
+        setForm(data ? {
+          yesterday_conversion_pct: data.yesterday_conversion_pct ?? '',
+          biggest_challenge: data.biggest_challenge || '',
+          what_you_did: data.what_you_did || '',
+          plan_for_today: data.plan_for_today || '',
+          goal_action_today: data.goal_action_today || '',
+        } : emptyForm())
+        setLoading(false)
+      }).catch(() => {
+        if (!cancelled) { setError('Unable to load post. Reload before submitting.'); setLoading(false) }
+      })
+    return () => { cancelled = true }
+  }, [date, location.id])
 
   const handleSave = async () => {
     setSaving(true)
@@ -95,6 +101,7 @@ function EditModal({ location, onClose, onSaved }) {
             <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Date</label>
             <input type="date" value={date} max={todayStr()} onChange={e => setDate(e.target.value)} className={inputCls} />
           </div>
+          <OwnershipWashGoals key={location.id} locationId={location.id} />
           {loading ? <div className="flex justify-center py-6"><TmLoader size={48} /></div> : (
             <>
               <div>
@@ -114,8 +121,7 @@ function EditModal({ location, onClose, onSaved }) {
                 <textarea rows={2} value={form.plan_for_today} onChange={e => setForm(f => ({ ...f, plan_for_today: e.target.value }))} className={inputCls + ' resize-none'} />
               </div>
               <div>
-                <OwnershipWashGoals key={location.id} locationId={location.id} />
-            <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">WHAT WILL WE DO TODAY TO HELP ACHIEVE OUR GOALS</label>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">WHAT WILL WE DO TODAY TO HELP ACHIEVE OUR GOALS</label>
                 <textarea aria-label="WHAT WILL WE DO TODAY TO HELP ACHIEVE OUR GOALS" rows={2} value={form.goal_action_today} onChange={e => setForm(f => ({ ...f, goal_action_today: e.target.value }))} className={inputCls + ' resize-none'} />
               </div>
             </>
@@ -123,7 +129,7 @@ function EditModal({ location, onClose, onSaved }) {
         </div>
         {error && <p role="alert" className="px-5 text-red-700 dark:text-red-300">{error}</p>}
         <div className="px-5 pb-5 pt-3 border-t border-gray-100 dark:border-tm-dark-border flex gap-2 shrink-0">
-          <button onClick={handleSave} disabled={saving || loading}
+          <button onClick={handleSave} disabled={saving || loading || error.startsWith('Unable to load')}
             className="flex-1 py-2.5 rounded-xl bg-tm-teal text-tm-navy font-bold text-sm hover:brightness-110 transition-colors disabled:opacity-50">
             {saving ? 'Saving…' : existing ? 'Update Post' : 'Submit Post'}
           </button>
