@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 import { clearLocationSelection, locationFailureMessage, recoverLocationAccess } from '../src/utils/locationAccess.js'
 
@@ -149,4 +151,37 @@ test('getSession failure exits loading and a late session cannot clear a newer s
   assert.equal(late.value().user.id, user.id)
   assert.deepEqual(late.value().locations, [site])
   late.unmount()
+})
+
+
+test('illustrated Edge fallback follows self-repair, uses the exact host and preserves all screenshot dimensions', () => {
+  const assets = {
+    edgeSettings: '/assets/edge-settings.png', edgeManageCookies: '/assets/edge-manage-cookies.png',
+    edgeSiteData: '/assets/edge-site-data.png', edgeDeleteSite: '/assets/edge-delete-site.png',
+  }
+  const SelfRepair = () => 'Reload My Location'
+  const h = locationHelpHarness('components/HelpPanel', {
+    ...assets, LocationRepair: SelfRepair, window: { location: { hostname: 'ops.tmcw.app' } },
+    useRef: () => ({ current: { showModal() {}, close() {} } }),
+  }, { onClose() {} })
+  assert.equal(h.find(n => n.type === 'details').props.open, undefined, 'fallback starts collapsed')
+  const html = renderToStaticMarkup(h.render())
+  assert.ok(html.indexOf('Reload My Location') < html.indexOf('<details'))
+  assert.match(html, /ops\.tmcw\.app/)
+  assert.match(html, /Do not use Delete displayed data or clear all browser cookies/)
+  assert.match(html, /Leave github\.com, github\.dev and other unrelated sites alone/)
+  assert.match(html, /Example only/)
+  const screenshots = h.all(n => n.type?.name === 'EdgeScreenshot')
+  assert.equal(screenshots.length, 4)
+  for (const screenshot of screenshots) {
+    const { src, width, height, alt } = screenshot.props
+    const png = readFileSync(new URL(`../src/assets/help/${src.split('/').pop()}`, import.meta.url))
+    assert.equal(png.readUInt32BE(16), width)
+    assert.equal(png.readUInt32BE(20), height)
+    assert.ok(alt)
+    assert.ok(html.includes(`href="${src}"`), 'full-size image link is present')
+  }
+  assert.equal((html.match(/loading="lazy"/g) || []).length, 4)
+  assert.equal((html.match(/h-auto w-full max-w-full/g) || []).length, 4)
+  h.unmount()
 })
