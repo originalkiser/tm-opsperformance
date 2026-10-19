@@ -1,3 +1,5 @@
+import NavBar from './components/NavBar'
+import LocationRepair from './components/LocationRepair'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { DarkModeContext } from './contexts/DarkModeContext'
@@ -14,7 +16,11 @@ import TmLoader from './components/TmLoader'
 import { useVersionCheck } from './hooks/useVersionCheck'
 
 function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth()
+  const { user, profile, loading, locationError } = useAuth()
+  if (locationError || (user && (loading || !profile))) return <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg">
+    <NavBar />
+    <div className="mx-auto max-w-xl p-4"><LocationRepair /></div>
+  </div>
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-tm-cream dark:bg-tm-dark-bg">
