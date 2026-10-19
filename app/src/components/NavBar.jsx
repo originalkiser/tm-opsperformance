@@ -1,3 +1,4 @@
+import HelpPanel from './HelpPanel'
 import { useState } from 'react'
 import tmLogo from '../assets/TM-Logo 1-1.png'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
@@ -40,6 +41,7 @@ export default function NavBar() {
   const currentPage = path => pathname === path ? 'page' : undefined
   const isManager = ['admin', 'area_manager'].includes(profile?.role)
   const [showSettings, setShowSettings] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const [dark, setDark] = useDarkModeCtx()
 
   return (
@@ -158,6 +160,11 @@ export default function NavBar() {
             <CogIcon />
           </button>
 
+          <button type="button" onClick={() => setShowHelp(true)} aria-haspopup="dialog"
+            className="rounded-md border border-tm-teal bg-tm-teal px-3 py-1.5 text-xs font-bold text-tm-navy hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+            Help
+          </button>
+
           <button
             onClick={signOut}
             className="text-xs bg-tm-blue/60 hover:bg-tm-blue border border-tm-teal/20 px-3 py-1.5 rounded-md transition-colors font-brand tracking-wide"
@@ -167,6 +174,7 @@ export default function NavBar() {
         </div>
       </nav>
 
+      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </>
   )

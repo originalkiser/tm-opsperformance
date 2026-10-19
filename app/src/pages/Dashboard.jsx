@@ -1,3 +1,5 @@
+import LocationRepair from '../components/LocationRepair'
+import { entryLocationOptions, resolveEntryLocation } from '../utils/locationAccess'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -28,9 +30,9 @@ function todayStr() {
 }
 
 export default function Dashboard() {
-  const { profile, locations } = useAuth()
+  const { profile, locations, locationSelectionVersion, locationRepairMessage, repairingLocation } = useAuth()
 
-  const [selectedLocationId, setSelectedLocationId] = useState(
+  const [selectedChoice, setSelectedLocationId] = useState(
     () => localStorage.getItem('tm_selected_location') || null
   )
 
@@ -54,9 +56,14 @@ export default function Dashboard() {
   )
 
   const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
-  const filteredLocations = selectedMarket
-    ? locations.filter(l => l.market === selectedMarket)
-    : locations
+  const filteredLocations = entryLocationOptions(profile, locations, selectedMarket)
+  const selectedLocationId = resolveEntryLocation(filteredLocations, selectedChoice)
+
+  useEffect(() => {
+    if (!locationSelectionVersion) return
+    setSelectedLocationId(null)
+    setSelectedMarket('')
+  }, [locationSelectionVersion])
 
   // Persist selections
   useEffect(() => {
@@ -84,35 +91,6 @@ export default function Dashboard() {
       setSelectedDate(dateRange.end)
     }
   }, [dateRange])
-
-  // Drop saved location if it no longer exists in accessible locations
-  useEffect(() => {
-    if (!locations.length) return
-    if (selectedLocationId && !locations.find(l => l.id === selectedLocationId)) {
-      setSelectedLocationId(null)
-    }
-  }, [locations])
-
-  // Auto-select the only available location (store users always have exactly one)
-  useEffect(() => {
-    if (!selectedLocationId && filteredLocations.length === 1) {
-      setSelectedLocationId(filteredLocations[0].id)
-    }
-  }, [filteredLocations, selectedLocationId])
-
-  // Auto-select if only one location is visible
-  useEffect(() => {
-    if (filteredLocations.length === 1 && !selectedLocationId) {
-      setSelectedLocationId(filteredLocations[0].id)
-    }
-  }, [filteredLocations])
-
-  // When market filter changes, clear location if no longer in scope
-  useEffect(() => {
-    if (selectedLocationId && !filteredLocations.find(l => l.id === selectedLocationId)) {
-      setSelectedLocationId(null)
-    }
-  }, [selectedMarket])
 
   const handleDateRangeChange = (newRange) => {
     setDateRange(newRange)
@@ -185,6 +163,7 @@ export default function Dashboard() {
       <NavBar />
 
       <div className="max-w-screen-2xl mx-auto px-4 py-4">
+        {(locationRepairMessage || repairingLocation || (profile?.role === 'store' && !locations.length)) && <LocationRepair />}
         {/* Controls */}
         <div className="flex flex-wrap gap-3 items-center mb-4">
           {isManager && markets.length > 0 && (
@@ -230,8 +209,8 @@ export default function Dashboard() {
 
         {!selectedLocationId ? (
           <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow p-16 text-center text-gray-400 dark:text-tm-dark-muted border border-transparent dark:border-tm-dark-border">
-            <p className="text-lg font-medium font-brand">Select a location to begin</p>
-            <p className="text-sm mt-1">Use the dropdown above to choose your site</p>
+            <p className="text-lg font-medium font-brand">{locations.length ? 'Select a location to begin' : 'Your location is unavailable'}</p>
+            {filteredLocations.length > 1 && <p className="text-sm mt-1">Use the dropdown above to choose your site</p>}
           </div>
         ) : (
           <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md overflow-hidden dark:border dark:border-tm-dark-border">
