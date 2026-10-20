@@ -1,3 +1,4 @@
+import { plansLost } from '../utils/dailyMemberships'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -155,7 +156,7 @@ function HourlyTable({ rows, thresholds, formula }) {
                 {cell(toInt(row.good)           || '')}
                 {cell(toInt(row.better)         || '')}
                 {cell(toInt(row.best)           || '')}
-                {cell(toInt(row.net_members)    || '')}
+                {cell(plansLost(rows) !== null ? '' : toInt(row.net_members) || '')}
                 {cell(ms  > 0 ? ms   : '', true)}
                 {cell(opp > 0 ? opp  : '', true)}
                 <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-mono text-xs font-semibold ${pmix ? pmixCls(pmix, thresholds) : 'bg-tm-sky/30 dark:bg-tm-teal/10 dark:text-tm-dark-text'}`}>{pmix}</td>

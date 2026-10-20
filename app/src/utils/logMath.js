@@ -1,3 +1,4 @@
+import { dailyNetMembers, plansLost, membershipSnapshot } from './dailyMemberships.js'
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
 export const FIELDS = [
@@ -22,8 +23,10 @@ export function shopTotals(rows) {
   // non-zero. This prevents a newly-opened time slot with zeros from shadowing
   // earlier rows that contain real wash counts.
   const withData = rows.filter(r => toInt(r.total_washes) > 0 && toInt(r.member_washes) > 0)
-  if (!withData.length) return null
-  return withData.sort((a, b) => chronoCompare(b, a))[0]
+  const net = dailyNetMembers(rows)
+  const latest = withData.sort((a, b) => chronoCompare(b, a))[0]
+  if (net === null) return latest ?? null
+  return { ...(membershipSnapshot(rows) || latest || rows[0]), net_members: net }
 }
 
 /**
@@ -50,6 +53,7 @@ export function employeeDeltasByDay(allDayRows) {
       result[key] = FIELDS.reduce((a, f) => ({ ...a, [f]: 0 }), {})
     }
     FIELDS.forEach(f => {
+      if (f === 'net_members' && plansLost(allDayRows) !== null) { result[key][f] = null; return }
       const curr  = toInt(row[f])
       const prior = prev ? toInt(prev[f]) : 0
       result[key][f] += Math.max(0, curr - prior)

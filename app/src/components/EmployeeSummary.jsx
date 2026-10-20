@@ -1,3 +1,4 @@
+import { dailyNetMembers, plansLost } from '../utils/dailyMemberships'
 import { useState } from 'react'
 import { employeeDeltasByDay } from '../utils/logMath'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
@@ -68,6 +69,10 @@ export default function EmployeeSummary({ rows = [], opportunitiesFormula = 'det
     Object.keys(sumFields).forEach(f => { sumFields[f] += toInt(d[f]) })
   })
   const totals = derive(sumFields, opportunitiesFormula)
+  if (plansLost(rows) !== null) {
+    employees.forEach(employee => { employee.nm = '' })
+    totals.nm = dailyNetMembers(rows)
+  }
 
   // ── Copy rollup as image ─────────────────────────────────────────────────────
 
@@ -283,7 +288,7 @@ export default function EmployeeSummary({ rows = [], opportunitiesFormula = 'det
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.mw)}</td>
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.ms)}</td>
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.opp)}</td>
-                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.nm)}</td>
+                <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{plansLost(rows) !== null ? totals.nm.toLocaleString('en-US') : fmtNum(totals.nm)}</td>
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.btr)}</td>
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center dark:text-tm-dark-text">{fmtNum(totals.bst)}</td>
                 <td className={`border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-semibold ${pmixTotalsCls(totals.p_mix, metricThresholds)}`}>{totals.p_mix}</td>
