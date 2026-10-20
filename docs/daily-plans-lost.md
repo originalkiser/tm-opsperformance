@@ -28,3 +28,7 @@ Cloudflare branch preview suppression uses `[CF-Pages-Skip]` on both commits. Gi
 - Both production builds: default GitHub Pages base and `--base=/`. Existing duplicate-title and bundle-size warnings remain.
 - Temporary local Postgres (PGlite): review SQL installation, historical preservation, zero/edit, invalid and misplaced losses, protected anchor, old-client hourly writes, legacy-zero protection. No live Supabase installation or production access test was performed.
 - Actual DailyLogTable, input and EmployeeSummary in isolated Microsoft Edge at 1280×900 and 390×844 with an in-memory backend and external requests blocked: immediate recalculation, negative/zero, blank hourly net, saving/editing/reopening, date/site switching, unknown data, exact help text, native dialog Escape/focus. Screens visually inspected. These mocks validate client behavior, not production RLS.
+
+## Final production database review package
+
+See `docs/release/pr22-plans-lost-installation.md` and `docs/release/pr22-plans-lost-validation.json`. The exact forward/inverse bodies passed all 22 tm-ops-dev assertions with forced rollback and independent restoration read-back. The final package adds no application change and reuses all prior application/build results. Production catalog compatibility and separate installation approval remain outstanding.
