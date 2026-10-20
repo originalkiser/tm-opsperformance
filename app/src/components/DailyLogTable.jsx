@@ -4,6 +4,8 @@ import { useAuth } from '../contexts/AuthContext'
 import EmployeeSelect from './EmployeeSelect'
 import TmLoader from './TmLoader'
 import DowntimeModal from './DowntimeModal'
+import PlansLostInput from './PlansLostInput'
+import { plansLost, dailyNetMembers, hasLegacyNet, parsePlansLost, lossWriter, isLossAnchor } from '../utils/dailyMemberships'
 import { shopTotals } from '../utils/logMath'
 import { fmtNum } from '../utils/format'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
@@ -83,7 +85,7 @@ const compute = (row, formula = 'detailed') => {
 }
 
 const rowHasData = (row) =>
-  row.employee_name?.trim() || ALL_KEYS.some(f => toInt(row[f]) > 0)
+  row.plans_lost_today != null || row.employee_name?.trim() || ALL_KEYS.some(f => toInt(row[f]) > 0)
 
 const MAX_HISTORY = 30
 
@@ -282,6 +284,12 @@ export default function DailyLogTable({
   metricThresholds,
   downtimeEnabled = false,
 }) {
+  const [lossDraft, setLossDraft] = useState(null)
+  const [lossStatus, setLossStatus] = useState('')
+  const [lossError, setLossError] = useState('')
+  const [logLoaded, setLogLoaded] = useState(false)
+  const writeLoss = useRef(lossWriter(supabase, locationId, selectedDate))
+  const lossRevision = useRef(0)
   const [rows, setRows]       = useState(TIME_SLOTS.map(s => emptyRow(s.value)))
   const [employees, setEmps]  = useState([])
   const [saveStatus, setSaveStatus] = useState('idle') // 'idle' | 'saving' | 'saved'
@@ -340,6 +348,8 @@ export default function DailyLogTable({
     }
   }, [profile])
 
+  const logLoadedRef = useRef(false)
+  logLoadedRef.current = logLoaded
   const rowsRef      = useRef(rows)
   rowsRef.current    = rows
   const batchTimer  = useRef(null)
@@ -408,7 +418,7 @@ export default function DailyLogTable({
 
   const hydrateRow = (existing, timeSlot, splitIndex) => {
     if (!existing) return emptyRow(timeSlot, splitIndex)
-    const hasData = existing.employee_name || ALL_KEYS.some(f => (existing[f] ?? 0) > 0)
+    const hasData = existing.net_members_legacy || existing.plans_lost_today != null || existing.employee_name || ALL_KEYS.some(f => (existing[f] ?? 0) > 0)
     if (!hasData) return emptyRow(timeSlot, splitIndex)
     return {
       ...existing,
@@ -419,12 +429,16 @@ export default function DailyLogTable({
   }
 
   const fetchData = async () => {
-    const { data } = await supabase
+    setLogLoaded(false)
+    const { data, error } = await supabase
       .from('daily_logs')
       .select('*')
       .eq('location_id', locationId)
       .eq('log_date', selectedDate)
 
+    if (error) { setLossError('Daily Log could not load. Reopen this date to retry.'); return }
+    setLossDraft(plansLost(data || []))
+    setLogLoaded(true)
     // Base row (split_index 0) for every hour, in fixed TIME_SLOTS order —
     // storage indices 0-12 always hold these, everything else relies on it.
     const baseRows = TIME_SLOTS.map(slot => {
@@ -538,7 +552,7 @@ export default function DailyLogTable({
   // ── Save / delete ────────────────────────────────────────────────────────────
 
   const doSave = useCallback(async (index) => {
-    if (!canEditRef.current) return
+    if (!canEditRef.current || !logLoadedRef.current) return
     const row = rowsRef.current[index]
     if (!row) return
 
@@ -570,7 +584,6 @@ export default function DailyLogTable({
         better:           toInt(row.better),
         best:             toInt(row.best),
         ...(formulaRef.current !== 'simple' ? { reactivations: toInt(row.reactivations) } : {}),
-        net_members:      toInt(row.net_members),
         memberships_sold,
         opportunities,
       },
@@ -591,7 +604,7 @@ export default function DailyLogTable({
   }, [])
 
   const flushSave = useCallback(async (index) => {
-    if (!canEditRef.current) return
+    if (!canEditRef.current || !logLoadedRef.current) return
     const row = rowsRef.current[index]
     if (!row) return
     if (!rowHasData(row)) {
@@ -614,7 +627,6 @@ export default function DailyLogTable({
         better:           toInt(row.better),
         best:             toInt(row.best),
         ...(formulaRef.current !== 'simple' ? { reactivations: toInt(row.reactivations) } : {}),
-        net_members:      toInt(row.net_members),
         memberships_sold,
         opportunities,
       },
@@ -641,7 +653,7 @@ export default function DailyLogTable({
 
   const undo = useCallback(() => {
     if (!historyRef.current.length) return
-    const snapshot = historyRef.current[historyRef.current.length - 1]
+    const snapshot = historyRef.current[historyRef.current.length - 1].map(row => isLossAnchor(row) ? { ...row, plans_lost_today: plansLost(rowsRef.current) } : row)
     historyRef.current = historyRef.current.slice(0, -1)
 
     const current       = rowsRef.current
@@ -674,7 +686,7 @@ export default function DailyLogTable({
 
   useEffect(() => {
     const handler = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey && !e.target.closest('[data-plans-lost]')) {
         e.preventDefault()
         undo()
       }
@@ -691,6 +703,7 @@ export default function DailyLogTable({
       rowsRef.current.map(r => ({ ...r })),
     ]
     // Update ref immediately so saves triggered synchronously after onChange see the new value
+    if (field === 'net_members') return
     const next = [...rowsRef.current]
     next[index] = { ...next[index], [field]: value }
     rowsRef.current = next
@@ -867,7 +880,7 @@ export default function DailyLogTable({
       const vals = {
         employee_name: row.employee_name || '',
         _time:  ordinal > 1 ? `${slotLabel} (${ordinal})` : slotLabel,
-        ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: String(row[c.key] ?? '') }), {}),
+        ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: String(c.key === 'net_members' && !legacyNet ? '' : row[c.key] ?? '') }), {}),
         _ms:   memberships_sold > 0 ? String(memberships_sold) : '',
         _opp:  opportunities > 0 ? String(opportunities) : '',
         _pmix: p_mix       || '',
@@ -903,7 +916,7 @@ export default function DailyLogTable({
     const totY  = BANNER_H + HEADER_H + displayRows.length * ROW_H
     const totVs = {
       employee_name: 'Totals', _time: '',
-      ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: fmtNum(totals[c.key]) }), {}),
+      ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: c.key === 'net_members' && calculatedNet !== null ? String(calculatedNet) : fmtNum(totals[c.key]) }), {}),
       _ms:   fmtNum(totComputed.memberships_sold),
       _opp:  fmtNum(totComputed.opportunities),
       _pmix: totComputed.p_mix       || '',
@@ -969,7 +982,7 @@ export default function DailyLogTable({
           const ordinal   = i - groupInfo[row.time_slot].first + 1
           return [
             row.employee_name || '', ordinal > 1 ? `${slotLabel} (${ordinal})` : slotLabel,
-            ...orderedCols.map(col => String(row[col.key] ?? '')),
+            ...orderedCols.map(col => String(col.key === 'net_members' && !legacyNet ? '' : row[col.key] ?? '')),
             memberships_sold > 0 ? memberships_sold : '',
             opportunities > 0 ? opportunities : '',
             p_mix || '', conversion || '',
@@ -1003,7 +1016,7 @@ export default function DailyLogTable({
       'better': 'better',
       'best': 'best',
       'reactivations': 'reactivations',
-      'net members': 'net_members',
+      // Net Members are daily calculated values; never import hourly losses.
     }
     const colMap = {}
     headers.forEach((h, i) => { if (FIELD_MAP[h]) colMap[i] = FIELD_MAP[h] })
@@ -1056,6 +1069,24 @@ export default function DailyLogTable({
     // Reactivations is only meaningful for shops using the Detailed opportunities formula
     .filter(c => c.key !== 'reactivations' || opportunitiesFormula !== 'simple')
 
+  const calculatedNet = dailyNetMembers(rows)
+  const legacyNet = hasLegacyNet(rows) && plansLost(rows) === null
+  const changeLoss = async value => {
+    setLossDraft(value)
+    const parsed = parsePlansLost(value)
+    if (parsed === null || !canEdit || !logLoaded || legacyNet) return
+    const revision = ++lossRevision.current
+    setRows(previous => previous.map(row => isLossAnchor(row) ? { ...row, plans_lost_today: parsed } : row))
+    setLossStatus('Saving…'); setLossError('')
+    try {
+      await writeLoss.current(parsed)
+      if (revision === lossRevision.current) setLossStatus('Saved')
+    } catch (error) {
+      if (revision === lossRevision.current) { setLossStatus(''); setLossError(`Not saved: ${error.message}. Edit the value to retry.`) }
+    }
+  }
+  const lossInput = <PlansLostInput value={lossDraft} onChange={changeLoss} disabled={!canEdit || !logLoaded || legacyNet}
+    status={legacyNet ? 'Historical manual Net Members preserved; conversion requires approval.' : lossStatus} error={lossError} />
   const latestRow   = shopTotals(rows)
   const totals      = latestRow ?? {}
   const totComputed = latestRow ? compute(latestRow, opportunitiesFormula) : {}
@@ -1281,8 +1312,8 @@ export default function DailyLogTable({
                     min="0"
                     placeholder="0"
                     className="w-full text-2xl font-semibold text-gray-800 dark:text-tm-dark-text bg-transparent border-none outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded transition-colors min-h-[48px] disabled:cursor-default placeholder:text-gray-300 dark:placeholder:text-tm-dark-muted/40"
-                    value={cardRow[field]}
-                    disabled={!canEdit}
+                    value={field === 'net_members' && !legacyNet ? '' : cardRow[field]}
+                    disabled={!canEdit || !logLoaded || field === 'net_members'}
                     onFocus={handleEditDuringDowntime}
                     onChange={e => update(cardSlotIdx, field, e.target.value)}
                     onBlur={() => saveImmediately(cardSlotIdx)}
@@ -1316,6 +1347,7 @@ export default function DailyLogTable({
         </div>
       )}
 
+      {viewMode !== 'table' && <div className="my-3 max-w-xs">{lossInput}<p className="text-sm">Daily Net Members: {calculatedNet ?? (legacyNet ? totals.net_members : '—')}</p></div>}
       {/* ── Table View ────────────────────────────────────────────────────────── */}
       {viewMode === 'table' && (
         <div ref={tableContainerRef} className={`overflow-x-auto transition-opacity ${activeDowntime && (!activeDowntime.scope || activeDowntime.scope === 'Site') ? 'opacity-60' : ''}`}>
@@ -1351,6 +1383,7 @@ export default function DailyLogTable({
                     {reorderMode && (
                       <span className="text-tm-teal/60 mr-1 text-[10px]">⠿</span>
                     )}
+                    {col.key === 'net_members' && <div className="mb-2">{lossInput}</div>}
                     {col.label}
                   </th>
                 ))}
@@ -1444,8 +1477,8 @@ export default function DailyLogTable({
                           data-row={pos}
                           data-col={colIdx}
                           className="w-full text-center py-1.5 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded disabled:cursor-default text-gray-800 dark:text-tm-dark-text transition-colors"
-                          value={row[col.key]}
-                          disabled={!canEdit}
+                          value={col.key === 'net_members' && !legacyNet ? '' : row[col.key]}
+                          disabled={!canEdit || !logLoaded || col.key === 'net_members'}
                           onFocus={handleEditDuringDowntime}
                           onChange={e => update(i, col.key, e.target.value)}
                           onBlur={() => saveImmediately(i)}
@@ -1474,7 +1507,7 @@ export default function DailyLogTable({
                 <td className="border border-gray-300 dark:border-tm-dark-border" />
                 {orderedCols.map(col => (
                   <td key={col.key} className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-brand dark:text-tm-dark-text">
-                    {fmtNum(totals[col.key])}
+                    {col.key === 'net_members' ? (calculatedNet !== null ? calculatedNet.toLocaleString('en-US') : legacyNet ? fmtNum(totals.net_members) : '') : fmtNum(totals[col.key])}
                   </td>
                 ))}
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-teal/20 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-brand">

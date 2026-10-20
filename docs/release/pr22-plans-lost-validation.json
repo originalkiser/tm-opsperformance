@@ -1,0 +1,50 @@
+{
+  "status": "DEV_PASS_PRODUCTION_COMPATIBILITY_PENDING",
+  "development_project": "bmfvcnsuduttebxbjvwx",
+  "execution_count": 1,
+  "exact_completion_signal": "P2200: PLANS_LOST_DEV_VALIDATION_PASSED_AND_ROLLED_BACK",
+  "checks": {
+    "negative_denied": true,
+    "clear_loss_denied": true,
+    "hourly_net_denied": true,
+    "wrong_hour_denied": true,
+    "legacy_zero_denied": true,
+    "move_anchor_denied": true,
+    "wrong_split_denied": true,
+    "anchor_delete_denied": true,
+    "change_legacy_denied": true,
+    "legacy_signed_denied": true,
+    "unassigned_site_denied": true,
+    "historical_data_preserved": true,
+    "rollback_saved_zero_denied": true,
+    "admin_and_primary_store_iud": true,
+    "empty_feature_rollback_exact": true,
+    "additional_assignment_allowed": true,
+    "inactive_and_unassigned_denied": true,
+    "legacy_identity_edit_preserved": true,
+    "partial_upsert_preserves_sales": true,
+    "legacy_zero_and_signed_values_marked": true,
+    "all_public_records_and_audit_restored": true,
+    "schema_policies_grants_helpers_restored": true
+  },
+  "independent_readback": {
+    "schema_fingerprint": "d4fa8d523e7e931da3c485ec414c5af9",
+    "schema_restored": true,
+    "daily_log_rows": 12,
+    "fixture_rows_remaining": 0,
+    "feature_columns_remaining": 0,
+    "feature_function_absent": true,
+    "feature_trigger_absent": true,
+    "validation_migration_history_absent": true
+  },
+  "sha256": {
+    "docs/sql/daily-plans-lost-REVIEW-ONLY.sql": "ef8c83847d9c5b5803ef29257d0126c0daf3c3115287ddc767ef5743127e5294",
+    "docs/sql/daily-plans-lost-ROLLBACK-REVIEW-ONLY.sql": "7646c1b06ede70e74595bb708b8b0d50988c561a8f865c13d2426ff9371937c8"
+  },
+  "validated_harness_sha256": "ff1120b9318075790fdfcd05323f799d439d7f14f63b29157c808121820cdeb6",
+  "migration_body_matches_executed_harness": true,
+  "rollback_body_matches_both_executed_harness_occurrences": true,
+  "production_accessed": false,
+  "application_tests_reused": "141 tests and both production builds; not repeated",
+  "development_validation_reused": true
+}

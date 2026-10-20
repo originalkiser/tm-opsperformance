@@ -270,6 +270,7 @@ export default function Dashboard() {
             <div className="p-4">
               <div className={activeTab === 'daily' ? 'block' : 'hidden'}>
                 <DailyLogTable
+                  key={`${selectedLocationId}:${selectedDate}`}
                   locationId={selectedLocationId}
                   locationName={location?.name}
                   locationEmail={location?.site_email}
