@@ -1074,7 +1074,7 @@ export default function DailyLogTable({
   const changeLoss = async value => {
     setLossDraft(value)
     const parsed = parsePlansLost(value)
-    if (parsed === null || !canEdit || !logLoaded || legacyNet) return
+    if (parsed === null || !canEdit || !logLoaded) return
     const revision = ++lossRevision.current
     setRows(previous => previous.map(row => isLossAnchor(row) ? { ...row, plans_lost_today: parsed } : row))
     setLossStatus('Saving…'); setLossError('')
@@ -1085,8 +1085,8 @@ export default function DailyLogTable({
       if (revision === lossRevision.current) { setLossStatus(''); setLossError(`Not saved: ${error.message}. Edit the value to retry.`) }
     }
   }
-  const lossInput = <PlansLostInput value={lossDraft} onChange={changeLoss} disabled={!canEdit || !logLoaded || legacyNet}
-    status={legacyNet ? 'Historical manual Net Members preserved; conversion requires approval.' : lossStatus} error={lossError} />
+  const lossInput = <PlansLostInput value={lossDraft} onChange={changeLoss} disabled={!canEdit || !logLoaded}
+    status={lossStatus} error={lossError} />
   const latestRow   = shopTotals(rows)
   const totals      = latestRow ?? {}
   const totComputed = latestRow ? compute(latestRow, opportunitiesFormula) : {}
