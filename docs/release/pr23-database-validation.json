@@ -1,0 +1,47 @@
+{
+  "project": "bmfvcnsuduttebxbjvwx",
+  "status": "PASS_ROLLED_BACK",
+  "signal": "P2300: PR23_VALIDATION_PASSED_AND_ROLLED_BACK",
+  "business_dates": [
+    "2026-10-19",
+    "2026-10-20"
+  ],
+  "checks": {
+    "negative_loss_denied": true,
+    "new_hourly_manual_net_denied": true,
+    "unassigned_site_writes_denied": true,
+    "saved_loss_clear_and_delete_denied": true,
+    "explicit_save_zero_and_negative_net": true,
+    "inactive_and_unassigned_users_denied": true,
+    "historical_manual_net_overwrite_denied": true,
+    "original_legacy_restriction_reproduced": true,
+    "admin_historical_and_current_corrections": true,
+    "store_historical_and_current_corrections": true,
+    "migration_data_and_function_acl_unchanged": true,
+    "manual_net_sales_and_legacy_flags_preserved": true,
+    "all_original_public_records_and_audit_restored": true,
+    "additional_site_corrections_preserve_signed_net": true,
+    "rollback_preserves_saved_losses_and_all_records": true,
+    "rollback_restores_exact_prior_function_and_security": true,
+    "all_original_schema_permissions_and_policies_restored": true,
+    "rls_grants_assignments_audit_and_other_catalog_unchanged": true
+  },
+  "independent_readback": {
+    "schema_restored": true,
+    "daily_log_rows": 12,
+    "temporary_feature_columns": 0,
+    "temporary_guard_absent": true,
+    "temporary_assignments": 0,
+    "validation_history_absent": true
+  },
+  "sha256": {
+    "docs/sql/plans-lost-editing-REVIEW-ONLY.sql": "864db516751b4b115948fb860fb6c9b63e1f86787441e07fb7a71a73ad592c07",
+    "docs/sql/plans-lost-editing-ROLLBACK-REVIEW-ONLY.sql": "a1cacd1118062cae3a2d8d39e899e7711fbb4124c527f100d02ab9ec0f4a2b42"
+  },
+  "guard_body_md5": {
+    "predecessor": "f3350f1af813bdd2d759936643f2fe01",
+    "replacement": "6f054b665fc27c35e307ee9f0c5b1458"
+  },
+  "production_accessed": false,
+  "application_tests_repeated": false
+}
