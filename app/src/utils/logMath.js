@@ -17,13 +17,13 @@ const chronoCompare = (a, b) =>
  * Cumulative values grow through the day, so the latest filled-in time slot
  * always holds the highest (most complete) totals — this is the day total.
  */
-export function shopTotals(rows) {
+export function shopTotals(rows, formula = 'detailed') {
   if (!rows || !rows.length) return null
   // A row is only considered complete if both total_washes and member_washes are
   // non-zero. This prevents a newly-opened time slot with zeros from shadowing
   // earlier rows that contain real wash counts.
   const withData = rows.filter(r => toInt(r.total_washes) > 0 && toInt(r.member_washes) > 0)
-  const net = dailyNetMembers(rows)
+  const net = dailyNetMembers(rows, formula)
   const latest = withData.sort((a, b) => chronoCompare(b, a))[0]
   if (net === null) return latest ?? null
   return { ...(membershipSnapshot(rows) || latest || rows[0]), net_members: net }

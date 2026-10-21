@@ -71,7 +71,7 @@ export default function EmployeeSummary({ rows = [], opportunitiesFormula = 'det
   const totals = derive(sumFields, opportunitiesFormula)
   if (plansLost(rows) !== null) {
     employees.forEach(employee => { employee.nm = '' })
-    totals.nm = dailyNetMembers(rows)
+    totals.nm = dailyNetMembers(rows, opportunitiesFormula)
   }
 
   // ── Copy rollup as image ─────────────────────────────────────────────────────

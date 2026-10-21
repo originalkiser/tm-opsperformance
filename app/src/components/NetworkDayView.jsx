@@ -1,4 +1,4 @@
-import { plansLost } from '../utils/dailyMemberships'
+import { runningNetMembers } from '../utils/dailyMemberships'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -48,7 +48,7 @@ function formatTime(ts) {
 }
 
 function shopStats(rows, formula) {
-  const latest = shopTotals(rows)
+  const latest = shopTotals(rows, formula)
   if (!latest) return null
   const totTW     = toInt(latest.total_washes)
   const totMW     = toInt(latest.member_washes)
@@ -69,10 +69,11 @@ function shopStats(rows, formula) {
 // ── Expanded read-only hourly table ──────────────────────────────────────────
 
 function HourlyTable({ rows, thresholds, formula }) {
+  const runningNets = runningNetMembers(rows, formula)
   const qualifying = [...rows]
     .sort((a, b) => a.time_slot.localeCompare(b.time_slot) || (a.split_index ?? 0) - (b.split_index ?? 0))
-    .filter(r => r.employee_name || [
-      'google_reviews','total_washes','member_washes','basic','good','better','best','net_members',
+    .filter(r => r.employee_name || r.plans_lost_today != null || [
+      'google_reviews','total_washes','member_washes','basic','good','better','best','reactivations','net_members',
     ].some(f => toInt(r[f]) > 0))
 
   if (!qualifying.length) {
@@ -156,7 +157,7 @@ function HourlyTable({ rows, thresholds, formula }) {
                 {cell(toInt(row.good)           || '')}
                 {cell(toInt(row.better)         || '')}
                 {cell(toInt(row.best)           || '')}
-                {cell(plansLost(rows) !== null ? '' : toInt(row.net_members) || '')}
+                {cell(runningNets.get(row) ?? (row.net_members == null ? '' : Number(row.net_members) || ''))}
                 {cell(ms  > 0 ? ms   : '', true)}
                 {cell(opp > 0 ? opp  : '', true)}
                 <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center font-mono text-xs font-semibold ${pmix ? pmixCls(pmix, thresholds) : 'bg-tm-sky/30 dark:bg-tm-teal/10 dark:text-tm-dark-text'}`}>{pmix}</td>
