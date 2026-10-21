@@ -12,11 +12,27 @@ export function membershipSnapshot(rows) {
   return [...rows].filter(r => ['basic', 'good', 'better', 'best', 'total_washes', 'member_washes'].some(k => Number(r[k]) > 0))
     .sort((a, b) => b.time_slot.localeCompare(a.time_slot) || (b.split_index ?? 0) - (a.split_index ?? 0))[0]
 }
-export function dailyNetMembers(rows) {
+// Carry the last reported cumulative counts into blank hours/fields.
+// Explicit zero remains zero; the daily loss is subtracted once per balance.
+export function runningNetMembers(rows, formula = 'detailed') {
   const lost = plansLost(rows)
-  if (lost === null) return null
-  const latest = membershipSnapshot(rows)
-  return ['basic', 'good', 'better', 'best'].reduce((sum, key) => sum + (Number(latest?.[key]) || 0), 0) - lost
+  const balances = new Map()
+  const counts = { basic: 0, good: 0, better: 0, best: 0, reactivations: 0 }
+  const fields = Object.keys(counts)
+  const count = value => Math.max(0, Number(value) || 0)
+  for (const row of [...rows].sort((a, b) => a.time_slot.localeCompare(b.time_slot) || (a.split_index ?? 0) - (b.split_index ?? 0))) {
+    for (const key of fields) {
+      if (row[key] != null && row[key] !== '') counts[key] = count(row[key])
+    }
+    const sales = counts.basic + counts.good + counts.better + counts.best
+    balances.set(row, lost === null ? null : sales + (formula === 'simple' ? 0 : counts.reactivations) - lost)
+  }
+  return balances
+}
+export function dailyNetMembers(rows, formula = 'detailed') {
+  if (plansLost(rows) === null) return null
+  const values = [...runningNetMembers(rows, formula).values()]
+  return values.at(-1) ?? null
 }
 // A per-component queue serializes rapid edits; each request captures its day/site.
 export function lossWriter(client, locationId, logDate) {

@@ -5,7 +5,7 @@ import EmployeeSelect from './EmployeeSelect'
 import TmLoader from './TmLoader'
 import DowntimeModal from './DowntimeModal'
 import PlansLostInput from './PlansLostInput'
-import { plansLost, dailyNetMembers, hasLegacyNet, parsePlansLost, lossWriter, isLossAnchor } from '../utils/dailyMemberships'
+import { plansLost, dailyNetMembers, runningNetMembers, hasLegacyNet, parsePlansLost, lossWriter, isLossAnchor } from '../utils/dailyMemberships'
 import { shopTotals } from '../utils/logMath'
 import { fmtNum } from '../utils/format'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
@@ -880,7 +880,7 @@ export default function DailyLogTable({
       const vals = {
         employee_name: row.employee_name || '',
         _time:  ordinal > 1 ? `${slotLabel} (${ordinal})` : slotLabel,
-        ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: String(c.key === 'net_members' && !legacyNet ? '' : row[c.key] ?? '') }), {}),
+        ...orderedCols.reduce((a, c) => ({ ...a, [c.key]: String(c.key === 'net_members' ? displayNet(row) : row[c.key] ?? '') }), {}),
         _ms:   memberships_sold > 0 ? String(memberships_sold) : '',
         _opp:  opportunities > 0 ? String(opportunities) : '',
         _pmix: p_mix       || '',
@@ -982,7 +982,7 @@ export default function DailyLogTable({
           const ordinal   = i - groupInfo[row.time_slot].first + 1
           return [
             row.employee_name || '', ordinal > 1 ? `${slotLabel} (${ordinal})` : slotLabel,
-            ...orderedCols.map(col => String(col.key === 'net_members' && !legacyNet ? '' : row[col.key] ?? '')),
+            ...orderedCols.map(col => String(col.key === 'net_members' ? displayNet(row) : row[col.key] ?? '')),
             memberships_sold > 0 ? memberships_sold : '',
             opportunities > 0 ? opportunities : '',
             p_mix || '', conversion || '',
@@ -1069,8 +1069,10 @@ export default function DailyLogTable({
     // Reactivations is only meaningful for shops using the Detailed opportunities formula
     .filter(c => c.key !== 'reactivations' || opportunitiesFormula !== 'simple')
 
-  const calculatedNet = dailyNetMembers(rows)
+  const runningNets = runningNetMembers(rows, opportunitiesFormula)
+  const calculatedNet = dailyNetMembers(rows, opportunitiesFormula)
   const legacyNet = hasLegacyNet(rows) && plansLost(rows) === null
+  const displayNet = row => runningNets.get(row) ?? (legacyNet ? row.net_members ?? '' : '')
   const changeLoss = async value => {
     setLossDraft(value)
     const parsed = parsePlansLost(value)
@@ -1087,7 +1089,7 @@ export default function DailyLogTable({
   }
   const lossInput = <PlansLostInput value={lossDraft} onChange={changeLoss} disabled={!canEdit || !logLoaded}
     status={lossStatus} error={lossError} />
-  const latestRow   = shopTotals(rows)
+  const latestRow   = shopTotals(rows, opportunitiesFormula)
   const totals      = latestRow ?? {}
   const totComputed = latestRow ? compute(latestRow, opportunitiesFormula) : {}
 
@@ -1309,10 +1311,10 @@ export default function DailyLogTable({
                   </label>
                   <input
                     type="number"
-                    min="0"
-                    placeholder="0"
+                    min={field === 'net_members' ? undefined : 0}
+                    placeholder={field === 'net_members' ? '—' : '0'}
                     className="w-full text-2xl font-semibold text-gray-800 dark:text-tm-dark-text bg-transparent border-none outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded transition-colors min-h-[48px] disabled:cursor-default placeholder:text-gray-300 dark:placeholder:text-tm-dark-muted/40"
-                    value={field === 'net_members' && !legacyNet ? '' : cardRow[field]}
+                    value={field === 'net_members' ? displayNet(cardRow) : cardRow[field]}
                     disabled={!canEdit || !logLoaded || field === 'net_members'}
                     onFocus={handleEditDuringDowntime}
                     onChange={e => update(cardSlotIdx, field, e.target.value)}
@@ -1473,11 +1475,11 @@ export default function DailyLogTable({
                       <td key={col.key} className={`border border-gray-200 dark:border-tm-dark-border px-1 ${topCls} ${bottomCls}`}>
                         <input
                           type="number"
-                          min="0"
+                          min={col.key === 'net_members' ? undefined : 0}
                           data-row={pos}
                           data-col={colIdx}
                           className="w-full text-center py-1.5 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded disabled:cursor-default text-gray-800 dark:text-tm-dark-text transition-colors"
-                          value={col.key === 'net_members' && !legacyNet ? '' : row[col.key]}
+                          value={col.key === 'net_members' ? displayNet(row) : row[col.key]}
                           disabled={!canEdit || !logLoaded || col.key === 'net_members'}
                           onFocus={handleEditDuringDowntime}
                           onChange={e => update(i, col.key, e.target.value)}
