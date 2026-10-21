@@ -15,7 +15,7 @@ test('Plans Lost uses a keyboard-accessible dialog with the exact manager instru
   assert.equal(h.find(n => n.type === 'h2').props.children, 'Where to Find Plans Lost Today')
   const text = h.all(n => n.type === 'p').map(n => n.props.children)
   assert.ok(text.includes('DRB Sites: Plan Analysis Report → Pass Plans Lost'))
-  assert.ok(text.includes('Micrologic Sites: UNLIMITED GROWTH/CHURN BY DAY V1 → Cancel + Decline'))
+  assert.ok(text.includes('Micrologic Sites: Ulimited Detailed Report → Cancel + Decline'))
   h.find(n => n.type === 'button' && n.props.children === 'Close').props.onClick(); assert.equal(closed, 1)
   dialog.props.onClose()
   assert.equal(h.find(n => n.type === 'button' && n.props['aria-label']).props['aria-expanded'], false)
