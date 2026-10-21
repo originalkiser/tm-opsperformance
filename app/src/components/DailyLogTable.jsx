@@ -1,3 +1,4 @@
+import { netMemberStyle, netMembersCls } from '../utils/netMemberColors'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -900,6 +901,8 @@ export default function DailyLogTable({
           cellBg = col.accent === 'teal' ? C.tealCell : alt ? C.rowAlt : C.rowNorm
           cellFg = col.accent === 'teal' ? C.blueText : col.key === '_time' ? C.timeText : C.bodyText
         }
+        const netStyle = col.key === 'net_members' ? netMemberStyle(val) : null
+        if (netStyle) { cellBg = netStyle.background; cellFg = netStyle.color }
         ctx.fillStyle = cellBg
         ctx.fillRect(cx, y, w, ROW_H)
 
@@ -935,6 +938,8 @@ export default function DailyLogTable({
         cellBg = col.accent === 'teal' ? C.totTeal : C.totRow
         cellFg = C.blueText
       }
+      const netStyle = col.key === 'net_members' ? netMemberStyle(val) : null
+      if (netStyle) { cellBg = netStyle.background; cellFg = netStyle.color }
       ctx.fillStyle = cellBg
       ctx.fillRect(tx, totY, w, ROW_H)
       if (val) {
@@ -1304,7 +1309,7 @@ export default function DailyLogTable({
               return (
                 <div
                   key={field}
-                  className="bg-white dark:bg-tm-dark-surface border border-gray-100 dark:border-tm-dark-border rounded-xl p-3 shadow-sm"
+                  className={`border border-gray-100 dark:border-tm-dark-border rounded-xl p-3 shadow-sm ${field === 'net_members' ? netMembersCls(displayNet(cardRow)) : 'bg-white dark:bg-tm-dark-surface'}`}
                 >
                   <label className="block text-[10px] font-brand font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1 whitespace-pre-line leading-tight">
                     {def?.label ?? field}
@@ -1313,7 +1318,7 @@ export default function DailyLogTable({
                     type="number"
                     min={field === 'net_members' ? undefined : 0}
                     placeholder={field === 'net_members' ? '—' : '0'}
-                    className="w-full text-2xl font-semibold text-gray-800 dark:text-tm-dark-text bg-transparent border-none outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded transition-colors min-h-[48px] disabled:cursor-default placeholder:text-gray-300 dark:placeholder:text-tm-dark-muted/40"
+                    className={`w-full text-2xl font-semibold bg-transparent border-none outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded transition-colors min-h-[48px] disabled:cursor-default placeholder:text-gray-300 dark:placeholder:text-tm-dark-muted/40 ${field === 'net_members' ? 'text-inherit' : 'text-gray-800 dark:text-tm-dark-text'}`}
                     value={field === 'net_members' ? displayNet(cardRow) : cardRow[field]}
                     disabled={!canEdit || !logLoaded || field === 'net_members'}
                     onFocus={handleEditDuringDowntime}
@@ -1349,7 +1354,7 @@ export default function DailyLogTable({
         </div>
       )}
 
-      {viewMode !== 'table' && <div className="my-3 max-w-xs">{lossInput}<p className="text-sm">Daily Net Members: {calculatedNet ?? (legacyNet ? totals.net_members : '—')}</p></div>}
+      {viewMode !== 'table' && <div className="my-3 max-w-xs">{lossInput}<p className={`text-sm rounded p-2 ${netMembersCls(calculatedNet ?? (legacyNet ? totals.net_members : null))}`}>Daily Net Members: {calculatedNet ?? (legacyNet ? totals.net_members : '—')}</p></div>}
       {/* ── Table View ────────────────────────────────────────────────────────── */}
       {viewMode === 'table' && (
         <div ref={tableContainerRef} className={`overflow-x-auto transition-opacity ${activeDowntime && (!activeDowntime.scope || activeDowntime.scope === 'Site') ? 'opacity-60' : ''}`}>
@@ -1472,13 +1477,13 @@ export default function DailyLogTable({
                       </div>
                     </td>
                     {orderedCols.map((col, colIdx) => (
-                      <td key={col.key} className={`border border-gray-200 dark:border-tm-dark-border px-1 ${topCls} ${bottomCls}`}>
+                      <td key={col.key} className={`border border-gray-200 dark:border-tm-dark-border px-1 ${topCls} ${bottomCls} ${col.key === 'net_members' ? netMembersCls(displayNet(row)) : ''}`}>
                         <input
                           type="number"
                           min={col.key === 'net_members' ? undefined : 0}
                           data-row={pos}
                           data-col={colIdx}
-                          className="w-full text-center py-1.5 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded disabled:cursor-default text-gray-800 dark:text-tm-dark-text transition-colors"
+                          className={`w-full text-center py-1.5 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded disabled:cursor-default transition-colors ${col.key === 'net_members' ? 'text-inherit' : 'text-gray-800 dark:text-tm-dark-text'}`}
                           value={col.key === 'net_members' ? displayNet(row) : row[col.key]}
                           disabled={!canEdit || !logLoaded || col.key === 'net_members'}
                           onFocus={handleEditDuringDowntime}
@@ -1508,7 +1513,7 @@ export default function DailyLogTable({
                 <td className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 font-brand dark:text-tm-dark-text">Totals</td>
                 <td className="border border-gray-300 dark:border-tm-dark-border" />
                 {orderedCols.map(col => (
-                  <td key={col.key} className="border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-brand dark:text-tm-dark-text">
+                  <td key={col.key} className={`border border-gray-300 dark:border-tm-dark-border px-2 py-1.5 text-center font-brand ${col.key === 'net_members' ? netMembersCls(calculatedNet ?? (legacyNet ? totals.net_members : null)) : 'dark:text-tm-dark-text'}`}>
                     {col.key === 'net_members' ? (calculatedNet !== null ? calculatedNet.toLocaleString('en-US') : legacyNet ? fmtNum(totals.net_members) : '') : fmtNum(totals[col.key])}
                   </td>
                 ))}
