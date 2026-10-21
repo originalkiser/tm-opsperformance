@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import React from 'react'
+import { netMemberStyle, netMembersCls } from '../src/utils/netMemberColors.js'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 import * as membership from '../src/utils/dailyMemberships.js'
 import { shopTotals } from '../src/utils/logMath.js'
@@ -14,7 +15,7 @@ function openLog(canEdit = true, role = 'store', db = [{ id: 'old', location_id:
     then(resolve) { return Promise.resolve({ data: table === 'daily_logs' ? structuredClone(db) : [], error: null }).then(resolve) },
   }; return q } }
   const h = locationHelpHarness('components/DailyLogTable', {
-    ...membership, supabase, shopTotals, fmtNum, PlansLostInput: Input,
+    ...membership, netMemberStyle, netMembersCls, supabase, shopTotals, fmtNum, PlansLostInput: Input,
     useCallback: f => f, useAuth: () => ({ updateProfileSettings() {} }),
     EmployeeSelect: () => null, TmLoader: () => null, DowntimeModal: () => null,
     pmixCls: () => '', convCls: () => '', pmixTotalsCls: () => '', convTotalsCls: () => '',
@@ -78,4 +79,22 @@ test('hourly table shows opening/running negatives, final-only totals and immedi
    assert.equal(opportunities(),12, 'reactivations must not alter opportunities/conversion')
   }
  }
+})
+
+test('Net Members colors follow loss edits through negative, zero and positive; unknown stays neutral', async () => {
+ const h=openLog(true,'store',[{id:'historic',time_slot:'08:00:00',split_index:0,basic:4,total_washes:10,member_washes:2,net_members:6,net_members_legacy:true}]);h.render();await h.flush()
+ const total=()=>React.Children.toArray(h.find(n=>n.type==='tr' && n.props.className?.includes('border-t-2')).props.children)[10]
+ // Historical net of six remains positive before an explicit loss is reported.
+ assert.match(total().props.className,/bg-green-100/)
+ for (const [loss,color] of [['9','red'],['4','yellow'],['0','green']]) {
+  await h.input().props.onChange(loss);await h.flush()
+  assert.match(total().props.className,new RegExp('bg-'+color+'-100'))
+  const firstNet=h.all(n=>n.type==='td').find(n=>React.Children.toArray(n.props.children).some(c=>c?.props?.['data-row']===0 && c?.props?.['data-col']===8))
+  assert.match(firstNet.props.className,new RegExp('bg-'+color+'-100'))
+ }
+ const unknown=openLog(true,'store',[{id:'unknown',time_slot:'08:00:00',split_index:0,basic:4,net_members:0}]);unknown.render();await unknown.flush()
+ const cell=React.Children.toArray(unknown.find(n=>n.type==='tr' && n.props.className?.includes('border-t-2')).props.children)[10]
+ assert.doesNotMatch(cell.props.className,/bg-(red|yellow|green)/)
+ assert.equal(netMemberStyle(''),null)
+ assert.equal(netMemberStyle(null),null)
 })
