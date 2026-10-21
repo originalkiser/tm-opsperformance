@@ -1,3 +1,5 @@
+import { netMembersCls } from '../utils/netMemberColors'
+import { compareNetMembers } from '../utils/dashboardNetMembers'
 import useBudgetPerformance from '../hooks/useBudgetPerformance'
 import BudgetSourceNote from './BudgetSourceNote'
 import { useState } from 'react'
@@ -44,14 +46,16 @@ const COLS = [
   { key: 'conversion', label: 'Conversion',       align: 'center' },
 ]
 
-export default function SiteMetricTable({ data, locations, dateRange, title = 'Site Performance', companyRead = false }) {
+export default function SiteMetricTable({ data, locations, dateRange, title = 'Site Performance', companyRead = false, netMembers }) {
   const source = useBudgetPerformance(data, locations, dateRange, { companyRead })
-  return <PerformanceTable source={source} locations={locations} dateRange={dateRange} title={title} />
+  return <PerformanceTable source={source} locations={locations} dateRange={dateRange} title={title} netMembers={netMembers} />
 }
 
 // Shared compact, sortable presentation; source selection stays outside the table.
-export function PerformanceTable({ source, locations, dateRange, title = 'Site Performance', daily = false }) {
+export function PerformanceTable({ source, locations, dateRange, title = 'Site Performance', daily = false, netMembers = source.netMembers }) {
   const [sort, toggleSort] = useSortState('tw', 'desc')
+  const showNet = netMembers !== undefined
+  const columns = showNet ? [...COLS, { key: 'nm', label: 'Net Members', align: 'center' }] : COLS
 
   const dayData = source.totals
   const totals  = agg(dayData)
@@ -60,16 +64,22 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
 
   const rows = locations.map(loc => ({
     name: loc.name,
+    nm: netMembers?.[loc.id]?.value ?? null,
+    netStatus: netMembers?.[loc.id],
     ...agg(byLoc[loc.id] || []),
     missing: !byLoc[loc.id]?.length,
     thresholds: loc.metric_thresholds,
     status: source.statuses?.[loc.id],
     provisional: source.notes.some(n => n.id === loc.id && !n.complete),
   }))
+  const netIncomplete = showNet && rows.some(r => r.nm === null)
+  const knownNets = rows.map(r => r.nm).filter(v => v !== null)
+  const netTotal = knownNets.length ? knownNets.reduce((sum, v) => sum + v, 0) : null
   const incomplete = rows.some(r => r.missing || r.provisional)
 
   const sorted = [...rows].sort((a, b) => {
     const dir = sort.dir === 'asc' ? 1 : -1
+    if (sort.col === 'nm') return compareNetMembers(a.nm, b.nm, sort.dir)
     if (sort.col === 'name')       return dir * a.name.localeCompare(b.name)
     if (sort.col === 'p_mix')      return dir * (parsePct(a.p_mix) - parsePct(b.p_mix))
     if (sort.col === 'conversion') return dir * (parsePct(a.conversion) - parsePct(b.conversion))
@@ -91,15 +101,17 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
       { label: 'Google Reviews',   type: 'num'  },
       { label: 'P-Mix',            type: 'pmix' },
       { label: 'Conversion',       type: 'conv' },
+      ...(showNet ? [{label:'Net Members',type:'num'}] : []),
     ],
-    rows: sorted.map(r => [r.name + (r.missing ? ' (Unavailable)' : r.provisional ? ' (Provisional)' : ''), ...[r.tw, r.mw, r.ms, r.opp, r.gr, r.p_mix, r.conversion].map(v => r.missing ? '' : v)]),
-    totalsRow: [incomplete ? 'Provisional subtotal' : 'Totals', totals.tw, totals.mw, totals.ms, totals.opp, totals.gr, totals.p_mix, totals.conversion],
+    rows: sorted.map(r => [r.name + (r.missing ? ' (Unavailable)' : r.provisional ? ' (Provisional)' : ''), ...[r.tw, r.mw, r.ms, r.opp, r.gr, r.p_mix, r.conversion].map(v => r.missing ? '' : v), ...(showNet ? [r.nm ?? ''] : [])]),
+    totalsRow: [incomplete ? 'Provisional subtotal' : 'Totals', totals.tw, totals.mw, totals.ms, totals.opp, totals.gr, totals.p_mix, totals.conversion, ...(showNet ? [netTotal ?? ''] : [])],
   }
 
   return (
     <div>
       <BudgetSourceNote source={source} />
       {incomplete && <p className="text-xs mb-2 text-gray-700 dark:text-gray-200">Provisional subtotal: unavailable locations are excluded. {daily ? 'Sites without a reported Daily Log are shown below.' : 'See source details where available.'}</p>}
+      {netIncomplete && <p className="text-xs mb-2 text-gray-700 dark:text-gray-200">Net Members subtotal excludes unavailable locations; missing snapshots or daily losses are not treated as zero.</p>}
       <div className="flex justify-end mb-3">
         <ExportMenu items={[
           { label: 'Excel (.xlsx)', run: () => exportXlsx(exportSpec) },
@@ -111,7 +123,7 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
         <table aria-label={title} className="w-full min-w-[800px] border-collapse text-xs">
           <thead>
             <tr className="bg-tm-blue dark:bg-tm-navy text-white">
-              {COLS.map(c => (
+              {columns.map(c => (
                 <th key={c.key} scope="col" aria-sort={sort.col === c.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`${thCls} ${c.align === 'left' ? 'text-left' : 'text-center'}`}>
                   <button className="w-full text-inherit" onClick={() => toggleSort(c.key)}>{c.label}<SortIcon active={sort.col === c.key} dir={sort.dir} /></button>
                 </th>
@@ -131,6 +143,10 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
                 <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{r.missing ? '—' : (fmtNum(r.gr) || '0')}</td>
                 <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${r.missing || r.provisional ? 'text-gray-600 dark:text-gray-300' : pmixCls(r.p_mix, r.thresholds)}`}>{r.missing ? '—' : r.p_mix}</td>
                 <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${r.missing || r.provisional ? 'text-gray-600 dark:text-gray-300' : convCls(r.conversion, r.thresholds)}`}>{r.missing ? '—' : r.conversion}</td>
+                {showNet && <td title={r.netStatus?.message} className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${netMembersCls(r.nm)}`}>
+                  {r.nm === null ? '—' : r.nm.toLocaleString('en-US')}
+                  {!daily && <div className="text-[10px] font-normal max-w-[180px]">{r.netStatus?.through ? `Through ${r.netStatus.through}` : r.netStatus?.message || 'Net Members unavailable'}</div>}
+                </td>}
               </tr>
             ))}
             <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
@@ -142,6 +158,7 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
               <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totals.gr)}</td>
               <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${incomplete ? 'text-gray-600 dark:text-gray-300' : pmixTotalsCls(totals.p_mix)}`}>{totals.p_mix}</td>
               <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${incomplete ? 'text-gray-600 dark:text-gray-300' : convTotalsCls(totals.conversion)}`}>{totals.conversion}</td>
+              {showNet && <td title={netIncomplete ? 'Provisional Net Members subtotal' : 'Net Members total'} className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${netMembersCls(netTotal)}`}>{netTotal === null ? '—' : netTotal.toLocaleString('en-US')}</td>}
             </tr>
           </tbody>
         </table>

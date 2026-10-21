@@ -1,0 +1,30 @@
+# Dashboard Net Members
+
+Based on main a120c2bc80ba9b105225aa402f7a64f314445559. Only Dashboard Today's/MTD Performance gains the new sortable Net Members column and corresponding export values; other SiteMetricTable consumers keep their current columns. Shared red/zero-yellow/positive-green formatting applies; unavailable locations remain neutral and sort last in both directions. Partial company subtotals are explicitly identified and do not substitute zero for missing sites.
+
+## Sources and dates
+
+- Today: use the existing site's business date and shared daily calculation, one final cumulative balance per site/day. Simple = cumulative sales minus daily loss. Detailed adds cumulative Reactivations once. A loss-only opening row yields a negative balance. Missing loss remains unavailable unless an actual historical manual Net Members value is available. Legacy values, including signed values and explicit legacy zero, are read without mutation. Default nonlegacy zero is not a report.
+- Month baseline: `budget_targets.starting_members`, selected by exact `target_month` (the first day of the reporting month). This field already underpins Budget membership-growth pacing; neither membership_goal nor a fabricated first available count is used.
+- Current active membership snapshot: `budget_daily_entries.mtd_membership_actual`, labeled Current Total Members in Budget Tracking. It is an active headcount, not daily sales or month-to-date additions. Like the existing MTD snapshot methodology, entry_date covers through entry_date minus one. Select the latest eligible completed snapshot; if its count is blank, do not silently replace it with an older headcount.
+- Net MTD = latest active headcount minus month-start count, plus exactly one daily net per date AFTER covered_through through the existing reporting range end/site-local business date. Covered hourly/day records are entirely excluded. Reactivations are included only in uncovered Detailed-site daily calculations, since snapshot headcounts already incorporate prior changes.
+
+Missing/invalid baseline, current headcount, or coverage makes Net Members unavailable. Any uncovered date with absent/unreported daily net also makes the current MTD value unavailable rather than treating an unexplained day as zero. This includes today's missing report. The cell explains the gap; explicit zeros are supported. Locations without the required Budget snapshots do not receive a fabricated Daily-Log-only MTD value.
+
+The existing common current-month range is retained, including cross-timezone month rollovers. Other MTD metrics retain Budget priority and the completed-day cutoff through the original endpoint/hook; their values/calculations are unchanged. Net Members alone adds uncovered reported daily activity, including today's partial running balance where it lies within that range. Snapshot-through and final-through dates remain in Net Members metadata. Refresh uses the existing visible-page 60-second watcher and visibility refresh; no new timer/publication is added.
+
+## Database dependency — review only
+
+The existing `dashboard_mtd_performance` RPC exposes washes/redemptions/tier counts/reviews but neither active headcounts nor month-start members. Changing its return type would break existing callers. Reuse it unchanged for existing metrics; propose the separate four-field `dashboard_membership_snapshots` read RPC in `docs/sql/dashboard-membership-snapshots-REVIEW-ONLY.sql`.
+
+The proposed STABLE SECURITY DEFINER function has fixed empty search_path, qualified relations, postgres ownership, active/non-deleted caller checks, bounded month/ID parameters, requested-location filtering and existing Area Manager assignment scope. Active Store/Admin callers can see company-wide membership counts; no operational selector scope is changed. PUBLIC/anon execution is revoked and authenticated receives only execution on this narrow read-only projection. No raw Budget/Targets/Daily Log RLS, table grants, write helpers, assignments, audit triggers or source values change. Existing trusted service_role defaults remain compatible. The four projected fields are location_id, starting_members, active_members and covered_through, never cash/revenue/profile details.
+
+No SQL was executed against Supabase or production. The SQL is a proposal, not an installed migration. Review/approve it, confirm the existing production field types and policy assumptions using retained evidence, validate in tm-ops-dev, and separately approve installation BEFORE merging/deploying the frontend. If the RPC is missing or denied, Net Members remains unavailable with an explicit error while existing MTD metrics retain their old source path. Do not broaden raw-table permissions to make the column work.
+
+The separate inverse drops only the new function after its frontend caller has been reverted/disabled under release approval. No data or old endpoint is dropped or rewritten. No migration number is claimed until the project migration packaging/approval step.
+
+## Validation
+
+37 focused tests passed: Dashboard daily calculation, Simple/Detailed Reactivations, snapshot/no-overlap coverage, stale-snapshot tails, missing snapshots/days/losses, explicit zero, historical signed values, site-local day/month rollover, numeric signed sorting with missing-last, both-table colors/accessible headers/overflow, read-only projection whitelisting, existing Budget precedence/completed cutoff and 60-second visible-page refresh behavior. Both production builds passed (default base and --base=/), retaining existing duplicate-title and bundle-size warnings.
+
+Temporary local PostgreSQL/PGlite checks passed for the exact proposed SQL: Admin/Store company reads, assigned Area Manager filtering, denied inactive/missing identity/anon callers, no raw Budget table read or update access, latest-null snapshot behavior and inverse removal. This isolated minimal-schema check does not certify production schema/RLS parity or replace the separate development/release approval gate. No unrelated application suite was repeated.

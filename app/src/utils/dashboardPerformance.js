@@ -1,3 +1,4 @@
+import { dashboardDailyNet } from './dashboardNetMembers.js'
 import { lastCompletedBusinessDate, shiftDate } from './budgetRevenue.js'
 import { toDayTotals } from './insightsHelpers.js'
 
@@ -23,12 +24,14 @@ export async function loadPerformanceLogs(client, locations, range) {
 }
 
 export function selectTodayPerformance(logs, locations, now = new Date()) {
-  const statuses = {}, totals = []
+  const statuses = {}, totals = [], netMembers = {}
   for (const location of locations) {
     const date = businessToday(location, now)
     const rows = logs.filter(r => r.location_id === location.id && r.log_date === date)
+    const net = dashboardDailyNet(rows, location.opportunities_formula)
+    netMembers[location.id] = { value: net, through: date, message: net === null ? 'Daily Net Members unreported.' : `Daily running balance for ${date}.` }
     // Ignore untouched future slots; explicit zero entries with an author count.
-    const entered = rows.filter(r => r.employee_name?.trim() || r.created_by ||
+    const entered = rows.filter(r => r.plans_lost_today != null || Number(r.reactivations) > 0 || Number(r.net_members) !== 0 && r.net_members != null || r.employee_name?.trim() || r.created_by ||
       ['total_washes', 'member_washes', 'google_reviews', 'basic', 'good', 'better', 'best'].some(k => Number(r[k]) > 0))
     const latest = toDayTotals(entered)[0]
     if (latest) {
@@ -40,5 +43,5 @@ export function selectTodayPerformance(logs, locations, now = new Date()) {
     const updatedAt = entered.map(r => r.updated_at).filter(t => t && Number.isFinite(Date.parse(t))).sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1)
     statuses[location.id] = { date, timezone: location.timezone || 'America/Chicago', updatedAt }
   }
-  return { totals, statuses, notes: [], active: false }
+  return { totals, statuses, netMembers, notes: [], active: false }
 }
