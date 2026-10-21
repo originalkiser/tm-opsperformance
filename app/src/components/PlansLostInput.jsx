@@ -16,7 +16,7 @@ export default function PlansLostInput({ value, onChange, disabled, status, erro
       className="w-[calc(100%-2rem)] max-w-sm rounded-xl bg-white dark:bg-tm-dark-card text-tm-navy dark:text-tm-dark-text p-5 shadow-xl backdrop:bg-black/40 text-left font-normal">
       <h2 id={`${id}-title`} className="font-bold text-sm">Where to Find Plans Lost Today</h2>
       <p className="mt-3 text-sm">DRB Sites: Plan Analysis Report → Pass Plans Lost</p>
-      <p className="mt-3 text-sm">Micrologic Sites: UNLIMITED GROWTH/CHURN BY DAY V1 → Cancel + Decline</p>
+      <p className="mt-3 text-sm">Micrologic Sites: Ulimited Detailed Report → Cancel + Decline</p>
       <button type="button" autoFocus onClick={() => dialog.current.close()} className="mt-4 min-h-[44px] px-4 border rounded">Close</button>
     </dialog>
     <input id={id} aria-invalid={invalid} aria-describedby={`${id}-status`} type="number" min="0" max="2147483647" step="1" inputMode="numeric"
