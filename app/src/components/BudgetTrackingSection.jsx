@@ -44,7 +44,7 @@ export function BonusBadge({ tier }) {
 // ── Daily Entry tab ───────────────────────────────────────────────────────────
 
 function DailyEntryTab({ locations, profile, onSaved }) {
-  const [selectedLocId, setSelectedLocId] = useState(() => profile?.location_id || locations[0]?.id || '')
+  const [selectedLocId, setSelectedLocId] = useState(() => locations.find(site => site.id === profile?.location_id)?.id || locations[0]?.id || '')
   const [entryDate, setEntryDate] = useState(todayStr)
   const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(selectedLocId, entryDate, onSaved)
 
@@ -73,7 +73,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
         >
           {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
-        {!target && (
+        {!loading && !target && (
           <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold">No target set for this month yet</span>
         )}
       </div>

@@ -50,7 +50,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState(
     () => localStorage.getItem('tm_active_tab') || 'daily'
   )
-  const [liveRows, setLiveRows] = useState([])
+  const [liveData, setLiveData] = useState({ scope: null, rows: [] })
   const [selectedMarket, setSelectedMarket] = useState(
     () => localStorage.getItem('tm_market_filter') || ''
   )
@@ -58,6 +58,8 @@ export default function Dashboard() {
   const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
   const filteredLocations = entryLocationOptions(profile, locations, selectedMarket)
   const selectedLocationId = resolveEntryLocation(filteredLocations, selectedChoice)
+  const entryScope = `${selectedLocationId}:${selectedDate}`
+  const liveRows = liveData.scope === entryScope ? liveData.rows : []
 
   useEffect(() => {
     if (!locationSelectionVersion) return
@@ -111,8 +113,9 @@ export default function Dashboard() {
   }
 
   // Today's Budget Tracking / Ownership Log entry status, for the tab indicators.
-  const [hasBudgetToday,    setHasBudgetToday]    = useState(false)
-  const [hasOwnershipToday, setHasOwnershipToday] = useState(false)
+  const [entryStatus, setEntryStatus] = useState({ locationId: null, budget: false, ownership: false })
+  const hasBudgetToday = entryStatus.locationId === selectedLocationId && entryStatus.budget
+  const hasOwnershipToday = entryStatus.locationId === selectedLocationId && entryStatus.ownership
   const [statusNow, setStatusNow] = useState(new Date())
   const [statusRefreshKey, setStatusRefreshKey] = useState(0)
 
@@ -124,17 +127,18 @@ export default function Dashboard() {
   useEffect(() => {
     const loc = locations.find(l => l.id === selectedLocationId)
     if (!loc) return
+    setEntryStatus({ locationId: loc.id, budget: false, ownership: false })
     let cancelled = false
     ;(async () => {
       if (loc.show_budget_tracking) {
         const { data } = await supabase.from('budget_daily_entries').select('*')
           .eq('location_id', loc.id).eq('entry_date', todayStr()).maybeSingle()
-        if (!cancelled) setHasBudgetToday(isDayComplete(data))
+        if (!cancelled) setEntryStatus(current => ({ ...current, budget: isDayComplete(data) }))
       }
       if (loc.show_ownership_tools) {
         const { data } = await supabase.from('ownership_log_entries').select('submitted_at')
           .eq('location_id', loc.id).eq('log_date', todayStr()).maybeSingle()
-        if (!cancelled) setHasOwnershipToday(!!data?.submitted_at)
+        if (!cancelled) setEntryStatus(current => ({ ...current, ownership: !!data?.submitted_at }))
       }
     })()
     return () => { cancelled = true }
@@ -266,8 +270,8 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {/* Tab content — CSS show/hide keeps DailyLogTable mounted */}
-            <div className="p-4">
+            {/* Preserve tabs within a site; discard drafts and pending views on site changes. */}
+            <div key={selectedLocationId} className="p-4">
               <div className={activeTab === 'daily' ? 'block' : 'hidden'}>
                 <DailyLogTable
                   key={`${selectedLocationId}:${selectedDate}`}
@@ -277,7 +281,7 @@ export default function Dashboard() {
                   selectedDate={selectedDate}
                   canEdit={canEdit}
                   opportunitiesFormula={opportunitiesFormula}
-                  onRowsChange={setLiveRows}
+                  onRowsChange={rows => setLiveData({ scope: entryScope, rows })}
                   profile={profile}
                   metricThresholds={location?.metric_thresholds}
                   downtimeEnabled={!!location?.downtime_tracking_enabled}
