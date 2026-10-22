@@ -51,26 +51,36 @@ test('By Site mode preserves formula-cohort rank labels and exports contain scor
   assert.equal(after.columns.length,9);assert.ok(after.rows.every(r=>r.length===9));assert.equal(after.totalsRow.length,9)
   h.unmount()
 })
-test('corrected days show partial attribution and withheld scores rather than inflated employee figures',()=>{
+test('corrections withhold only affected employees and keep later employees scored in table and export',()=>{
   const data=[row('Alex','08:00:00',200,20),row('Alex','09:00:00',180,18),row('Blair','10:00:00',200,20)]
   const h=table(data),html=h.html(),spec=h.csv()
-  assert.match(html,/Cumulative counts decreased/);assert.match(html,/Partial · unreliable days excluded/)
-  assert.match(html,/Unavailable/);assert.match(html,/Unranked/);assert.match(html,/Known-day subtotal/)
-  assert.ok(spec.rows.every(r=>r[2]===''&&r[6]===''&&r[7]==='Unranked'))
-  assert.equal(spec.totalsRow[0],'Known-day subtotal')
+  assert.match(html,/Cumulative counts decreased/);assert.match(html,/Correction attribution unresolved/)
+  assert.match(html,/Unavailable/);assert.match(html,/Unranked/);assert.match(html,/Known attributed subtotal/)
+  assert.equal(spec.rows.find(r=>r[0]==='Alex')[2],'')
+  const blair=spec.rows.find(r=>r[0]==='Blair');assert.equal(blair[2],2);assert.equal(blair[6],100);assert.equal(blair[7],'Simple #1')
+  assert.equal(spec.totalsRow[0],'Known attributed subtotal')
   h.unmount()
 })
-test('zero opportunities and an incomplete data read never render an official score',()=>{
+test('zero opportunities receive a ranked zero score; an incomplete network read still waits',()=>{
   const zero=table([row('Zero','08:00:00',0,0)]),html=zero.html()
-  assert.match(html,/Minimum 100/);assert.match(html,/Unavailable/);assert.doesNotMatch(html,/NaN|Infinity/)
+  assert.match(html,/0\.00/);assert.match(html,/Simple #1/);assert.doesNotMatch(html,/NaN|Infinity|Unavailable|Minimum 100/)
   zero.unmount()
   const failed=table(fixture(),false),failure=failed.html()
   assert.match(failure,/role="alert"/);assert.match(failure,/data is incomplete/)
   assert.doesNotMatch(failure,/100\.00|Simple #1/);failed.unmount()
 })
+test('missing shifts and hourly entries remain ranked in the rendered report and sorted exports',()=>{
+  const data=[row('Alex','08:00:00',20,2),row('Blair','16:00:00',40,4),{...row('Casey','12:00:00',10,1),log_date:'2026-10-22'}]
+  const h=table(data),html=h.html()
+  assert.doesNotMatch(html,/Unavailable|Unranked|excluded site-days/)
+  assert.match(html,/Missing shifts do not disqualify employees/)
+  const spec=h.csv();assert.ok(spec.rows.every(r=>typeof r[6]==='number'&&/Simple #/.test(r[7])))
+  h.sort('Rank');assert.equal(h.csv().rows[0][7],'Simple #3')
+  h.unmount()
+})
 test('entirely unnamed activity is surfaced as unreliable rather than hidden behind an empty employee table',()=>{
   const h=table([row('','08:00:00',200,20)]),html=h.html()
-  assert.match(html,/no employee name/);assert.match(html,/No reliably attributed employee data/)
+  assert.match(html,/no employee name/);assert.match(html,/No named employee data/)
   h.unmount()
 })
 

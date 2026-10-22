@@ -2,48 +2,59 @@ import { employeeDeltasByDay } from './logMath.js'
 import { pct, pctN } from './insightsHelpers.js'
 
 export const EMPLOYEE_WEIGHTS = Object.freeze({ sales: 33.33, conversion: 33.33, pmix: 33.34 })
-export const MIN_EMPLOYEE_OPPORTUNITIES = 100
 const COUNTS = ['total_washes', 'member_washes', 'basic', 'good', 'better', 'best']
 const integer = v => v !== null && v !== undefined && v !== '' && typeof v !== 'boolean' && Number.isSafeInteger(Number(v)) && Number(v) >= 0
 const round = v => Math.round(v * 100) / 100
 const sales = row => ['basic', 'good', 'better', 'best'].reduce((sum, key) => sum + Number(row[key]), 0)
-const minute = slot => /^([01]\d|2[0-3]):[0-5]\d(?::00)?$/.test(slot || '') ? Number(slot.slice(0, 2)) * 60 + Number(slot.slice(3, 5)) : null
-
-// A cumulative decrease has no employee-level correction provenance. Exclude
-// the whole site-day instead of clipping negatives, guessing a recipient, or
-// redistributing sales. This selector is used ONLY by Reports > Team Sales.
-export function inspectEmployeeDay(rows, formula) {
+// Keep the existing ending-checkpoint attribution. Missing hours/days do not
+// imply missing work. A real cumulative decrease only makes earlier positive
+// contributors to that counter ambiguous; never charge its entering employee.
+export function inspectEmployeeDay(rows) {
   const sorted = [...rows].sort((a, b) => String(a.time_slot).localeCompare(String(b.time_slot)) || Number(a.split_index ?? 0) - Number(b.split_index ?? 0))
-  const issues = new Set(), slots = new Set()
-  let previous = Object.fromEntries(COUNTS.map(key => [key, 0])), previousMinute = null
-  for (const row of sorted) {
-    const at = minute(row.time_slot), split = row.split_index ?? 0, slot = `${at}:${split}`
-    if (at === null || !integer(split) || slots.has(slot)) issues.add('Invalid or duplicate hourly checkpoint')
-    slots.add(slot)
-    if (!COUNTS.every(key => integer(row[key]))) { issues.add('Missing or invalid cumulative counts'); continue }
-    if (COUNTS.some(key => Number(row[key]) < Number(previous[key]))) issues.add('Cumulative counts decreased; correction attribution is unknown')
-    const delta = Object.fromEntries(COUNTS.map(key => [key, Number(row[key]) - Number(previous[key])]))
-    const activity = COUNTS.some(key => delta[key] !== 0)
-    if (activity && !row.employee_name?.trim()) issues.add('Activity has no employee name')
-    if (activity && previousMinute !== null && at - previousMinute > 60) issues.add('Missing hourly checkpoints; employee attribution is incomplete')
-    const opportunities = delta.total_washes - delta.member_washes + (formula === 'detailed' ? sales(delta) : 0)
-    if (delta.member_washes > delta.total_washes || (formula === 'simple' && sales(delta) > opportunities)) issues.add('Inconsistent sales or wash opportunity counts')
-    previous = row
-    previousMinute = at
+  const previous = Object.fromEntries(COUNTS.map(key => [key, 0]))
+  const contributors = Object.fromEntries(COUNTS.map(key => [key, new Set()]))
+  const uncertain = new Map(), issues = new Set()
+  const mark = (name, key) => {
+    if (!name) return
+    if (!uncertain.has(name)) uncertain.set(name, new Set())
+    uncertain.get(name).add(key)
   }
-  return { reliable: issues.size === 0, issues: [...issues], rows: sorted }
+  const normalized = sorted.map(row => {
+    const current = { ...row }, name = row.employee_name?.trim().toLowerCase()
+    for (const key of COUNTS) {
+      // An absent field is not an explicit reset to zero.
+      if (row[key] == null || row[key] === '') current[key] = previous[key]
+      else if (!integer(row[key])) {
+        current[key] = previous[key]
+        mark(name, key)
+        issues.add('Invalid cumulative count; employee attribution is unknown')
+      } else current[key] = Number(row[key])
+      const delta = current[key] - previous[key]
+      if (delta < 0) {
+        contributors[key].forEach(owner => mark(owner, key))
+        issues.add('Cumulative counts decreased; earlier contributor attribution is unknown')
+      } else if (delta > 0) {
+        if (name) contributors[key].add(name)
+        else issues.add('Recorded activity has no employee name; not attributed')
+      }
+      previous[key] = current[key]
+    }
+    return current
+  })
+  return { reliable: uncertain.size === 0, issues: [...issues], uncertain, rows: normalized }
 }
 
 export function buildEmployeePerformance(data, locations, range) {
   const locationMap = new Map(locations.map(l => [l.id, l]))
-  const days = new Map(), employees = new Map(), siteIssues = new Map(), excludedDays = []
+  const days = new Map(), employees = new Map(), attributionNotes = []
   const ensure = (locationId, rawName) => {
     const name = rawName?.trim()
     if (!name) return null
     const key = `${locationId}::${name.toLowerCase()}`
     if (!employees.has(key)) employees.set(key, { key, name, locationId, site: locationMap.get(locationId).name,
       formula: locationMap.get(locationId).opportunities_formula ?? 'detailed',
-      total_washes: 0, member_washes: 0, google_reviews: 0, basic: 0, good: 0, better: 0, best: 0, knownDays: 0 })
+      total_washes: 0, member_washes: 0, google_reviews: 0, basic: 0, good: 0, better: 0, best: 0,
+      uncertain: new Set(), issues: [] })
     return employees.get(key)
   }
   for (const row of data) {
@@ -55,43 +66,43 @@ export function buildEmployeePerformance(data, locations, range) {
   }
   for (const day of days.values()) {
     const locationId = day[0].location_id, date = day[0].log_date
-    const formula = locationMap.get(locationId).opportunities_formula ?? 'detailed'
-    const check = inspectEmployeeDay(day, formula)
-    if (!['simple', 'detailed'].includes(formula)) { check.reliable = false; check.issues.push('Unknown opportunity formula') }
-    if (!check.reliable) {
-      const issues = check.issues.map(issue => `${date}: ${issue}`)
-      siteIssues.set(locationId, [...(siteIssues.get(locationId) || []), ...issues])
-      excludedDays.push({ locationId, site: locationMap.get(locationId).name, date, issues })
-      continue
-    }
+    const check = inspectEmployeeDay(day)
+    if (check.issues.length) attributionNotes.push({ locationId, site: locationMap.get(locationId).name, date, issues: check.issues })
     for (const [name, delta] of Object.entries(employeeDeltasByDay(check.rows))) {
       const employee = ensure(locationId, name)
       for (const key of [...COUNTS, 'google_reviews']) employee[key] += delta[key]
-      employee.knownDays++
+    }
+    for (const [name, fields] of check.uncertain) {
+      const employee = ensure(locationId, name)
+      fields.forEach(key => employee.uncertain.add(key))
+      employee.issues.push(`${date}: Correction or invalid count leaves ${[...fields].join(', ')} attribution unresolved`)
     }
   }
   const rows = [...employees.values()].map(e => {
-    const ms = sales(e), opp = e.formula === 'simple' ? e.total_washes - e.member_washes : e.total_washes - e.member_washes + ms
-    const issues = [...(siteIssues.get(e.locationId) || [])]
-    if (!e.knownDays) issues.push('No reliably attributed days in this period')
-    if (opp < MIN_EMPLOYEE_OPPORTUNITIES) issues.push(`Minimum ${MIN_EMPLOYEE_OPPORTUNITIES} reliably attributed opportunities required; recorded ${opp}`)
-    if (ms === 0) issues.push('P-Mix unavailable without membership sales')
-    return { ...e, ms: e.knownDays ? ms : null, opp: e.knownDays ? opp : null,
-      gr: e.knownDays ? e.google_reviews : null,
-      pmixN: ms > 0 ? pctN(e.better + e.best, ms) : null,
-      convN: opp > 0 ? pctN(ms, opp) : null,
-      p_mix: ms > 0 ? pct(e.better + e.best, ms) : '—', conversion: opp > 0 ? pct(ms, opp) : '—',
-      rate: opp > 0 ? ms / opp : null, mix: ms > 0 ? (e.better + e.best) / ms : null,
-      partial: siteIssues.has(e.locationId), issues, eligible: issues.length === 0, score: null, rank: null, contributions: null }
+    // Withhold only unresolved metrics, rather than displaying clipped,
+    // inflated totals or guessing which prior employee owns a correction.
+    const values = Object.fromEntries(COUNTS.map(key => [key, e.uncertain.has(key) ? null : e[key]]))
+    const ms = ['basic', 'good', 'better', 'best'].some(key => values[key] == null) ? null : sales(values)
+    const opp = values.total_washes == null || values.member_washes == null || (e.formula === 'detailed' && ms == null)
+      ? null : Math.max(0, values.total_washes - values.member_washes + (e.formula === 'detailed' ? ms : 0))
+    const issues = [...e.issues]
+    if (!['simple', 'detailed'].includes(e.formula)) issues.push('Unknown opportunity formula')
+    const rate = ms == null || opp == null ? null : opp > 0 ? ms / opp : 0
+    const mix = ms == null ? null : ms > 0 ? (e.better + e.best) / ms : 0
+    return { ...e, ...values, ms, opp, gr: e.google_reviews,
+      pmixN: mix == null ? null : pctN(mix, 1), convN: rate == null ? null : pctN(rate, 1),
+      p_mix: mix == null ? '—' : pct(mix, 1), conversion: rate == null ? '—' : pct(rate, 1),
+      rate, mix, partial: e.uncertain.size > 0, issues, eligible: issues.length === 0,
+      score: null, rank: null, contributions: null }
   })
   const eligible = rows.filter(r => r.eligible)
-  const highestSales = Math.max(0, ...eligible.map(r => r.ms))
-  const highestConversion = Object.fromEntries(['simple', 'detailed'].map(formula => [formula, Math.max(0, ...eligible.filter(r => r.formula === formula).map(r => r.rate))]))
+  const highestSales = Math.max(0, ...rows.filter(r => r.ms != null).map(r => r.ms))
+  const highestConversion = Object.fromEntries(['simple', 'detailed'].map(formula => [formula, Math.max(0, ...rows.filter(r => r.formula === formula && r.rate != null).map(r => r.rate))]))
   for (const row of eligible) {
     row.denominators = { sales: highestSales, conversion: highestConversion[row.formula] }
     row.contributions = {
-      sales: round(EMPLOYEE_WEIGHTS.sales * row.ms / highestSales),
-      conversion: round(EMPLOYEE_WEIGHTS.conversion * row.rate / highestConversion[row.formula]),
+      sales: highestSales > 0 ? round(EMPLOYEE_WEIGHTS.sales * row.ms / highestSales) : 0,
+      conversion: highestConversion[row.formula] > 0 ? round(EMPLOYEE_WEIGHTS.conversion * row.rate / highestConversion[row.formula]) : 0,
       pmix: round(EMPLOYEE_WEIGHTS.pmix * row.mix),
     }
     row.score = round(Object.values(row.contributions).reduce((sum, value) => sum + value, 0))
@@ -103,7 +114,7 @@ export function buildEmployeePerformance(data, locations, range) {
       r.rank = rank; previousScore = r.score
     })
   }
-  return { rows, excludedDays, highestSales, highestConversion }
+  return { rows, attributionNotes, highestSales, highestConversion }
 }
 
 export function sortEmployeeRows(rows, sort) {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { buildEmployeePerformance, sortEmployeeRows, employeeRankLabel, MIN_EMPLOYEE_OPPORTUNITIES } from '../utils/employeePerformance.js'
+import { buildEmployeePerformance, sortEmployeeRows, employeeRankLabel } from '../utils/employeePerformance.js'
 import EmployeeScoreDetails from './EmployeeScoreDetails'
 import { pmixCls, pmixTotalsCls, convCls, convTotalsCls } from '../utils/metricColors'
 import { fmtNum } from '../utils/format'
@@ -29,7 +29,7 @@ function SalesRows({ rows, showSite, sort }) {
     <>
       {sorted.map((r, i) => (
         <tr key={r.key} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
-          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-medium font-brand dark:text-tm-dark-text">{r.name}{r.partial && <span className="block text-[10px] text-amber-700 dark:text-amber-300">Partial · unreliable days excluded</span>}</td>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-medium font-brand dark:text-tm-dark-text">{r.name}{r.partial && <span className="block text-[10px] text-amber-700 dark:text-amber-300">Correction attribution unresolved</span>}</td>
           {showSite && (
             <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-gray-500 dark:text-tm-dark-muted font-brand text-xs">{r.site}</td>
           )}
@@ -54,11 +54,11 @@ function TotalsRow({ rows, showSite }) {
     totBest   += r.best    || 0
     totOpp    += r.opp     || 0
   })
-  const p_mix      = pct(totBetter + totBest, totMS)
-  const conversion = pct(totMS, totOpp)
+  const p_mix      = rows.some(r => r.ms == null) ? '—' : pct(totBetter + totBest, totMS)
+  const conversion = rows.some(r => r.ms == null || r.opp == null) ? '—' : pct(totMS, totOpp)
   return (
     <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
-      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">{rows.some(r => r.partial) ? 'Known-day subtotal' : 'Totals'}</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">{rows.some(r => r.partial) ? 'Known attributed subtotal' : 'Totals'}</td>
       {showSite && <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2" />}
       <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totMS)}</td>
       <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totGR)}</td>
@@ -92,10 +92,10 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
     <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
   )
 
-  const { rows: allRows, excludedDays } = buildEmployeePerformance(data, locations, dateRange)
+  const { rows: allRows, attributionNotes } = buildEmployeePerformance(data, locations, dateRange)
 
   if (!allRows.length) return (
-    <div role="status" className="text-sm text-gray-500 dark:text-tm-dark-muted py-4">No reliably attributed employee data for this period. {excludedDays.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.issues.join('; ')}</p>)}</div>
+    <div role="status" className="text-sm text-gray-500 dark:text-tm-dark-muted py-4">No named employee data for this period. {attributionNotes.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.issues.join('; ')}</p>)}</div>
   )
 
   const TableHead = ({ cols }) => (
@@ -132,15 +132,15 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
       { label: 'Scoring / attribution status', type: 'text' },
     ],
     rows: sortEmployeeRows(allRows, sort).map(r => [r.name, r.site, r.ms ?? '', r.gr ?? '', r.p_mix, r.conversion, r.score ?? '', employeeRankLabel(r), r.issues.join('; ') || 'Eligible']),
-    totalsRow: [excludedDays.length ? 'Known-day subtotal' : 'Totals', '', totMS, totGR, pct(totBetter + totBest, totMS), pct(totMS, totOpp), '', '', ''],
+    totalsRow: [allRows.some(r => r.partial) ? 'Known attributed subtotal' : 'Totals', '', totMS, totGR, allRows.some(r => r.ms == null) ? '—' : pct(totBetter + totBest, totMS), allRows.some(r => r.ms == null || r.opp == null) ? '—' : pct(totMS, totOpp), '', '', ''],
   }
 
   return (
     <div>
-      <p className="text-xs mb-3 text-gray-600 dark:text-gray-300">Recorded employee/site activity: Sales 33.33 + Conversion 33.33 + P-Mix 33.34 = 100 points. Official eligibility requires {MIN_EMPLOYEE_OPPORTUNITIES} opportunities, membership sales, and reliable attribution. Conversion benchmarks and ranks are separate for Simple/Detailed formulas. Display filters define the comparison pool. Google Reviews do not affect scoring.</p>
-      {excludedDays.length > 0 && <div role="status" className="text-xs mb-3 text-amber-800 dark:text-amber-300">
-        Unreliable site-days are excluded from employee totals; all employee scores for the affected site/period are withheld. Totals below are known-day subtotals, not complete shop totals.
-        <details><summary className="cursor-pointer">Attribution issues · {excludedDays.length} excluded site-days</summary>{excludedDays.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.date}: {day.issues.join('; ')}</p>)}</details>
+      <p className="text-xs mb-3 text-gray-600 dark:text-gray-300">Recorded employee/site activity: Sales 33.33 + Conversion 33.33 + P-Mix 33.34 = 100 points. No minimum opportunities, sales, days or hours are required. Zero sales, zero opportunities and no memberships earn zero points in their respective categories. Missing shifts do not disqualify employees. Conversion benchmarks and ranks are separate for Simple/Detailed formulas. Display filters define the comparison pool. Google Reviews do not affect scoring.</p>
+      {attributionNotes.length > 0 && <div role="status" className="text-xs mb-3 text-amber-800 dark:text-amber-300">
+        Only employees with unresolved correction attribution have affected figures and scores withheld. Other recorded activity remains scored. Subtotals include known attributed figures; no correction is assigned to an employee by guesswork.
+        <details><summary className="cursor-pointer">Attribution notes · {attributionNotes.length} site-days</summary>{attributionNotes.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.date}: {day.issues.join('; ')}</p>)}</details>
       </div>}
       <div className="flex justify-end gap-2 mb-3">
         <ExportMenu items={[
