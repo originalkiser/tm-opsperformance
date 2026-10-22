@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { employeeDeltasByDay } from '../utils/logMath'
+import { buildEmployeePerformance, sortEmployeeRows, employeeRankLabel, MIN_EMPLOYEE_OPPORTUNITIES } from '../utils/employeePerformance.js'
+import EmployeeScoreDetails from './EmployeeScoreDetails'
 import { pmixCls, pmixTotalsCls, convCls, convTotalsCls } from '../utils/metricColors'
 import { fmtNum } from '../utils/format'
-import { pct, pctN, thCls } from '../utils/insightsHelpers'
+import { pct, thCls } from '../utils/insightsHelpers'
 import { exportCsv, exportXlsx, exportPdf } from '../utils/exportTable'
 import { fmtDateRange } from './DateSelector'
 import ExportMenu from './ExportMenu'
@@ -22,27 +23,22 @@ function useSortState(defaultCol, defaultDir = 'desc') {
 }
 
 function SalesRows({ rows, showSite, sort }) {
-  const sorted = [...rows].sort((a, b) => {
-    const dir = sort.dir === 'asc' ? 1 : -1
-    if (sort.col === 'name') return dir * a.name.localeCompare(b.name)
-    if (sort.col === 'site') return dir * (a.site ?? '').localeCompare(b.site ?? '')
-    if (sort.col === 'p_mix')      return dir * ((a.pmixN ?? -1) - (b.pmixN ?? -1))
-    if (sort.col === 'conversion') return dir * ((a.convN ?? -1) - (b.convN ?? -1))
-    return dir * ((a[sort.col] ?? 0) - (b[sort.col] ?? 0))
-  })
+  const sorted = sortEmployeeRows(rows, sort)
 
   return (
     <>
       {sorted.map((r, i) => (
         <tr key={r.key} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
-          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-medium font-brand dark:text-tm-dark-text">{r.name}</td>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 font-medium font-brand dark:text-tm-dark-text">{r.name}{r.partial && <span className="block text-[10px] text-amber-700 dark:text-amber-300">Partial · unreliable days excluded</span>}</td>
           {showSite && (
             <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-gray-500 dark:text-tm-dark-muted font-brand text-xs">{r.site}</td>
           )}
-          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{fmtNum(r.ms)}</td>
-          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{fmtNum(r.gr)}</td>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{r.ms == null ? '—' : fmtNum(r.ms) || '0'}</td>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-mono dark:text-tm-dark-text">{r.gr == null ? '—' : fmtNum(r.gr) || '0'}</td>
           <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${pmixCls(r.p_mix)}`}>{r.p_mix}</td>
           <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${convCls(r.conversion)}`}>{r.conversion}</td>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center"><EmployeeScoreDetails row={r} /></td>
+          <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center whitespace-nowrap">{employeeRankLabel(r)}</td>
         </tr>
       ))}
     </>
@@ -62,12 +58,14 @@ function TotalsRow({ rows, showSite }) {
   const conversion = pct(totMS, totOpp)
   return (
     <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
-      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">Totals</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 font-brand dark:text-tm-dark-text">{rows.some(r => r.partial) ? 'Known-day subtotal' : 'Totals'}</td>
       {showSite && <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2" />}
       <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totMS)}</td>
       <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">{fmtNum(totGR)}</td>
       <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${pmixTotalsCls(p_mix)}`}>{p_mix}</td>
       <td className={`border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center ${convTotalsCls(conversion)}`}>{conversion}</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center">—</td>
+      <td className="border border-gray-300 dark:border-tm-dark-border px-3 py-2 text-center">—</td>
     </tr>
   )
 }
@@ -79,80 +77,33 @@ const COLS_COMBINED = [
   { key: 'gr',         label: 'Google Reviews' },
   { key: 'p_mix',      label: 'P-Mix'          },
   { key: 'conversion', label: 'Conversion'     },
+  { key: 'score', label: 'Score' },
+  { key: 'rank', label: 'Rank' },
 ]
 const COLS_SPLIT = COLS_COMBINED.filter(c => c.key !== 'site')
 
-export default function TeamSalesTable({ data, locations, dateRange }) {
+export default function TeamSalesTable({ data, locations, dateRange, dataComplete = true }) {
   const [splitByShop, setSplitByShop] = useState(false)
   const [sort, toggleSort]            = useSortState('ms', 'desc')
+
+  if (!dataComplete) return <p role="alert" className="text-sm text-red-600">Team Sales data is incomplete or still loading. Reload the report before scoring.</p>
 
   if (!data.length) return (
     <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
   )
 
-  const dayMap = {}
-  data.forEach(r => {
-    const key = `${r.location_id}::${r.log_date}`
-    if (!dayMap[key]) dayMap[key] = { locationId: r.location_id, rows: [] }
-    dayMap[key].rows.push(r)
-  })
-
-  const empAccum = {}
-  Object.values(dayMap).forEach(({ locationId, rows }) => {
-    const deltas = employeeDeltasByDay(rows)
-    Object.entries(deltas).forEach(([name, d]) => {
-      const key = `${locationId}::${name.toLowerCase()}`
-      if (!empAccum[key]) {
-        empAccum[key] = {
-          key, name, locationId,
-          site: locations.find(l => l.id === locationId)?.name ?? '',
-          total_washes: 0, member_washes: 0, google_reviews: 0,
-          basic: 0, good: 0, better: 0, best: 0,
-        }
-      }
-      const e = empAccum[key]
-      e.total_washes   += d.total_washes
-      e.member_washes  += d.member_washes
-      e.google_reviews += d.google_reviews
-      e.basic          += d.basic
-      e.good           += d.good
-      e.better         += d.better
-      e.best           += d.best
-    })
-  })
-
-  const allRows = Object.values(empAccum).map(e => {
-    const ms  = e.basic + e.good + e.better + e.best
-    const formula = locations.find(l => l.id === e.locationId)?.opportunities_formula
-    const opp = formula === 'simple'
-      ? Math.max(0, e.total_washes - e.member_washes)
-      : Math.max(0, e.total_washes - e.member_washes + ms)
-    return {
-      key:        e.key,
-      name:       e.name,
-      locationId: e.locationId,
-      site:       e.site,
-      ms, opp,
-      gr:         e.google_reviews,
-      better:     e.better,
-      best:       e.best,
-      pmixN:      pctN(e.better + e.best, ms),
-      convN:      pctN(ms, opp),
-      p_mix:      pct(e.better + e.best, ms),
-      conversion: pct(ms, opp),
-    }
-  })
+  const { rows: allRows, excludedDays } = buildEmployeePerformance(data, locations, dateRange)
 
   if (!allRows.length) return (
-    <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No employee data entered for this period.</div>
+    <div role="status" className="text-sm text-gray-500 dark:text-tm-dark-muted py-4">No reliably attributed employee data for this period. {excludedDays.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.issues.join('; ')}</p>)}</div>
   )
 
   const TableHead = ({ cols }) => (
     <thead>
       <tr className="bg-tm-blue dark:bg-tm-navy text-white">
         {cols.map(c => (
-          <th key={c.key} className={`${thCls} text-left`} onClick={() => toggleSort(c.key)}>
-            {c.label}<SortIcon active={sort.col === c.key} dir={sort.dir} />
+          <th key={c.key} scope="col" aria-sort={sort.col === c.key ? sort.dir === 'asc' ? 'ascending' : 'descending' : 'none'} className={`${thCls} text-left`}>
+            <button type="button" className="w-full text-left" onClick={() => toggleSort(c.key)}>{c.label}<SortIcon active={sort.col === c.key} dir={sort.dir} /></button>
           </th>
         ))}
       </tr>
@@ -176,15 +127,21 @@ export default function TeamSalesTable({ data, locations, dateRange }) {
       { label: 'Google Reviews', type: 'num'  },
       { label: 'P-Mix',          type: 'pmix' },
       { label: 'Conversion',     type: 'conv' },
+      { label: 'Score', type: 'num' },
+      { label: 'Rank (formula cohort)', type: 'text' },
+      { label: 'Scoring / attribution status', type: 'text' },
     ],
-    rows: [...allRows]
-      .sort((a, b) => (b.ms ?? 0) - (a.ms ?? 0))
-      .map(r => [r.name, r.site, r.ms, r.gr, r.p_mix, r.conversion]),
-    totalsRow: ['Totals', '', totMS, totGR, pct(totBetter + totBest, totMS), pct(totMS, totOpp)],
+    rows: sortEmployeeRows(allRows, sort).map(r => [r.name, r.site, r.ms ?? '', r.gr ?? '', r.p_mix, r.conversion, r.score ?? '', employeeRankLabel(r), r.issues.join('; ') || 'Eligible']),
+    totalsRow: [excludedDays.length ? 'Known-day subtotal' : 'Totals', '', totMS, totGR, pct(totBetter + totBest, totMS), pct(totMS, totOpp), '', '', ''],
   }
 
   return (
     <div>
+      <p className="text-xs mb-3 text-gray-600 dark:text-gray-300">Recorded employee/site activity: Sales 33.33 + Conversion 33.33 + P-Mix 33.34 = 100 points. Official eligibility requires {MIN_EMPLOYEE_OPPORTUNITIES} opportunities, membership sales, and reliable attribution. Conversion benchmarks and ranks are separate for Simple/Detailed formulas. Display filters define the comparison pool. Google Reviews do not affect scoring.</p>
+      {excludedDays.length > 0 && <div role="status" className="text-xs mb-3 text-amber-800 dark:text-amber-300">
+        Unreliable site-days are excluded from employee totals; all employee scores for the affected site/period are withheld. Totals below are known-day subtotals, not complete shop totals.
+        <details><summary className="cursor-pointer">Attribution issues · {excludedDays.length} excluded site-days</summary>{excludedDays.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.date}: {day.issues.join('; ')}</p>)}</details>
+      </div>}
       <div className="flex justify-end gap-2 mb-3">
         <ExportMenu items={[
           { label: 'Excel (.xlsx)', run: () => exportXlsx(exportSpec) },
