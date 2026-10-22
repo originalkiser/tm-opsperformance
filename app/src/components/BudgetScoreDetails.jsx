@@ -1,10 +1,12 @@
 import { SCORE_LABELS, SCORE_WEIGHTS } from '../utils/budgetScoring'
 
+export const formatBudgetScore = result => !result ? '—' : result.score != null ? result.score.toFixed(1) : result.previewPoints != null ? `Provisional preview: ${result.previewPoints.toFixed(1)} / ${result.availableWeight} available points` : 'Unavailable'
+
 export default function BudgetScoreDetails({ result }) {
   if (!result) return <span>—</span>
   return <div className="text-gray-800 dark:text-gray-100">
     <div className={result.score == null ? 'text-amber-800 dark:text-amber-300' : 'font-bold text-tm-blue dark:text-tm-teal'}>
-      {result.score != null ? result.score.toFixed(1) : result.previewPoints != null ? `Provisional preview: ${result.previewPoints.toFixed(1)} / ${result.availableWeight} available points` : 'Unavailable'}
+      {formatBudgetScore(result)}
     </div>
     {result.score == null && <div className="text-[10px] font-normal">Unranked · no official score or rank · not scaled to 100</div>}
     <details className="mt-1 text-[10px] font-normal text-left">
