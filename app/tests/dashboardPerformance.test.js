@@ -7,6 +7,8 @@ import { transformSync } from 'esbuild'
 import { businessToday, currentMtdRange, loadPerformanceLogs, selectTodayPerformance } from '../src/utils/dashboardPerformance.js'
 import * as helpers from '../src/utils/insightsHelpers.js'
 import * as colors from '../src/utils/metricColors.js'
+import { netMembersCls } from '../src/utils/netMemberColors.js'
+import { compareNetMembers } from '../src/utils/dashboardNetMembers.js'
 import { fmtNum } from '../src/utils/format.js'
 
 const sites = [{ id:'east', name:'Fictional East', timezone:'America/New_York', opportunities_formula:'simple', metric_thresholds:{conv_red:20,conv_yellow:30,pmix_green:90} }, {id:'west',name:'Fictional West',timezone:'America/Los_Angeles'}]
@@ -54,7 +56,7 @@ test('daily queries page all company IDs, stay read-only, and reject incomplete 
 function tableModule(useState=React.useState){
  const text=readFileSync(new URL('../src/components/SiteMetricTable.jsx',import.meta.url),'utf8').replace(/^import .*\r?\n/gm,'')
  const module={exports:{}}
- const deps={React,useState,...helpers,...colors,fmtNum,BudgetSourceNote:()=>null,ExportMenu:()=>null,fmtDateRange:()=> 'October'}
+ const deps={React,useState,...helpers,...colors,netMembersCls,compareNetMembers,fmtNum,BudgetSourceNote:()=>null,ExportMenu:()=>null,fmtDateRange:()=> 'October'}
  new Function('module','exports',...Object.keys(deps),transformSync(text,{loader:'jsx',format:'cjs'}).code)(module,module.exports,...Object.values(deps))
  return module.exports
 }
@@ -117,5 +119,22 @@ test('company Today and MTD presentations retain all four reporting locations in
   const html = renderToStaticMarkup(React.createElement(Table, { source, locations:company, dateRange:{}, daily }))
   for (const site of company) assert(html.includes(site.name))
   assert.match(html, daily ? /No Update Yet/ : /MTD unavailable/)
+ }
+})
+
+test('Dashboard Net Members column sorts signed values, keeps unknown last and colors both tables', () => {
+ const company=[{id:'positive',name:'Positive'},{id:'missing',name:'Unknown'},{id:'negative',name:'Negative'},{id:'zero',name:'Zero'}]
+ const netMembers={positive:{value:4},missing:{value:null},negative:{value:-3},zero:{value:0}}
+ for(const daily of [true,false]) {
+  for(const dir of ['asc','desc']) {
+   const Table=tableModule(()=>[{col:'nm',dir},()=>{}]).PerformanceTable
+   const html=renderToStaticMarkup(React.createElement(Table,{source:{totals:[],notes:[],active:false},locations:company,dateRange:{},netMembers,daily}))
+   assert.match(html,/>Net Members</)
+   assert.match(html,/bg-red-100/);assert.match(html,/bg-yellow-100/);assert.match(html,/bg-green-100/)
+   assert.match(html,/Net Members subtotal excludes unavailable/)
+   assert.match(html,/overflow-x-auto/)
+   const expected=dir==='asc'?['Negative','Zero','Positive','Unknown']:['Positive','Zero','Negative','Unknown']
+   for(let i=0;i<expected.length-1;i++) assert(html.indexOf(expected[i])<html.indexOf(expected[i+1]))
+  }
  }
 })
