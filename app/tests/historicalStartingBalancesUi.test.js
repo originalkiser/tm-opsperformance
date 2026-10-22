@@ -65,8 +65,11 @@ test('Admin with no Budget sites sees an empty message rather than a broken edit
 test('report retains starting-balance calculations but exposes no historical editing controls', () => {
   const report = read('../src/components/BudgetTrackingReport.jsx')
   assert.doesNotMatch(report, /AdminStartingBalancePanel|RevenueStartingBalanceEditor|balancePanelOpen|balanceTools|Admin starting balances/)
-  assert.match(report, /fetchStartingBalances\(supabase, locIds, todayStr\(\)\)/)
-  assert.match(report, /calculateMtdRevenue\(dailyEntries, loc.id, todayStr\(\), startingBalances.find/)
+  assert.match(report, /useBudgetReport\(locations/)
+  const loader = read('../src/hooks/useBudgetReport.js')
+  const rows = read('../src/utils/budgetReportRows.js')
+  assert.match(loader, /fetchStartingBalances\(supabase, locIds, reportingDate\)/)
+  assert.match(rows, /calculateMtdRevenue\(entries, loc.id, reportingDate, startingBalances.find/)
   assert.match(report, /AdminCashOnHandPanel/)
   const admin = read('../src/pages/Admin.jsx')
   assert.match(admin, /isAdmin && tab === 'budget_tracking'/)

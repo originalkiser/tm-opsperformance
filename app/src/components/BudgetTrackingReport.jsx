@@ -1,28 +1,21 @@
+import useBudgetReport from '../hooks/useBudgetReport'
+import { budgetReportPeriod } from '../utils/budgetReportRows'
 import AdminCashOnHandPanel from './AdminCashOnHandPanel'
 import CashReconciliationSection from './CashReconciliationSection'
 import BudgetRevenueFields from './BudgetRevenueFields'
 import { reportedRevenuePace } from '../utils/budgetRevenueReporting'
 import { useAuth } from '../contexts/AuthContext'
-import { calculateMtdRevenue, fetchRevenueEntries, latestHistoricalRevenue, fetchStartingBalances } from '../utils/budgetRevenue'
 import useBudgetDailyEntry from '../hooks/useBudgetDailyEntry'
 import BudgetRevenueSummary from './BudgetRevenueSummary'
 import BudgetRevenueNotes from './BudgetRevenueNotes'
 import BudgetScoreDetails from './BudgetScoreDetails'
 import BudgetCashCell from './BudgetCashCell'
-import { reportCash, reportMetricFormatting } from '../utils/budgetReportFormatting'
 import { REPORT_STATUS_CLS } from '../utils/metricColors'
-import { scoreBudgetLocations } from '../utils/budgetScoring'
-import { watchBudgetReport } from '../utils/budgetReportRefresh'
-import { displayMoney, displayCount, revenueDisplayPlan } from '../utils/budgetDisplay'
-import { useState, useEffect, useMemo } from 'react'
-import { supabase } from '../lib/supabase'
+import { displayMoney, displayCount } from '../utils/budgetDisplay'
+import { useState } from 'react'
 import TmLoader from './TmLoader'
 import { PaceBadge } from './BudgetTrackingSection'
-import {
-  toDateStr, firstOfMonth,
-  yesterdayMetrics, mtdMetrics, membershipStatus, membershipPace,
-  pct1,
-} from '../utils/budgetMath'
+import { toDateStr, pct1 } from '../utils/budgetMath'
 import {
   YESTERDAY_FIELDS, MTD_FIELDS,
   isFieldMissing, isDayComplete,
@@ -141,63 +134,14 @@ function EditModal({ location, onClose }) {
 
 // ── Main report ───────────────────────────────────────────────────────────────
 
-export default function BudgetTrackingReport({ locations }) {
+export default function BudgetTrackingReport({ locations, dateRange }) {
   const { profile } = useAuth()
-  const [targets, setTargets]     = useState([])
-  const [dailyEntries, setDailyEntries] = useState([])
-  const [startingBalances, setStartingBalances] = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [reportError, setReportError] = useState('')
+  const { reportingDate, supported } = budgetReportPeriod(dateRange)
+  const { rows, loading, error: reportError, refresh: fetchAll } = useBudgetReport(locations, supported ? reportingDate : null)
   const [editingLoc, setEditingLoc] = useState(null)
 
-  useEffect(() => {
-    fetchAll()
-    return watchBudgetReport(() => fetchAll(false))
-  }, [locations])
-
-  const fetchAll = async (showLoading = true) => {
-    if (showLoading) setLoading(true)
-    const locIds = locations.map(l => l.id)
-    if (!locIds.length) { setLoading(false); return }
-
-    setReportError('')
-    try {
-      const [result, entries, balances] = await Promise.all([
-        supabase.from('budget_targets').select('*').in('location_id', locIds).eq('target_month', firstOfMonth(todayStr())),
-        fetchRevenueEntries(supabase, locIds, todayStr()),
-        fetchStartingBalances(supabase, locIds, todayStr()),
-      ])
-      if (result.error) throw result.error
-      setTargets(result.data || [])
-      setDailyEntries(entries)
-      setStartingBalances(balances)
-    } catch {
-      setDailyEntries([])
-      setReportError('Unable to load the report. Revenue totals and pace are unavailable; please reload.')
-    } finally { setLoading(false) }
-  }
-
-  const rows = useMemo(() => {
-    const scoring = scoreBudgetLocations({ locations, targets, entries: dailyEntries, balances: startingBalances }, todayStr())
-    return scoring.rows.map(scoringResult => {
-      const loc = scoringResult.loc
-      const target = targets.find(t => t.location_id === loc.id)
-      const entry  = dailyEntries.filter(e => e.location_id === loc.id).sort((a, b) => b.entry_date.localeCompare(a.entry_date))[0]
-      const yst    = yesterdayMetrics(entry)
-      const mtd    = mtdMetrics(entry)
-      const revenue = calculateMtdRevenue(dailyEntries, loc.id, todayStr(), startingBalances.find(balance => balance.location_id === loc.id))
-      const historicalRevenue = latestHistoricalRevenue(dailyEntries, loc.id, todayStr(), revenue.startingBalance)
-      const rev    = reportedRevenuePace(revenue, historicalRevenue, target?.revenue_goal)
-      const mem    = membershipStatus(entry?.mtd_membership_actual, target?.membership_goal, todayStr())
-      const memPace = membershipPace(entry?.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, todayStr())
-      const plan = revenueDisplayPlan(revenue, historicalRevenue, target?.revenue_goal)
-      const formatting = reportMetricFormatting(entry, target, loc, todayStr(), plan, rev.reported)
-      const cash = reportCash(entry, todayStr())
-      return { loc, target, entry, yst, mtd, rev, mem, memPace, score: scoringResult.score, rank: scoringResult.rank, scoringResult, revenue, historicalRevenue, plan, formatting, cash }
-    })
-  }, [locations, targets, dailyEntries, startingBalances])
-
   const cashTools = profile?.role === 'admin' && <AdminCashOnHandPanel locations={locations} />
+  if (!supported) return <p className="text-sm text-gray-500">Budget scoring requires a month-to-date range ending on a morning reporting date no later than today. The entry covers through the prior business day.</p>
   if (loading) return <div>{cashTools}<div className="flex justify-center py-12"><TmLoader /></div></div>
   if (reportError) return <div>{cashTools}<p role="alert" className="text-red-600">{reportError}</p></div>
   if (!locations.length) return <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-10 text-center">No sites have Budget Tracking enabled yet. Turn it on in Admin → Locations.</div>
@@ -205,6 +149,7 @@ export default function BudgetTrackingReport({ locations }) {
   return (
     <div>
       {cashTools}
+      <p className="text-xs mb-3 text-gray-500">Morning reporting entry: {reportingDate}. MTD covers through the prior business day; rankings use all accessible eligible Budget sites.</p>
       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-tm-dark-border">
         <table className="w-full text-xs font-brand border-collapse">
           <thead>

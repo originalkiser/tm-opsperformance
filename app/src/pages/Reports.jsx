@@ -8,7 +8,7 @@ import TmLoader from '../components/TmLoader'
 import DateSelector, { fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
 import { MarketMultiSelect, ShopMultiSelect } from '../components/FilterControls'
 import NetworkDayView from '../components/NetworkDayView'
-import SiteMetricTable from '../components/SiteMetricTable'
+import SitePerformanceReport from '../components/SitePerformanceReport'
 import TeamSalesTable from '../components/TeamSalesTable'
 import DailyTrendsSection from '../components/DailyTrendsSection'
 import DayOfWeekSection from '../components/DayOfWeekSection'
@@ -438,7 +438,7 @@ export default function Reports() {
               loading ? <div className="flex justify-center py-12"><TmLoader /></div> : (
                 <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
                   <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-4 font-brand">{rangeLabel}</p>
-                  <SiteMetricTable data={filterLogs(logs)} locations={visibleLocations} dateRange={dateRange} />
+                  <SitePerformanceReport data={filterLogs(logs)} locations={visibleLocations} scoringLocations={budgetLocations} dateRange={dateRange} />
                 </div>
               )
             )}
@@ -538,7 +538,7 @@ export default function Reports() {
 
             {/* Budget Tracking */}
             {activeReport === 'budget' && (
-              <BudgetTrackingReport locations={budgetLocations} />
+              <BudgetTrackingReport locations={budgetLocations} dateRange={dateRange} />
             )}
 
             {/* Ownership Log */}
