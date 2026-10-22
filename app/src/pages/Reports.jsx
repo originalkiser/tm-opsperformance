@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
+import { fetchEmployeeLogs } from '../utils/employeePerformance.js'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -219,6 +220,9 @@ export default function Reports() {
   const [downtimeLogs,  setDowntimeLogs]  = useState([])
   const [loading,       setLoading]       = useState(false)
 
+  const [teamLogState, setTeamLogState] = useState(null)
+  const teamRequest = useRef(0)
+
   // Shared filters
   const [selectedShops,   setSelectedShops]   = useState(() => jumpTo?.locationId ? [jumpTo.locationId] : null)
   const [selectedMarkets, setSelectedMarkets] = useState(() => {
@@ -256,6 +260,8 @@ export default function Reports() {
     ? marketLocations
     : marketLocations.filter(l => selectedShops.includes(l.id))
 
+  const teamScope = `${locations.map(l => l.id).sort().join(',')}:${dateRange.start}:${dateRange.end}`
+
   // Fetch bulk log data for reports that need a date range
   useEffect(() => {
     if (!report.filterNeeds.date || report.filterNeeds.date === 'single') return
@@ -272,6 +278,17 @@ export default function Reports() {
   const fetchLogs = async () => {
     setLoading(true)
     const locIds = locations.map(l => l.id)
+    if (activeReport === 'team') {
+      const request = ++teamRequest.current
+      setTeamLogState(null)
+      try {
+        const rows = await fetchEmployeeLogs(supabaseClient, locIds, dateRange)
+        if (request === teamRequest.current) setTeamLogState({ scope: teamScope, rows, complete: true })
+      } catch {
+        if (request === teamRequest.current) setTeamLogState({ scope: teamScope, rows: [], complete: false })
+      } finally { if (request === teamRequest.current) setLoading(false) }
+      return
+    }
     const PAGE = 4000
     const all = []
     for (let from = 0; ; from += PAGE) {
@@ -448,7 +465,7 @@ export default function Reports() {
               loading ? <div className="flex justify-center py-12"><TmLoader /></div> : (
                 <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
                   <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-4 font-brand">{rangeLabel}</p>
-                  <TeamSalesTable data={filterLogs(logs)} locations={visibleLocations} dateRange={dateRange} />
+                  <TeamSalesTable data={filterLogs(teamLogState?.scope === teamScope ? teamLogState.rows : [])} dataComplete={teamLogState?.scope === teamScope && teamLogState.complete} locations={visibleLocations} dateRange={dateRange} />
                 </div>
               )
             )}
