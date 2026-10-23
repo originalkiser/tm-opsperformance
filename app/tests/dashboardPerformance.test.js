@@ -1,3 +1,4 @@
+import { kpiTableBindings } from './helpers/kpiTableBindings.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import React from 'react'
@@ -56,7 +57,7 @@ test('daily queries page all company IDs, stay read-only, and reject incomplete 
 function tableModule(useState=React.useState){
  const text=readFileSync(new URL('../src/components/SiteMetricTable.jsx',import.meta.url),'utf8').replace(/^import .*\r?\n/gm,'')
  const module={exports:{}}
- const deps={React,useState,...helpers,...colors,netMembersCls,compareNetMembers,fmtNum,BudgetSourceNote:()=>null,ExportMenu:()=>null,fmtDateRange:()=> 'October'}
+ const deps={React,useState,...kpiTableBindings(useState === React.useState ? undefined : useState()[0]),...helpers,...colors,netMembersCls,compareNetMembers,fmtNum,BudgetSourceNote:()=>null,ExportMenu:()=>null,fmtDateRange:()=> 'October'}
  new Function('module','exports',...Object.keys(deps),transformSync(text,{loader:'jsx',format:'cjs'}).code)(module,module.exports,...Object.values(deps))
  return module.exports
 }

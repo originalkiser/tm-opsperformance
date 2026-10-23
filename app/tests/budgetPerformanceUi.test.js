@@ -1,3 +1,4 @@
+import { kpiTableBindings } from './helpers/kpiTableBindings.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import React from 'react'
@@ -24,7 +25,7 @@ const source = selectPerformanceSources(logs, entries, [location], range, '2026-
 const Note = component('BudgetSourceNote', { React })
 
 test('Site Performance renders authoritative MTD and a collapsed source explanation, not covered logs', () => {
-  const Table = component('SiteMetricTable', { React, useState: React.useState, ...helpers, ...colors, fmtNum,
+  const Table = component('SiteMetricTable', { ...kpiTableBindings(), React, useState: React.useState, ...helpers, ...colors, fmtNum,
     useBudgetPerformance: () => source, BudgetSourceNote: Note, ExportMenu: () => null, fmtDateRange: () => 'October' })
   const html = renderToStaticMarkup(React.createElement(Table, { data: logs, locations: [location], dateRange: range }))
   assert.match(html, /1,000/)
