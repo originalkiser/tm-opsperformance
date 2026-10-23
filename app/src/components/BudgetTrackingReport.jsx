@@ -175,7 +175,7 @@ export default function BudgetTrackingReport({ locations, dateRange }) {
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.loc.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-card'}>
-                <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{r.score != null && r.entry ? r.rank : 'Unranked'}</td>
+                <td className="px-3 py-2 text-center font-bold text-tm-blue dark:text-tm-teal">{r.rank ?? '—'}</td>
                 <td className="px-3 py-2 font-semibold text-gray-700 dark:text-tm-dark-text whitespace-nowrap">{r.loc.name}</td>
                 <td className={`px-3 py-2 text-center font-semibold ${REPORT_STATUS_CLS[r.formatting.yesterdayConversion]}`}>{pct1(r.formatting.yesterdayAvailable ? r.yst.conversion : null)}</td>
                 <td className={`px-3 py-2 text-center font-semibold ${REPORT_STATUS_CLS[r.formatting.yesterdayPmix]}`}>{pct1(r.formatting.yesterdayAvailable ? r.yst.pmix : null)}</td>
@@ -187,7 +187,7 @@ export default function BudgetTrackingReport({ locations, dateRange }) {
                 <td className="px-3 py-2 text-center text-gray-800 dark:text-gray-100">{pct1(r.plan.progress)}</td>
                 <td className="px-3 py-2 text-center text-gray-800 dark:text-gray-100">{displayCount(r.entry?.mtd_membership_actual)}</td>
                 <td className="px-3 py-2 text-center">{r.formatting.membershipOnTrack == null ? <span className={REPORT_STATUS_CLS.neutral}>—</span> : <PaceBadge onTrack={r.formatting.membershipOnTrack} label={r.formatting.membershipOnTrack ? 'On Track' : 'Off Track'} />}</td>
-                <td className="px-3 py-2"><BudgetRevenueNotes revenue={r.revenue} historical={r.historicalRevenue} monthlyGoal={r.target?.revenue_goal} /></td>
+                <td className="px-3 py-2"><BudgetRevenueNotes reportingDate={reportingDate} revenue={r.revenue} historical={r.historicalRevenue} monthlyGoal={r.target?.revenue_goal} /></td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{r.entry?.current_rating ?? '—'}</td>
                 <td className="px-3 py-2 text-center"><BudgetScoreDetails result={r.scoringResult} /></td>
                 <td className="px-2 py-2 text-center">

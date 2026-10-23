@@ -1,5 +1,8 @@
 # Seven-category Budget Tracking scoring
 
+> Scoring policy update: the completeness/withheld-score rules below are historical.
+> See [Inclusive monthly scoring](inclusive-budget-scoring-policy.md) for the current draft policy: all eligible sites receive a numeric score and rank, with zero points for unsupported categories.
+
 Approved weights: MTD conversion 20, MTD total revenue 20, MTD P-Mix 10,
 MTD total washes 10, revenue to plan 15, net membership growth 15, rating 10.
 Every component is capped; the total cannot exceed 100.

@@ -1,5 +1,8 @@
 # Site Performance / Budget Tracking score parity
 
+> Scoring policy update: the completeness/withheld-score rules below are historical.
+> See [Inclusive monthly scoring](inclusive-budget-scoring-policy.md) for the current draft policy: all eligible sites receive a numeric score and rank, with zero points for unsupported categories.
+
 PR #29 uses the existing `app/src/utils/budgetScoring.js` `scoreBudgetLocations` as the only official scoring model. Its implementation is unchanged. Both reports now consume `useBudgetReport` and `buildBudgetReportRows`, and render `BudgetScoreDetails` / `formatBudgetScore` for the same official score or unnormalized provisional preview.
 
 ## Sources and weights

@@ -40,3 +40,12 @@ test('complete automatic totals take precedence and absent sources remain unavai
 test('reported MTD is site/month/as-of scoped and zero remains valid',()=>{
  assert.deepEqual(latestHistoricalRevenue([row('2026-10-05',0),row('2026-10-20',1000),{...row('2026-10-10',999),location_id:'other'}],'site','2026-10-12'),{amount:0,entryDate:'2026-10-05'})
 })
+
+test('scored reports can pin revenue pace to the selected cutoff without relabeling the source or changing entry defaults',()=>{
+ const auto=calculateMtdRevenue([],'site','2026-10-25')
+ const source={amount:40000,entryDate:'2026-10-11'}
+ const report=reportedRevenuePace(auto,source,100000,'2026-10-25')
+ assert.equal(report.reported.throughDate,'2026-10-10');assert.equal(report.reported.provisional,true)
+ assert.equal(report.paceRatio,.4/(24/31));assert.equal(report.onTrack,false)
+ assert.equal(reportedRevenuePace(auto,source,100000).onTrack,true,'data-entry behavior without a reporting-date override is unchanged')
+})

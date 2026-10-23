@@ -16,17 +16,18 @@ test('all 20 eligible sites remain visible even with missing, stale, incomplete 
     if(i===3)data.balances[i].cutoff_business_date='2026-10-01'
   }
   const r=scoreBudgetLocations(data,'2026-10-03');assert.equal(r.rows.length,20)
-  for(const id of ['0','1','2','3']){const row=r.rows.find(x=>x.id===id);assert.equal(row.rank,null);assert.equal(row.score,null);assert(row.issues.length>0)}
+  for(const id of ['0','1','2','3']){const row=r.rows.find(x=>x.id===id);assert(Number.isInteger(row.rank));assert(Number.isFinite(row.score));assert(row.issues.length>0)}
 })
 test('submitting missing revenue and correcting historical revenue automatically rebuild scores and ranks',()=>{
   const data=fixture();data.balances[1].cutoff_business_date='2026-10-01';data.entries[1].yesterday_total_revenue=null
-  assert.equal(scoreBudgetLocations(data,'2026-10-03').rows.find(r=>r.id==='b').rank,null)
+  assert.equal(scoreBudgetLocations(data,'2026-10-03').rows.find(r=>r.id==='b').revenue,null)
+  assert(Number.isInteger(scoreBudgetLocations(data,'2026-10-03').rows.find(r=>r.id==='b').rank))
   data.entries[1].yesterday_total_revenue=200;data.entries[1].yesterday_cc_revenue=180
   let r=scoreBudgetLocations(data,'2026-10-03');assert.equal(r.competitiveSites,4);assert(r.rows.find(x=>x.id==='b').rank!=null)
   const before=r.rows.find(x=>x.id==='b').score;data.entries[1].yesterday_total_revenue=50;data.entries[1].yesterday_cc_revenue=40
   r=scoreBudgetLocations(data,'2026-10-03');assert.notEqual(r.rows.find(x=>x.id==='b').score,before)
   data.entries[0].entry_date='2026-10-04';data.entries[0].yesterday_total_revenue=100;data.entries[0].yesterday_cc_revenue=80
-  r=scoreBudgetLocations(data,'2026-10-04');assert(r.rows.every(x=>x.rank==null))
+  r=scoreBudgetLocations(data,'2026-10-04');assert(r.rows.every(x=>Number.isInteger(x.rank)))
 })
 test('weights sum to 100; caps preserve unavailable values and negative growth', () => {
   assert.equal(Object.values(SCORE_WEIGHTS).reduce((a,b)=>a+b),100)
@@ -54,34 +55,36 @@ test('full scores share common pool/cutoff and all components are capped; no sou
   for(const r of result.rows){assert(r.score<=100);for(const [k,v] of Object.entries(r.components))assert(v<=SCORE_WEIGHTS[k])}
   assert.equal(result.rows.find(r=>r.id==='d').components.revenue,0)
 })
-test('missing/provisional/stale data receives a labeled subtotal but no official score/rank',()=>{
+test('missing/provisional/stale data remains officially scored and ranked with completeness labels',()=>{
   const data=fixture();data.balances[1].cutoff_business_date='2026-10-01';data.entries[1].yesterday_total_revenue=null;data.entries[2].entry_date='2026-10-02';data.entries[3].mtd_best=null
   const result=scoreBudgetLocations(data,'2026-10-03')
-  assert.equal(result.competitiveSites,1)
-  for(const r of result.rows){assert.equal(r.score,null);assert.equal(r.rank,null)}
-  const b=result.rows.find(r=>r.id==='b');assert(b.provisionalRevenue);assert(b.previewPoints!=null);assert(b.availableWeight<100);assert(b.issues.length>0)
+  assert.equal(result.competitiveSites,4)
+  for(const r of result.rows){assert(Number.isFinite(r.score));assert(Number.isInteger(r.rank))}
+  const b=result.rows.find(r=>r.id==='b');assert(b.provisionalRevenue);assert(Number.isFinite(b.score));assert.equal(b.revenue,null);assert(b.issues.length>0)
   assert.equal(result.rows.find(r=>r.id==='c').completeness.entryPresent,false)
 })
 test('net growth corrections, zero growth target, negative growth and missing baseline are safe',()=>{
   const data=fixture();data.entries[0].mtd_membership_actual=98;data.targets[1].membership_daily_growth=0;data.targets[2].starting_members=null
   let r=scoreBudgetLocations(data,'2026-10-03')
   assert.equal(r.rows.find(x=>x.id==='a').components.growth,0)
-  const b=r.rows.find(x=>x.id==='b');assert.equal(b.score,null);assert.equal(b.components.growth,null);assert(b.issues.some(x=>x.includes('zero')))
-  assert.equal(r.rows.find(x=>x.id==='c').score,null)
+  const b=r.rows.find(x=>x.id==='b');assert(Number.isFinite(b.score));assert.equal(b.components.growth,0);assert(b.issues.some(x=>x.includes('zero')))
+  assert.equal(r.rows.find(x=>x.id==='c').components.growth,0)
   data.entries[0].mtd_membership_actual=102;r=scoreBudgetLocations(data,'2026-10-03');assert.equal(r.rows.find(x=>x.id==='a').components.growth,7.5)
 })
-test('defaults and site thresholds are used proportionally; invalid values and duplicates cannot rank',()=>{
+test('defaults and site thresholds are preserved; invalid/duplicate categories receive zero without losing rank',()=>{
   const data=fixture();data.locations[0].metric_thresholds={conv_yellow:20,pmix_green:80}
   let r=scoreBudgetLocations(data,'2026-10-03');assert.equal(r.rows.find(x=>x.id==='a').components.conversion,10)
   data.entries[0].mtd_washes=0;data.entries[0].mtd_best=0
   data.entries[1].current_rating=7;data.entries[2].mtd_washes=10.5;data.entries.push({...data.entries[3]})
-  r=scoreBudgetLocations(data,'2026-10-03');assert(r.rows.every(x=>x.score==null))
+  r=scoreBudgetLocations(data,'2026-10-03');assert(r.rows.every(x=>Number.isFinite(x.score) && Number.isInteger(x.rank)))
   assert.equal(r.rows.find(x=>x.id==='a').components.pmix,0)
+  assert.equal(r.rows.find(x=>x.id==='b').components.rating,0)
+  assert.equal(r.rows.find(x=>x.id==='c').components.washes,0)
 })
 test('disabled/excluded sites cannot enter competitive pool; November does not use October balances',()=>{
   const data=fixture();data.locations[3].exclude_from_reporting=true;data.locations[2].show_budget_tracking=false
   assert.equal(scoreBudgetLocations(data,'2026-10-03').rows.length,2)
-  let r=scoreBudgetLocations(data,'2026-11-01');assert(r.rows.every(x=>x.score==null));assert(r.rows.every(x=>x.reportedRevenue===0))
+  let r=scoreBudgetLocations(data,'2026-11-01');assert(r.rows.every(x=>x.score===0 && x.rank===1));assert(r.rows.every(x=>x.reportedRevenue===0))
   data.targets=data.targets.map(t=>({...t,target_month:'2026-11-01'}));data.entries=data.entries.map(e=>({...e,entry_date:'2026-11-02',yesterday_total_revenue:100,yesterday_cc_revenue:80,yesterday_house_revenue:0}))
   r=scoreBudgetLocations(data,'2026-11-02');assert.equal(r.rows.find(x=>x.id==='a').revenue,100);assert.equal(r.businessDate,'2026-11-01')
 })
@@ -89,7 +92,7 @@ test('overlapping daily entries are excluded by verified cutoff; missed days and
   const data=fixture();data.entries.push({...data.entries[0],entry_date:'2026-10-02',yesterday_total_revenue:999,yesterday_cc_revenue:999,yesterday_house_revenue:0})
   assert.equal(scoreBudgetLocations(data,'2026-10-03').rows.find(x=>x.id==='a').revenue,600)
   data.entries.forEach(e=>{if(e.entry_date==='2026-10-03'){e.yesterday_total_revenue=100;e.yesterday_cc_revenue=80;e.yesterday_house_revenue=0}})
-  assert(scoreBudgetLocations(data,'2026-10-04').rows.every(x=>x.score==null))
+  assert(scoreBudgetLocations(data,'2026-10-04').rows.every(x=>x.revenue===null && Number.isInteger(x.rank)))
   data.entries.push({...data.entries[0],entry_date:'2026-10-04',yesterday_total_revenue:200,yesterday_cc_revenue:180,yesterday_house_revenue:0})
   assert.equal(scoreBudgetLocations(data,'2026-10-04').rows.find(x=>x.id==='a').revenue,800)
   data.entries[0].yesterday_total_revenue=150
