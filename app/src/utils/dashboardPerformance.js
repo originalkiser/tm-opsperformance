@@ -1,4 +1,4 @@
-import { dashboardDailyNet } from './dashboardNetMembers.js'
+import { latestDailyNetMembers } from './dashboardNetMembers.js'
 import { lastCompletedBusinessDate, shiftDate } from './budgetRevenue.js'
 import { toDayTotals } from './insightsHelpers.js'
 
@@ -23,13 +23,37 @@ export async function loadPerformanceLogs(client, locations, range) {
   }
 }
 
+// Scan newest dates first and stop once every site has a supported daily value.
+// A page's last day may be split across pages, so only evaluate complete days.
+export async function loadDailyNetHistory(client, locations, cutoff, now = new Date()) {
+  const found = []
+  let pending = locations
+  let buffered = []
+  for (let offset = 0; pending.length; offset += 1000) {
+    const { data, error } = await client.from('daily_logs').select('*')
+      .in('location_id', locations.map(l => l.id)).lte('log_date', cutoff)
+      .order('log_date', { ascending: false }).order('id').range(offset, offset + 999)
+    if (error) throw new Error('Daily Net Members history could not be loaded.')
+    const page = data || []
+    buffered.push(...page)
+    const complete = page.length < 1000 ? buffered : buffered.filter(r => r.log_date > page.at(-1).log_date)
+    for (const loc of pending) {
+      const net = latestDailyNetMembers(complete, loc, cutoff, now)
+      if (net.value !== null) found.push(...complete.filter(r => r.location_id === loc.id && r.log_date === net.through))
+    }
+    pending = pending.filter(loc => !found.some(r => r.location_id === loc.id))
+    if (page.length < 1000) break
+    buffered = buffered.filter(r => pending.some(loc => loc.id === r.location_id))
+  }
+  return found
+}
+
 export function selectTodayPerformance(logs, locations, now = new Date()) {
   const statuses = {}, totals = [], netMembers = {}
   for (const location of locations) {
     const date = businessToday(location, now)
     const rows = logs.filter(r => r.location_id === location.id && r.log_date === date)
-    const net = dashboardDailyNet(rows, location.opportunities_formula)
-    netMembers[location.id] = { value: net, through: date, message: net === null ? 'Daily Net Members unreported.' : `Daily running balance for ${date}.` }
+    netMembers[location.id] = latestDailyNetMembers(logs, location, date, now)
     // Ignore untouched future slots; explicit zero entries with an author count.
     const entered = rows.filter(r => r.plans_lost_today != null || Number(r.reactivations) > 0 || Number(r.net_members) !== 0 && r.net_members != null || r.employee_name?.trim() || r.created_by ||
       ['total_washes', 'member_washes', 'google_reviews', 'basic', 'good', 'better', 'best'].some(k => Number(r[k]) > 0))

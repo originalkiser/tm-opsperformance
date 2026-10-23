@@ -138,3 +138,14 @@ test('Dashboard Net Members column sorts signed values, keeps unknown last and c
   }
  }
 })
+
+test('daily and MTD tables show supporting dates with zero values, colors, and export dates', () => {
+ const Table=tableModule().PerformanceTable
+ for(const daily of [true,false]) {
+  const html=renderToStaticMarkup(React.createElement(Table,{source:{totals:[],notes:[],active:false},locations:[sites[0]],dateRange:{},daily,
+   netMembers:{east:{value:0,through:'2026-10-21',message:'Supported through Oct 21'}}}))
+  assert.match(html,/Last entry: Oct 21, 2026/)
+  assert.match(html,/bg-yellow-100/)
+  assert.match(html,/>0<div/)
+ }
+})

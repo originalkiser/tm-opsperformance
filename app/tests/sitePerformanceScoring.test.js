@@ -46,6 +46,7 @@ function reports(data, locations = data.locations, range = dateRange) {
     BudgetCashCell: Placeholder, BudgetRevenueNotes: Placeholder, PaceBadge: Placeholder,
   })
   const Site = compile('SitePerformanceReport', {
+    useReportNetMembers: () => ({values: undefined}),
     budgetReportPeriod, shiftDate, selectPerformanceSources, budgetPerformanceRow, PerformanceTable: Table,
     SiteMetricTable: () => React.createElement('p', {}, 'Legacy range'),
     useBudgetReport(pool, day) { sitePool = { pool, day }; return { rows, loading: false, error: '' } },

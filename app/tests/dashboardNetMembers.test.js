@@ -35,15 +35,16 @@ test('stale snapshot tail includes each completed day and current running day ex
  const result=selectMtdNetMembers(logs,[snapshot('a',{covered_through:'2026-10-18'})],sites,range,now)
  assert.equal(result.a.value,16)
  const gap=selectMtdNetMembers(logs.filter(r=>r.log_date!=='2026-10-20'),[snapshot('a',{covered_through:'2026-10-18'})],sites,range,now)
- assert.equal(gap.a.value,null)
- assert.match(gap.a.message,/2026-10-20/)
+ assert.equal(gap.a.value,12)
+ assert.equal(gap.a.through,'2026-10-19')
+ assert.match(gap.a.message,/2026-10-19/)
 })
 test('missing baseline/current headcount/coverage or uncovered loss stays unavailable; explicit zeros are valid',()=>{
  for(const extra of [{starting_members:null},{active_members:null},{starting_members:''},{covered_through:null},{covered_through:'2026-09-30'},{covered_through:'2026-10-21'}]) {
   assert.equal(selectMtdNetMembers(day('a','2026-10-21'),[snapshot('a',extra)],sites,range,now).a.value,null)
  }
  assert.equal(selectMtdNetMembers([],[],sites,range,now).a.value,null)
- assert.equal(selectMtdNetMembers(day('a','2026-10-21',null),[snapshot()],sites,range,now).a.value,null)
+ assert.equal(selectMtdNetMembers(day('a','2026-10-21',null),[snapshot()],sites,range,now).a.value,10)
  assert.equal(selectMtdNetMembers(day('a','2026-10-21',6),[snapshot('a',{starting_members:0,active_members:0})],sites,range,now).a.value,0)
 })
 test('historical signed and explicitly legacy zero Net Members survive without loss fabrication',()=>{
@@ -71,9 +72,11 @@ test('signed sorting keeps missing values last in either direction',()=>{
   assert.deepEqual(sorted,direction==='asc'?[-4,0,5,null,null]:[5,0,-4,null,null])
  }
 })
-test('RPC projection is read-only, range-scoped, whitelisted, and fails without raw-table fallback',async()=>{
- const client={async rpc(name,args){assert.equal(name,'dashboard_membership_snapshots');assert.deepEqual(args,{p_location_ids:['a','b'],p_month_start:range.start,p_through_date:range.end});return {data:[snapshot('a',{cash:999}),snapshot('other')]}}}
- assert.deepEqual(await loadMembershipSnapshots(client,sites,range),[snapshot()])
+test('RPC projection is read-only, cutoff-scoped, whitelisted, and fails without raw-table fallback',async()=>{
+ const calls=[]
+ const client={async rpc(name,args){calls.push(args);assert.equal(name,'dashboard_membership_snapshots');return {data:[snapshot('a',{cash:999}),snapshot('b'),snapshot('other')]}}}
+ assert.deepEqual(await loadMembershipSnapshots(client,sites,range),[snapshot(),snapshot('b')])
+ assert.deepEqual(calls,[{p_location_ids:['a','b'],p_month_start:range.start,p_through_date:'2026-10-20'}])
  await assert.rejects(loadMembershipSnapshots({async rpc(){return {error:{message:'denied'}}}},sites,range),/unavailable/)
 })
 test('other MTD counts preserve Budget priority and completed-date cutoff',()=>{

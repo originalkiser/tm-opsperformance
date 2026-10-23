@@ -146,17 +146,18 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
       { label: 'Google Reviews',   type: 'num'  },
       { label: 'P-Mix',            type: 'pmix' },
       { label: 'Conversion',       type: 'conv' },
-      ...(showNet ? [{label:'Net Members',type:'num'}] : []),
+      ...(showNet ? [{label:'Net Members',type:'num'}, {label:'Net Members through',type:'text'}] : []),
       ...(budgetRows ? BUDGET_COLS.map(c => ({ label: c.label, type: 'text' })) : []),
     ],
-    rows: sorted.map(r => [r.name + (r.missing ? ' (Unavailable)' : r.provisional ? ' (Provisional)' : ''), ...[r.tw, r.mw, r.ms, r.opp, r.gr, r.p_mix, r.conversion].map(v => r.missing ? '' : v), ...(showNet ? [r.nm ?? ''] : []), ...(budgetRows ? BUDGET_COLS.map(c => budgetCell(r, c.key)) : [])]),
-    totalsRow: [incomplete ? 'Provisional subtotal' : 'Totals', totals.tw, totals.mw, totals.ms, totals.opp, totals.gr, totals.p_mix, totals.conversion, ...(showNet ? [netTotal ?? ''] : []), ...(budgetRows ? BUDGET_COLS.map(() => '') : [])],
+    rows: sorted.map(r => [r.name + (r.missing ? ' (Unavailable)' : r.provisional ? ' (Provisional)' : ''), ...[r.tw, r.mw, r.ms, r.opp, r.gr, r.p_mix, r.conversion].map(v => r.missing ? '' : v), ...(showNet ? [r.nm ?? '', r.netStatus?.through ?? ''] : []), ...(budgetRows ? BUDGET_COLS.map(c => budgetCell(r, c.key)) : [])]),
+    totalsRow: [incomplete ? 'Provisional subtotal' : 'Totals', totals.tw, totals.mw, totals.ms, totals.opp, totals.gr, totals.p_mix, totals.conversion, ...(showNet ? [netTotal ?? '', ''] : []), ...(budgetRows ? BUDGET_COLS.map(() => '') : [])],
   }
 
   return (
     <div>
       <BudgetSourceNote source={source} />
       {incomplete && <p className="text-xs mb-2 text-gray-700 dark:text-gray-200">Provisional subtotal: unavailable locations are excluded. {daily ? 'Sites without a reported Daily Log are shown below.' : 'See source details where available.'}</p>}
+      {showNet && <p className="text-xs mb-2 text-gray-500">Net Members values use each location’s last supported date shown below; the subtotal combines those dated values.</p>}
       {netIncomplete && <p className="text-xs mb-2 text-gray-700 dark:text-gray-200">Net Members subtotal excludes unavailable locations; missing snapshots or daily losses are not treated as zero.</p>}
       <div className="flex justify-end mb-3">
         <ExportMenu items={[
@@ -191,7 +192,7 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
                 <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${r.budget ? REPORT_STATUS_CLS[r.budget.formatting.mtdConversion] : r.missing || r.provisional ? 'text-gray-600 dark:text-gray-300' : convCls(r.conversion, r.thresholds)}`}>{r.missing ? '—' : r.conversion}</td>
                 {showNet && <td title={r.netStatus?.message} className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${netMembersCls(r.nm)}`}>
                   {r.nm === null ? '—' : r.nm.toLocaleString('en-US')}
-                  {!daily && <div className="text-[10px] font-normal max-w-[180px]">{r.netStatus?.through ? `Through ${r.netStatus.through}` : r.netStatus?.message || 'Net Members unavailable'}</div>}
+                  {r.netStatus?.through && <div className="text-[10px] font-normal max-w-[180px]">Last entry: {new Date(`${r.netStatus.through}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</div>}
                 </td>}
                 {budgetRows && BUDGET_COLS.map(c => <td key={c.key} className="border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center dark:text-tm-dark-text">
                   {c.key === 'score' ? <BudgetScoreDetails result={r.budget?.scoringResult} /> : budgetCell(r, c.key)}
