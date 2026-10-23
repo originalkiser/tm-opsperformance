@@ -7,7 +7,7 @@ import * as membership from '../src/utils/dailyMemberships.js'
 import { shopTotals } from '../src/utils/logMath.js'
 import { fmtNum } from '../src/utils/format.js'
 const Input = () => null
-function openLog(canEdit = true, role = 'store', db = [{ id: 'old', location_id: 'a', log_date: '2026-10-20', time_slot: '08:00:00', split_index: 0, basic: 4, net_members: 6, net_members_legacy: true }], opportunitiesFormula = 'detailed') {
+function openLog(canEdit = true, role = 'store', db = [{ id: 'old', location_id: 'a', log_date: '2026-10-20', time_slot: '08:00:00', split_index: 0, basic: 4, net_members: 6, net_members_legacy: true }], opportunitiesFormula = 'detailed', view = 'table') {
   const writes = []; let live
   const supabase = { from(table) { const q = {
     select() { return q }, eq() { return q }, order() { return q },
@@ -19,7 +19,7 @@ function openLog(canEdit = true, role = 'store', db = [{ id: 'old', location_id:
     useCallback: f => f, useAuth: () => ({ updateProfileSettings() {} }),
     EmployeeSelect: () => null, TmLoader: () => null, DowntimeModal: () => null,
     pmixCls: () => '', convCls: () => '', pmixTotalsCls: () => '', convTotalsCls: () => '',
-    localStorage: { getItem: () => 'table', setItem() {} },
+    localStorage: { getItem: () => view, setItem() {} },
     window: { addEventListener() {}, removeEventListener() {} }, clearTimeout() {}, setTimeout() {},
   }, { locationId: 'a', selectedDate: '2026-10-20', profile: {role}, canEdit, opportunitiesFormula, onRowsChange: rows => { live = rows } })
   return Object.assign(h, { input: () => h.find(n => n.type === Input), live: () => live, db, writes })
@@ -48,7 +48,7 @@ test('existing location/date edit denial still disables losses and rejects write
   assert.equal(h.writes.length, 0)
 })
 
-test('hourly table shows opening/running negatives, final-only totals and immediate loss corrections for both formulas', async () => {
+test('hourly table hides the loss-only anchor and empty hours, preserving running values and totals and immediate loss corrections for both formulas', async () => {
  for (const formula of ['simple','detailed']) {
   const db=[
    {id:'open',time_slot:'08:00:00',split_index:0,basic:0,reactivations:0,plans_lost_today:8},
@@ -56,15 +56,15 @@ test('hourly table shows opening/running negatives, final-only totals and immedi
   ]
   const h=openLog(true,'store',db,formula);h.render();await h.flush()
   const hourly=()=>h.all(n=>n.type==='input' && n.props.disabled && n.props['data-row']!==undefined).map(n=>n.props.value)
-  assert.equal(hourly()[0],-8)
+  assert.equal(hourly()[0],'')
   const expected=formula==='simple'?-6:-5
   assert.equal(hourly()[1],expected)
-  assert.equal(hourly().at(-1),expected)
+  assert.equal(hourly().at(-1),'')
   const total=()=>React.Children.toArray(h.find(n=>n.type==='tr' && n.props.className?.includes('border-t-2')).props.children)[formula==='simple'?9:10].props.children
   assert.equal(total(),String(expected))
   assert.equal(h.input().props.disabled,false)
   await h.input().props.onChange('12');await h.flush()
-  assert.equal(hourly()[0],-12)
+  assert.equal(hourly()[0],'')
   assert.equal(hourly()[1],expected-4)
   assert.equal(total(),String(expected-4))
   assert.equal(db[1].basic,2);assert.equal(db[1].reactivations,1)
@@ -97,4 +97,49 @@ test('Net Members colors follow loss edits through negative, zero and positive; 
  assert.doesNotMatch(cell.props.className,/bg-(red|yellow|green)/)
  assert.equal(netMemberStyle(''),null)
  assert.equal(netMemberStyle(null),null)
+})
+
+for (const view of ['table', 'card']) {
+ for (const formula of ['simple', 'detailed']) {
+  test(`${view}/${formula}: empty hours stay neutral; recorded zero, negative and positive values keep colors`, async () => {
+   const db = [
+    {id:'loss',time_slot:'08:00:00',plans_lost_today:5,basic:0,reactivations:0},
+    {id:'negative',time_slot:'09:00:00',employee_name:'Alex',basic:2,total_washes:20,member_washes:10},
+    {id:'zero',time_slot:'10:00:00',employee_name:'Alex',basic:5,reactivations:0,total_washes:30,member_washes:10},
+    {id:'positive',time_slot:'11:00:00',employee_name:'Alex',basic:6,reactivations:2},
+    {id:'explicit-zero',time_slot:'12:00:00',basic:0,reactivations:0},
+   ]
+   const before=structuredClone(db)
+   const h=openLog(false,'store',db,formula,view);h.render();await h.flush()
+   const netAt=async hour => {
+    if(view==='card') {
+     h.find(n=>n.type==='select').props.onChange({target:{value:`${String(hour).padStart(2,'0')}:00:00`}})
+     await h.flush()
+     const input=h.find(n=>n.type==='input' && n.props.disabled && n.props.min===undefined)
+     const card=h.find(n=>n.type==='div' && React.Children.toArray(n.props.children).some(c=>c?.type==='input' && c.props.min===undefined))
+     return {value:input.props.value, color:card.props.className}
+    }
+    const input=h.find(n=>n.type==='input' && n.props['data-row']===hour-8 && n.props.min===undefined)
+    const cell=h.find(n=>n.type==='td' && n.props.children?.type==='input' && n.props.children.props['data-row']===hour-8 && n.props.children.props.min===undefined)
+    return {value:input.props.value,color:cell.props.className}
+   }
+   for(const hour of [8,13,20]) {
+    const net=await netAt(hour);assert.equal(net.value,'');assert.doesNotMatch(net.color,/bg-(red|yellow|green)-100/)
+   }
+   for(const [hour,value,color] of [[9,-3,'red'],[10,0,'yellow'],[11,formula==='simple'?1:3,'green'],[12,-5,'red']]) {
+    const net=await netAt(hour);assert.equal(net.value,value);assert.match(net.color,new RegExp(`bg-${color}-100`))
+   }
+   assert.deepEqual(db,before)
+  })
+ }
+}
+
+test('historical recorded negative and zero Net Members remain visible while empty hours stay blank', async () => {
+ const h=openLog(false,'store',[
+  {id:'old-negative',time_slot:'09:00:00',net_members:-4,net_members_legacy:true},
+  {id:'old-zero',time_slot:'10:00:00',net_members:0,net_members_legacy:true},
+ ])
+ h.render();await h.flush()
+ const nets=h.all(n=>n.type==='input' && n.props['data-row']!==undefined && n.props.min===undefined).map(n=>n.props.value)
+ assert.deepEqual(nets.slice(0,4),['',-4,0,''])
 })

@@ -88,6 +88,16 @@ const compute = (row, formula = 'detailed') => {
 const rowHasData = (row) =>
   row.plans_lost_today != null || row.employee_name?.trim() || ALL_KEYS.some(f => toInt(row[f]) > 0)
 
+// Loss-only anchor records have database-default zeros, not hourly activity.
+const hasHourlyActivity = row => {
+  if (row.employee_name?.trim() || row.net_members_legacy ||
+      (row.net_members != null && row.net_members !== '' && Number(row.net_members) !== 0)) return true
+  const fields = ALL_KEYS.filter(key => key !== 'net_members')
+  if (isLossAnchor(row) && row.plans_lost_today != null && row.id &&
+      !fields.some(key => Number(row[key]) > 0)) return false
+  return fields.some(key => row[key] != null && String(row[key]).trim() !== '')
+}
+
 const MAX_HISTORY = 30
 
 // Parse "8:00 AM" / "1:00 PM" → "08:00:00" / "13:00:00"
@@ -419,7 +429,7 @@ export default function DailyLogTable({
 
   const hydrateRow = (existing, timeSlot, splitIndex) => {
     if (!existing) return emptyRow(timeSlot, splitIndex)
-    const hasData = existing.net_members_legacy || existing.plans_lost_today != null || existing.employee_name || ALL_KEYS.some(f => (existing[f] ?? 0) > 0)
+    const hasData = existing.plans_lost_today != null || hasHourlyActivity(existing)
     if (!hasData) return emptyRow(timeSlot, splitIndex)
     return {
       ...existing,
@@ -1077,7 +1087,9 @@ export default function DailyLogTable({
   const runningNets = runningNetMembers(rows, opportunitiesFormula)
   const calculatedNet = dailyNetMembers(rows, opportunitiesFormula)
   const legacyNet = hasLegacyNet(rows) && plansLost(rows) === null
-  const displayNet = row => runningNets.get(row) ?? (legacyNet ? row.net_members ?? '' : '')
+  const displayNet = row => hasHourlyActivity(row)
+    ? runningNets.get(row) ?? (legacyNet ? row.net_members ?? '' : '')
+    : ''
   const changeLoss = async value => {
     setLossDraft(value)
     const parsed = parsePlansLost(value)
