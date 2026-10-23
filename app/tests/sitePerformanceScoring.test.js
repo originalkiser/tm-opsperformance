@@ -80,7 +80,7 @@ test('both reports render identical KPI values, scores, details and ranks from t
   for (const label of ['MTD Revenue','Total Members','Membership Growth','Expected Growth','Rating','Score','Rank']) assert.ok(result.site.includes(label))
 })
 
-test('missing, stale, provisional and invalid Budget records stay visible and unranked in both reports', () => {
+test('missing, stale, provisional and invalid Budget records have numeric scores and ranks in both reports', () => {
   const data = fixture()
   data.entries[1].mtd_membership_actual = null
   data.entries[2].entry_date = '2026-10-02'
@@ -88,10 +88,9 @@ test('missing, stale, provisional and invalid Budget records stay visible and un
   data.balances[3].cutoff_business_date = '2026-10-01'
   const result = reports(data)
   assertParity(result)
-  assert.ok(result.rows.every(r => r.rank === null))
-  assert.match(result.site, /Provisional preview/)
-  assert.match(result.site, /Unranked/)
-  assert.match(result.site, /not scaled to 100/)
+  assert.ok(result.rows.every(r => Number.isInteger(r.rank) && Number.isFinite(r.score)))
+  assert.match(result.site, /Incomplete reporting/)
+  assert.doesNotMatch(result.site, /Provisional preview|Unranked|no official score/)
 })
 
 test('ties and genuine zero values preserve the Budget score/rank model and formatting', () => {
@@ -145,7 +144,7 @@ test('non-Budget/excluded locations retain existing metrics but never receive a 
   }
 })
 
-test('sorting and exports retain every added scoring column and keep missing scores last', () => {
+test('sorting and exports retain scoring columns and sort official incomplete scores numerically', () => {
   const data = fixture(); data.entries[3].current_rating = null
   const budgetRows = buildBudgetReportRows(data, date)
   let spec
@@ -158,7 +157,7 @@ test('sorting and exports retain every added scoring column and keep missing sco
   assert.ok(spec.rows.every(r => r.length === 17)); assert.equal(spec.totalsRow.length, 17)
   assert.match(spec.rows.at(-1)[0], /Site d/)
   h.find(n => n.type === 'button' && n.props.children?.[0] === 'Score').props.onClick()
-  csv(); assert.match(spec.rows.at(-1)[0], /Site d/)
+  csv(); assert.match(spec.rows.at(-1)[0], /Site a/)
   h.find(n => n.type === 'button' && n.props.children?.[0] === 'Total Members').props.onClick()
   csv(); assert.equal(spec.rows[0][10], '107')
   h.unmount()
@@ -234,4 +233,37 @@ test('unsupported period and empty location scopes issue no Budget queries and c
   h.render();await h.flush();assert.equal(client.requests.length,0);assert.deepEqual(h.render().rows,[])
   h.props([],date);await h.flush();assert.equal(client.requests.length,0);assert.deepEqual(h.render().rows,[])
   h.unmount()
+})
+
+test('zero-data eligible locations display official 0.0 and a numeric rank in both scored Reports views',()=>{
+ const data=fixture();data.entries=[];data.balances=[]
+ const result=reports(data)
+ assert.ok(result.rows.every(r=>r.score===0 && r.rank===1))
+ for(const row of rowsOf(result.budget)){assert.equal(plain(row[0]),'1');assert.match(plain(row[14]),/^0.0/)}
+ for(const html of [result.budget,result.site]){
+  assert.doesNotMatch(html,/Unranked|Provisional preview|no official score/)
+  assert.match(html,/Last entry: None this month/)
+  assert.match(html,/Official score: 0.0 \/ 100 · Rank: 1/)
+  assert.match(html,/Incomplete reporting/)
+ }
+ const siteRows=rowsOf(result.site).filter(row=>plain(row[0]).startsWith('Site '))
+ for(const row of siteRows){assert.equal(plain(row[8]),'1');assert.match(plain(row[16]),/^0.0/)}
+})
+
+test('shared KPI table retains supported stale score/rank, reporting dates and provisional revenue labels in exports',()=>{
+ const data=fixture();data.entries[0].entry_date='2026-10-02';data.balances[0].cutoff_business_date='2026-10-01'
+ const budgetRows=buildBudgetReportRows(data,date),row=budgetRows.find(r=>r.loc.id==='a')
+ let spec
+ const globals={...kpiTableBindings(),...helpers,...colors,...display,pct1,fmtNum,BudgetScoreDetails:details.default,formatBudgetScore:details.formatBudgetScore,BudgetSourceNote:Placeholder,
+  ExportMenu:Placeholder,fmtDateRange:()=> 'October',exportCsv:value=>{spec=value}}
+ const source={notes:[],totals:budgetRows.map(r=>budgetPerformanceRow(r.entry,'mtd',r.scoringResult.businessDate)).filter(Boolean)}
+ const h=locationHelpHarness('components/SiteMetricTable',globals,{source,locations:data.locations,dateRange,budgetRows,title:'MTD Performance'},'PerformanceTable')
+ h.find(n=>n.type===Placeholder&&n.props.items).props.items[2].run()
+ const exported=spec.rows.find(r=>r[0]==='Site a')
+ assert.equal(exported[8],row.rank);assert.equal(exported[16],row.score.toFixed(1))
+ const html=renderToStaticMarkup(h.render())
+ assert.match(html,/Last entry: 2026-10-02/)
+ assert.match(html,/Provisional source; not complete verified MTD actual revenue/)
+ assert.match(html,/Stale entry/)
+ assert.doesNotMatch(html,/no official score|Provisional preview/)
 })
