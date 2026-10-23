@@ -1,3 +1,5 @@
+import useReportNetMembers from '../hooks/useReportNetMembers'
+import { netMembersCls } from '../utils/netMemberColors'
 import { runningNetMembers } from '../utils/dailyMemberships'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
@@ -173,7 +175,7 @@ function HourlyTable({ rows, thresholds, formula }) {
 
 // ── Shop card ─────────────────────────────────────────────────────────────────
 
-function ShopCard({ location, rows, expanded, onToggle }) {
+function ShopCard({ location, rows, expanded, onToggle, net }) {
   const hasData    = rows.length > 0
   const stats      = hasData ? shopStats(rows, location.opportunities_formula) : null
   const thresholds = location.metric_thresholds
@@ -228,6 +230,10 @@ function ShopCard({ location, rows, expanded, onToggle }) {
         </div>
       )}
 
+      <div className={`px-4 py-2 text-sm font-semibold ${netMembersCls(net?.value)}`}>
+        Daily Net Members: {net?.value == null ? '—' : net.value.toLocaleString('en-US')}
+        {net?.through && <span className="block text-[10px] font-normal">Last entry: {new Date(`${net.through}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</span>}
+      </div>
       {/* Expand toggle */}
       <div className="flex justify-end px-4 py-1.5">
         <button
@@ -280,6 +286,7 @@ export default function NetworkDayView({ locations: locProp, date: dateProp }) {
     if (dateProp) setSelectedDate(dateProp)
   }, [dateProp])
 
+  const net = useReportNetMembers(locations, { start: selectedDate, end: selectedDate }, false)
   const dateStr   = selectedDate
   const dateLabel = formatDateLabel(dateStr)
 
@@ -347,6 +354,7 @@ export default function NetworkDayView({ locations: locProp, date: dateProp }) {
         <span className="text-tm-teal font-brand text-xs">{dateLabel}</span>
       </div>
 
+      {net.error && <p role="alert" className="text-sm text-red-600">{net.error}</p>}
       {/* Cards grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {loading
@@ -356,6 +364,7 @@ export default function NetworkDayView({ locations: locProp, date: dateProp }) {
                 key={loc.id}
                 location={loc}
                 rows={rowsByLoc[loc.id] || []}
+                net={net.values[loc.id]}
                 expanded={expanded.has(loc.id)}
                 onToggle={() => toggleExpand(loc.id)}
               />
