@@ -1,3 +1,4 @@
+import { kpiTableBindings } from './helpers/kpiTableBindings.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -25,7 +26,7 @@ function compile(name, globals, exportName = 'default') {
 }
 const details = compile('BudgetScoreDetails', { SCORE_LABELS, SCORE_WEIGHTS }, '*')
 const SourceNote = compile('BudgetSourceNote', {})
-const Table = compile('SiteMetricTable', { ...helpers, ...colors, ...display, pct1, fmtNum, BudgetScoreDetails: details.default, formatBudgetScore: details.formatBudgetScore, BudgetSourceNote: SourceNote, ExportMenu: Placeholder, fmtDateRange: () => 'October' }, 'PerformanceTable')
+const Table = compile('SiteMetricTable', { ...kpiTableBindings(), ...helpers, ...colors, ...display, pct1, fmtNum, BudgetScoreDetails: details.default, formatBudgetScore: details.formatBudgetScore, BudgetSourceNote: SourceNote, ExportMenu: Placeholder, fmtDateRange: () => 'October' }, 'PerformanceTable')
 function fixture() {
   const ids = ['a', 'b', 'c', 'd']
   return {
@@ -148,7 +149,7 @@ test('sorting and exports retain every added scoring column and keep missing sco
   const data = fixture(); data.entries[3].current_rating = null
   const budgetRows = buildBudgetReportRows(data, date)
   let spec
-  const globals = { ...helpers, ...colors, ...display, pct1, fmtNum, BudgetScoreDetails: details.default, formatBudgetScore: details.formatBudgetScore, BudgetSourceNote: Placeholder,
+  const globals = { ...kpiTableBindings(), ...helpers, ...colors, ...display, pct1, fmtNum, BudgetScoreDetails: details.default, formatBudgetScore: details.formatBudgetScore, BudgetSourceNote: Placeholder,
     ExportMenu: Placeholder, fmtDateRange: () => 'October', exportCsv: value => { spec = value } }
   const source = { totals: budgetRows.map(r => budgetPerformanceRow(r.entry, 'mtd', '2026-10-02')).filter(Boolean), notes: [] }
   const h = locationHelpHarness('components/SiteMetricTable', globals, { source, locations: data.locations, dateRange, budgetRows }, 'PerformanceTable')

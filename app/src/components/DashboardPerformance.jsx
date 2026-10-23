@@ -51,8 +51,8 @@ export default function DashboardPerformance({ locations, daily = false, company
     {state.netError && <p role="alert" className="text-sm text-red-600 dark:text-red-400 mb-3">{state.netError}</p>}
     {state.error && <p role="alert" className="text-sm text-red-600 dark:text-red-400 mb-3">{state.error}</p>}
     {current && state.range ? daily
-      ? <PerformanceTable source={source} locations={locations} dateRange={state.range} title="Today's Performance" daily />
-      : <SiteMetricTable data={state.logs} locations={locations} dateRange={state.range} title="MTD Performance" companyRead={companyRead} netMembers={state.netMembers} />
+      ? <PerformanceTable tableId="dashboard-today" source={source} locations={locations} dateRange={state.range} title="Today's Performance" daily />
+      : <SiteMetricTable tableId="dashboard-mtd" data={state.logs} locations={locations} dateRange={state.range} title="MTD Performance" companyRead={companyRead} netMembers={state.netMembers} />
       : !state.error && <p className="text-sm py-3">Loading performance…</p>}
   </div>
 }
