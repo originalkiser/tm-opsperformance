@@ -95,6 +95,10 @@ export default function NavBar() {
             </Link>
           )}
 
+          {['admin', 'area_manager', 'store'].includes(profile?.role) && (
+            <Link to="/employees" className={navClass('/employees')} aria-current={currentPage('/employees')}>Employees</Link>
+          )}
+
           {/* AM Entry — admins/area managers only */}
           {isManager && (
             <Link

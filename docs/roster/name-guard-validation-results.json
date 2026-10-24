@@ -1,0 +1,98 @@
+{
+  "environment": "isolated PostgreSQL 17.6",
+  "tests": 23,
+  "results": [
+    {
+      "case": "inactive_or_active_normalized_duplicate",
+      "pass": true
+    },
+    {
+      "case": "blank_name",
+      "pass": true
+    },
+    {
+      "case": "unicode_trim_duplicate",
+      "pass": true
+    },
+    {
+      "case": "same_name_other_site",
+      "pass": true
+    },
+    {
+      "case": "legacy_duplicate_status_edit",
+      "pass": true
+    },
+    {
+      "case": "legacy_duplicate_case_edit",
+      "pass": true
+    },
+    {
+      "case": "rename_collision",
+      "pass": true
+    },
+    {
+      "case": "repeatable_read_new_names_refuse",
+      "pass": true
+    },
+    {
+      "case": "serializable_new_names_refuse",
+      "pass": true
+    },
+    {
+      "case": "snapshot_status_edit_allowed",
+      "pass": true
+    },
+    {
+      "case": "new_name_trimmed",
+      "pass": true
+    },
+    {
+      "case": "concurrent_insert_fresh_snapshot",
+      "pass": true
+    },
+    {
+      "case": "seed_rename_one",
+      "pass": true
+    },
+    {
+      "case": "seed_rename_two",
+      "pass": true
+    },
+    {
+      "case": "concurrent_rename_fresh_snapshot",
+      "pass": true
+    },
+    {
+      "case": "manager_cannot_review",
+      "pass": true
+    },
+    {
+      "case": "admin_confirmation_required",
+      "pass": true
+    },
+    {
+      "case": "repeated_ids_refuse",
+      "pass": true
+    },
+    {
+      "case": "missing_primary_refuse",
+      "pass": true
+    },
+    {
+      "case": "cross_site_selection_refuse",
+      "pass": true
+    },
+    {
+      "case": "stale_review_refuses",
+      "pass": true
+    },
+    {
+      "case": "atomic_admin_review",
+      "pass": true
+    },
+    {
+      "case": "original_rows_and_daily_logs_retained",
+      "pass": true
+    }
+  ]
+}
