@@ -1,5 +1,11 @@
 # Unified Team Member Sales — review before implementation
 
+> Production inventory correction: Daily Logs already have nullable UUID
+> `employee_id` and an employee FK. The active application still writes/reports
+> by name; the accepted Carencro sample had all IDs NULL. See the
+> [Phase 1 draft](employee-identity-phase1-plan.md) for verified production facts.
+> Do not interpret earlier repository-only findings as the live schema.
+
 ## Current implementation and limits
 
 TeamSalesTable is shared by Reports and Insights. employeePerformance currently
