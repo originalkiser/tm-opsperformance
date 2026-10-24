@@ -1,0 +1,150 @@
+{
+  "environment": "isolated PostgreSQL 17.6",
+  "tests": 36,
+  "results": [
+    {
+      "case": "admin_all_locations",
+      "pass": true
+    },
+    {
+      "case": "store_own",
+      "pass": true
+    },
+    {
+      "case": "store_other",
+      "pass": true
+    },
+    {
+      "case": "manager_first_assignment",
+      "pass": true
+    },
+    {
+      "case": "manager_second_assignment",
+      "pass": true
+    },
+    {
+      "case": "unassigned_manager",
+      "pass": true
+    },
+    {
+      "case": "inactive_store",
+      "pass": true
+    },
+    {
+      "case": "deleted_store",
+      "pass": true
+    },
+    {
+      "case": "unknown_role",
+      "pass": true
+    },
+    {
+      "case": "inactive_admin",
+      "pass": true
+    },
+    {
+      "case": "missing_profile",
+      "pass": true
+    },
+    {
+      "case": "unauthenticated",
+      "pass": true
+    },
+    {
+      "case": "store_rename",
+      "pass": true
+    },
+    {
+      "case": "store_deactivate",
+      "pass": true
+    },
+    {
+      "case": "store_reactivate",
+      "pass": true
+    },
+    {
+      "case": "store_cannot_update_other",
+      "pass": true
+    },
+    {
+      "case": "admin_status_other",
+      "pass": true
+    },
+    {
+      "case": "no_delete_1",
+      "pass": true
+    },
+    {
+      "case": "no_move_1",
+      "pass": true
+    },
+    {
+      "case": "no_key_change_1",
+      "pass": true
+    },
+    {
+      "case": "no_custom_key_insert_1",
+      "pass": true
+    },
+    {
+      "case": "no_truncate_1",
+      "pass": true
+    },
+    {
+      "case": "no_delete_2",
+      "pass": true
+    },
+    {
+      "case": "no_move_2",
+      "pass": true
+    },
+    {
+      "case": "no_key_change_2",
+      "pass": true
+    },
+    {
+      "case": "no_custom_key_insert_2",
+      "pass": true
+    },
+    {
+      "case": "no_truncate_2",
+      "pass": true
+    },
+    {
+      "case": "no_delete_4",
+      "pass": true
+    },
+    {
+      "case": "no_move_4",
+      "pass": true
+    },
+    {
+      "case": "no_key_change_4",
+      "pass": true
+    },
+    {
+      "case": "no_custom_key_insert_4",
+      "pass": true
+    },
+    {
+      "case": "no_truncate_4",
+      "pass": true
+    },
+    {
+      "case": "historical_roster_read_preserved",
+      "pass": true
+    },
+    {
+      "case": "assignment_revocation_immediate",
+      "pass": true
+    },
+    {
+      "case": "reapplication_refuses_atomically",
+      "pass": true
+    },
+    {
+      "case": "historical_logs_shared_helper_and_existing_roster_preserved",
+      "pass": true
+    }
+  ]
+}

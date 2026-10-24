@@ -272,12 +272,6 @@ export default function Admin() {
     fetchEmployees()
   }
 
-  const deleteEmployee = async (id) => {
-    if (!window.confirm('Delete this employee permanently?')) return
-    await supabase.from('employees').delete().eq('id', id)
-    fetchEmployees()
-  }
-
   const areaManagers = users.filter(u => u.role === 'area_manager')
 
   if (loading) return (
@@ -654,10 +648,6 @@ export default function Admin() {
                               : 'bg-green-100 text-green-700 hover:bg-green-200'
                           }`}>
                           {emp.is_active ? 'Deactivate' : 'Reactivate'}
-                        </button>
-                        <button onClick={() => deleteEmployee(emp.id)}
-                          className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-600 hover:bg-red-200 transition-colors">
-                          Delete
                         </button>
                       </div>
                     ))}
