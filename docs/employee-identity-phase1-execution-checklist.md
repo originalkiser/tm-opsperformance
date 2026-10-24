@@ -32,7 +32,7 @@ is needed. This task does not authorize additional production inventory queries.
 
 ## 2. Non-production Supabase API/cache gate
 
-Candidate discovered: `tm-ops-dev`, ref `bmfvcnsuduttebxbjvwx`; production is
+Administrator-authorized candidate: `tm-ops-dev`, ref `bmfvcnsuduttebxbjvwx`; production is
 `qbdvixxooofdlfurcpqy`. Different references alone do not establish permission to
 alter a shared dev project. Obtain confirmation of intended project/test locations
 and synthetic data permissions first. No new project, branch, paid resource or
@@ -66,8 +66,14 @@ production copy is required or authorized by this checklist.
   existing guards. Do not weaken guards or delete protected Plans Lost anchors
   merely to clean up; pre-plan disposable fixture/recovery ownership.
 
-Status: **pending confirmed project/test scope and actual HTTP evidence**. SQL
-role tests already passed, but are not a substitute for these HTTP checks.
+Status: **blocked by verified development baseline mismatch**. Read-only inspection
+found 6 locations, 3 employees and 12 Daily Logs; existing data was not touched.
+Development lacks employee_id/FK, obsolete employee-hour uniqueness, Plans Lost
+fields/guard and the two production views; it has different RLS and an empty
+migration ledger. No candidate, fixture, API write or configuration change was
+applied. Production-like API evidence requires a separately approved compatible
+non-production baseline; do not quietly patch this shared development database.
+See [blocker evidence](employee-identity-phase1-blocker-review.md).
 
 ## 3. Production execution record — fill before requesting authorization
 

@@ -152,3 +152,11 @@ Later independently reviewed PRs: compatible audited identity writer and control
 identity-aware reporting preserving supported legacy ranks, roster review and
 selection-only UI, audited renames, Admin-confirmed merges/reversals, and confirmed
 historical attribution. None is implemented or enabled here.
+
+## Final authorization gate tracking
+
+See [execution checklist](employee-identity-phase1-execution-checklist.md) and
+[blocker investigation](employee-identity-phase1-blocker-review.md). The designated
+non-production project has an incompatible existing schema; no migration was
+applied there. Production writer absence is not attested; investigation remains
+open. The accepted isolated SQL validation is unchanged.
