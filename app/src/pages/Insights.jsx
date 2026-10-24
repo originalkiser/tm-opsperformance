@@ -9,6 +9,7 @@ import TmLoader from '../components/TmLoader'
 import DateSelector, { fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
 import { MarketMultiSelect, ShopMultiSelect } from '../components/FilterControls'
 import TeamSalesTable from '../components/TeamSalesTable'
+import { fetchEmployeeLogs } from '../utils/employeePerformance.js'
 import DailyTrendsSection from '../components/DailyTrendsSection'
 import DayOfWeekSection from '../components/DayOfWeekSection'
 import DowntimeSection from '../components/DowntimeSection'
@@ -248,6 +249,20 @@ export default function Insights() {
   const [layout, setLayout]       = useState(loadLayout)
   const [showCustomize, setShowCustomize] = useState(false)
 
+  // Rank only a verified complete read for this authorized site/date scope.
+  const [teamLogState, setTeamLogState] = useState(null)
+  const teamScope = JSON.stringify([profile?.id, locations.map(l => l.id).sort(), dateRange.start, dateRange.end])
+  useEffect(() => {
+    let cancelled = false
+    setTeamLogState({ scope: teamScope, rows: [], complete: false })
+    fetchEmployeeLogs(supabase, locations.map(l => l.id), dateRange).then(rows => {
+      if (!cancelled) setTeamLogState({ scope: teamScope, rows, complete: true })
+    }).catch(() => {
+      if (!cancelled) setTeamLogState({ scope: teamScope, rows: [], complete: false })
+    })
+    return () => { cancelled = true }
+  }, [teamScope])
+
   const markets = [...new Set(reportingLocations.map(l => l.market).filter(Boolean))].sort()
 
   const marketLocations = selectedMarkets === null
@@ -366,7 +381,7 @@ export default function Insights() {
       subtitle: `Team Member Sales — ${rangeLabel}`,
       content: (
         <div className="mt-3">
-          <TeamSalesTable data={filterLogs(logs)} locations={visibleLocations} dateRange={dateRange} />
+          <TeamSalesTable data={filterLogs(teamLogState?.scope === teamScope ? teamLogState.rows : [])} dataComplete={teamLogState?.scope === teamScope && teamLogState.complete} locations={visibleLocations} dateRange={dateRange} />
         </div>
       ),
     },

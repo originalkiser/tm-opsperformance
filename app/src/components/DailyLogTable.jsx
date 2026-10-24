@@ -1,3 +1,4 @@
+import { createEmployeeIfMissing, employeeNameKey } from '../utils/employeeIdentity.js'
 import { netMemberStyle, netMembersCls } from '../utils/netMemberColors'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
@@ -757,15 +758,16 @@ export default function DailyLogTable({
   }
 
   const autoAddEmployee = async (name) => {
-    if (!name?.trim()) return
-    const trimmed = name.trim()
-    if (employeesRef.current.some(e => e.name.toLowerCase() === trimmed.toLowerCase())) return
-    const { error } = await supabase.from('employees').insert({
-      location_id: locationIdRef.current,
-      name: trimmed,
-      is_active: true,
-    })
-    if (!error) fetchEmployees()
+    const locationId = locationIdRef.current
+    if (!employeeNameKey(name)) return
+    if (employeesRef.current.some(e => employeeNameKey(e.name) === employeeNameKey(name))) return
+    try {
+      const result = await createEmployeeIfMissing(supabase, locationId, name)
+      if (result.created && locationIdRef.current === locationId) fetchEmployees()
+    } catch {
+      // Roster auto-add must never block or rewrite the named Daily Log activity.
+      // A failed verification/insert can be retried on the next explicit save.
+    }
   }
 
   const saveImmediately = (index) => {

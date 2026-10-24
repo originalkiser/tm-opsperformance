@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createEmployeeIfMissing, duplicateEmployeeGroups } from '../utils/employeeIdentity.js'
 import { supabase, supabasePublicKey } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
@@ -37,6 +38,10 @@ export default function Admin() {
   const [selectedLocId, setSelectedLocId] = useState('')
   const [employees,    setEmployees]    = useState([])
   const [newEmpName,   setNewEmpName]   = useState('')
+  const [employeeError, setEmployeeError] = useState('')
+  const [employeeSaving, setEmployeeSaving] = useState(false)
+  const employeeSaveRef = useRef(false)
+  const employeeReadRef = useRef(0)
   const [tab,          setTab]          = useState('users')
   const [loading,      setLoading]      = useState(true)
 
@@ -90,9 +95,10 @@ export default function Admin() {
   }
 
   const fetchEmployees = async () => {
+    const request = ++employeeReadRef.current
     const { data } = await supabase
       .from('employees').select('*').eq('location_id', selectedLocId).order('name')
-    setEmployees(data || [])
+    if (request === employeeReadRef.current) setEmployees(data || [])
   }
 
   const updateUser = async (userId, updates) => {
@@ -240,11 +246,25 @@ export default function Admin() {
   }
 
   const addEmployee = async () => {
-    const name = newEmpName.trim()
-    if (!name || !selectedLocId) return
-    await supabase.from('employees').insert({ location_id: selectedLocId, name })
-    setNewEmpName('')
-    fetchEmployees()
+    const name = newEmpName.trim(), locationId = selectedLocId
+    if (!name || !locationId || employeeSaveRef.current) return
+    employeeSaveRef.current = true
+    setEmployeeSaving(true)
+    setEmployeeError('')
+    try {
+      const result = await createEmployeeIfMissing(supabase, locationId, name)
+      if (!result.created) {
+        setEmployeeError('This name already exists at this location, including inactive employees. Review the existing records; matching names do not confirm identity. Use distinct names for different people.')
+        return
+      }
+      setNewEmpName('')
+      fetchEmployees()
+    } catch (error) {
+      setEmployeeError(error.message || 'Could not add employee. Reload and try again.')
+    } finally {
+      employeeSaveRef.current = false
+      setEmployeeSaving(false)
+    }
   }
 
   const toggleEmployee = async (emp) => {
@@ -590,7 +610,8 @@ export default function Admin() {
               <div className="flex gap-3 items-center mb-5">
                 <select
                   value={selectedLocId}
-                  onChange={e => setSelectedLocId(e.target.value)}
+                  disabled={employeeSaving}
+                  onChange={e => { employeeReadRef.current++; setEmployees([]); setSelectedLocId(e.target.value); setEmployeeError('') }}
                   className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal"
                 >
                   <option value="">Select a location</option>
@@ -611,11 +632,15 @@ export default function Admin() {
                       onKeyDown={e => e.key === 'Enter' && addEmployee()}
                       className="border border-gray-300 dark:border-tm-dark-border rounded-md px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 focus:ring-tm-teal w-52"
                     />
-                    <button onClick={addEmployee}
+                    <button onClick={addEmployee} disabled={employeeSaving}
                       className="bg-tm-blue text-white px-4 py-1.5 rounded-md text-sm font-brand font-medium hover:bg-[#0E1D33] transition-colors">
-                      Add
+                      {employeeSaving ? 'Checking…' : 'Add'}
                     </button>
                   </div>
+                  {employeeError && <p role="alert" className="text-sm text-red-700 dark:text-red-300 mb-3">{employeeError}</p>}
+                  {duplicateEmployeeGroups(employees).map(group => <p key={group[0].id} role="status" className="text-xs text-amber-800 dark:text-amber-300 mb-3">
+                    {group.length} records match “{group[0].name.trim()}” at this location. Confirm identity before planning consolidation. No records or historical logs have been merged.
+                  </p>)}
                   <div className="space-y-1">
                     {employees.map(emp => (
                       <div key={emp.id} className="flex items-center gap-2 py-1.5 border-b border-gray-100 dark:border-tm-dark-border">
