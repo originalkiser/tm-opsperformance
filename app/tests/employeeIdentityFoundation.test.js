@@ -94,3 +94,10 @@ test('zero sales, missing numeric inputs and correction rules are unchanged by u
   }
   const zero=report([row('Cam','08:00',0,0)]).rows[0];assert.equal(zero.score,0);assert.equal(zero.rank,1)
 })
+
+
+test('full rollback is restricted to disposable tests and cannot serve as production recovery',()=>{
+  assert.match(rollback,/current_database\(\)\s*<>\s*'tm_identity_foundation_test'/)
+  assert.match(rollback,/current_user\s*<>\s*'identity_test_admin'/)
+  assert.match(rollback,/inet_server_addr\(\) is not null/)
+})

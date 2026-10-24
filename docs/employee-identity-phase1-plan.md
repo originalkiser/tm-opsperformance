@@ -1,9 +1,9 @@
 # Phase 1 employee identity foundation — draft implementation
 
-Status: review only. No migration, database regression script, production query,
-backfill, employee change, merge or deployment was executed for this PR. The
-approved architecture does not authorize production execution. This document
-supersedes the earlier assumption that production lacked employee_id.
+Status: draft, pre-deployment validation only. The administrator executed approved
+read-only production inventory. Candidate SQL was executed only in an authorized
+isolated synthetic PostgreSQL database. No production mutation, backfill, merge,
+deployment or ID enablement occurred. Production execution remains withheld.
 
 ## Verified inventory and corrected foundation
 
@@ -112,107 +112,43 @@ with a new attendance or archival policy. No historical names/IDs are rewritten
 by a normal save in this PR. A later writer must audit deliberate attribution
 changes and handle inactive/merged historical references explicitly.
 
-## Migration safety and proposed production sequence — NOT AUTHORIZATION
+## Pre-deployment validation and production blockers
 
-Before asking for production authorization:
-- Independently refresh the supplied metadata, index validity, server version,
-  exact constraint/helper/trigger definitions and ACL/policy snapshots. Check
-  inbound dependencies and realtime/replication behavior. The submitted migration
-  checks core preconditions, not every possible external integration.
-- Obtain explicit authorization for GLOBAL aggregate ID integrity/size counts;
-  the Carencro-only scope is insufficient. A separate read-only preflight is
-  prepared at docs/sql/employee-identity-foundation-preflight-READ-ONLY.sql and
-  has not been executed. Any cross-site IDs block validation; no automatic repair.
-- Review applied migration history without changing it. Do not run db pull or
-  migration repair as an inventory shortcut; either may change remote history.
-- Run the prepared SQL suites and authenticated-role tests in a separately approved
-  isolated, representative PostgreSQL environment; test concurrent locks/writes,
-  guard permissions, FK checks and stale/offline writers. No migration was applied
-  even to a local database under this task's no-execution instruction.
-- Measure lock/index/validation duration in that environment and choose a reviewed
-  maintenance window. This draft builds indexes and validates under blocking locks.
-  If it cannot finish within the bounds, abort and design a separately reviewed
-  concurrent/staged rollout; do not silently increase timeouts or leave NOT VALID
-  constraints as a claimed complete deployment.
-- Record backups/recovery ownership, exact SQL revision/hash, source-ID/name/counter
-  baseline and rollback decision. Obtain separate approval of SQL execution and
-  any later application release. No merge/deployment is requested by this PR.
+See [validation evidence and maintenance/recovery procedure](employee-identity-phase1-validation.md).
+The global inventory is complete: 457 employees, 24,514 logs, all employee IDs NULL,
+no invalid/cross-location references or employee-hour duplicate groups. PostgreSQL
+17.6; all four existing indexes valid/ready; known constraints validated,
+non-deferrable, with NULL comments. These are point-in-time results, not an
+execution authorization or guarantee against later changes.
 
-On a future authorized run, capture preflight evidence, execute the complete
-transaction once using stop-on-error handling, and verify one same-location FK,
-validated state, unchanged checkpoint key and existing guards/views/RLS/ACLs, no
-raw data changes, NULL legacy saves, identity-write refusal, and report parity.
-Any timeout/error aborts the transaction. ROLLBACK/close the failed session and
-review; do not retry blindly or use CASCADE. Re-running a successful migration
-fails preconditions instead of replacing evolved objects.
+No supabase_migrations.schema_migrations relation exists. Do not push, pull, repair
+or create a ledger as an inventory shortcut. Production needs a separately approved
+exact-SQL execution mechanism and durable external execution record, or a separate
+baseline adoption plan. Neither has been executed.
 
-## Rollback and recovery
+The forward migration remains unchanged. Its 2s lock timeout bounds lock acquisition;
+15s statement timeout is per statement, NOT a whole-transaction deadline. It builds
+indexes/validates under ACCESS EXCLUSIVE locks. Use a maintenance window and the
+recovery procedure; do not silently extend limits or leave constraints unvalidated.
 
-Prepared separately, outside the automatic migration folder:
-`docs/sql/employee-identity-foundation-ROLLBACK-REVIEW-ONLY.sql`.
-It is not executed. Under the same lock bounds it verifies phase1 markers,
-trigger identities and exact guard-body hashes, then refuses ANY non-NULL employee
-ID globally (including legitimate IDs predating phase1). This conservative path
-is intentionally limited to an all-NULL baseline. If IDs exist, a tailored
-preserving forward-repair/rollback design is a production blocker; never clear
-IDs to make rollback run.
+The full rollback SQL is now restricted to the disposable test database/admin and
+Unix socket. Although the all-NULL production baseline is structurally reversible,
+that rollback removes ID-disablement guards and is therefore NOT policy-safe for
+production. Production recovery retains guards, IDs, stronger FK and checkpoint
+key while a specific forward repair is separately reviewed. Never clear IDs,
+disable guards or restore incompatible uniqueness to make rollback succeed.
 
-When eligible, restore the original single-column FK and employee-based unique
-constraint; remove only phase1 guard/support objects. Preserve source columns,
-rows, names, metrics, current checkpoint key, views, RLS, grants and Plans Lost.
-Unknown dependent objects abort with RESTRICT. An operator must also compare the
-full current metadata against approved before/after snapshots; marker checks alone
-are not sufficient evidence to undo later changes. Any later writer/identity
-change requires forward repair or a new reviewed reversal plan, not this script.
-The application itself is unchanged, so it needs no version rollback here.
+Remaining blockers before production authorization:
+- Administrator confirmation of external/old/offline/import writers and maintenance
+  ownership; repository search cannot certify deployed integrations.
+- PostgREST/Supabase schema-cache and API compatibility validation in an authorized
+  non-production Supabase environment; local PostgreSQL does not emulate that layer.
+- Review of exact execution/ledger handling, backup/recovery ownership and practical
+  lock window. No automatic ledger initialization or production rollback is approved.
+- Fresh preflight immediately before any separately authorized execution, including
+  schema/ACL/trigger/view/dependency drift. Stop on any unexpected result.
 
-## Verification and remaining blockers
-
-Node tests cover SQL contract safeguards and name-based reporting parity with NULL,
-absent and unresolved IDs, split-hour deltas, zero/missing data and corrections.
-Offline PostgreSQL SQL/PLpgSQL parsing checks syntax without database execution;
-it does not validate catalog types, permissions, locking, upsert behavior or RLS.
-
-Prepared, unexecuted SQL suites:
-- employee-identity-foundation.fixture.sql: guarded synthetic local baseline and
-  the existing Plans Lost guard; no real production IDs or employee facts.
-- employee-identity-foundation.regression.sql: applies the candidate only after
-  fixture safety checks when a future tester explicitly runs it; checks raw-row/
-  policy parity, preserved preexisting IDs, rejected assignment/clear/reassignment,
-  same-location FK, permanent keys, referenced deletion, split upserts, future
-  same-ID split structure in a rolled-back test-only bypass, Plans Lost and RLS.
-- employee-identity-foundation.rollback.sql: separate fresh all-NULL fixture and
-  successful rollback assertions. The refusal case, schema drift, reapplication,
-  lock/concurrency timeouts and actual production-like role policy matrix also
-  require the documented isolated validation before release.
-
-These files have never been sent to Supabase or a database by this task. Test
-scripts WILL mutate their disposable fixture if deliberately executed later;
-never paste them into production SQL Editor. No live database advisors were run,
-since this task does not authorize further project inspection or mutation.
-
-Remaining production blockers: global ID integrity/coverage and rollback baseline;
-external writer conflict targets/nonnull behavior and PostgREST schema-cache compatibility; exact deployment/ledger order;
-isolated SQL/RLS/concurrency and rollback execution; measured DDL lock budget;
-compatibility of existing helpers/guards with the supported PostgreSQL version.
-Do not request production execution authorization until these are reviewed.
-
-Later independently reviewed PRs remain: audited compatible writer/authorization,
-identity-aware reporting preserving supported legacy ranks, manager roster review
-and selection-only UI, audited renames, merge proposals, Admin finalization/reversal,
-and explicitly confirmed historical attribution. None is implemented here.
-
-References: PostgreSQL constraints and ALTER TABLE documentation; Supabase local
-migration workflow and database trigger/function guidance. This migration was
-prepared from administrator-supplied production metadata, not a live schema dump.
-
-### Checks completed for this draft
-
-- Full Node suite: **281 passed, 0 failed** (271 existing + 10 foundation checks).
-- Both production Vite builds passed; existing >500 kB chunk warnings remain.
-- Six SQL files passed offline PostgreSQL SQL and PL/pgSQL syntax parsing with
-  temporary pglast 7.21; psql directives were excluded from grammar parsing.
-- SQL runtime, RLS, lock/concurrency and rollback executions: **not run**, because
-  no migrations or database changes were authorized, including on a local database.
-- No application source, dependency/lockfile, seed, existing role helper, Plans
-  Lost function, view or scoring implementation was changed.
+Later independently reviewed PRs: compatible audited identity writer and controls,
+identity-aware reporting preserving supported legacy ranks, roster review and
+selection-only UI, audited renames, Admin-confirmed merges/reversals, and confirmed
+historical attribution. None is implemented or enabled here.

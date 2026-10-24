@@ -1,4 +1,4 @@
--- PREPARED, NOT EXECUTED. Separately authorized disposable LOCAL database only.
+-- PREPARED, Authorized isolated tests only. Separately authorized disposable LOCAL database only.
 -- Run in a FRESH empty test database, not after the other fixture suite.
 \set ON_ERROR_STOP on
 \ir employee-identity-foundation.fixture.sql

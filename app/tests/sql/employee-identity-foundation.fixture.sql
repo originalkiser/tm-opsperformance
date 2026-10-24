@@ -1,10 +1,10 @@
--- SYNTHETIC FIXTURE ONLY. NOT EXECUTED. Never run in SQL Editor/production.
+-- SYNTHETIC FIXTURE ONLY. Authorized isolated tests only. Never run in SQL Editor/production.
 -- Requires a separately authorized, disposable LOCAL database named exactly
 -- tm_identity_foundation_test, an empty public application schema and the
 -- anon/authenticated/service_role test roles. No real employee data is used.
 \set ON_ERROR_STOP on
 do $$ begin
-  if current_database()<>'tm_identity_foundation_test'
+  if current_user<>'identity_test_admin' or current_database()<>'tm_identity_foundation_test'
      or (inet_server_addr() is not null and inet_server_addr() not in ('127.0.0.1'::inet,'::1'::inet)) then
     raise exception 'Disposable LOCAL identity test database required';
   end if;

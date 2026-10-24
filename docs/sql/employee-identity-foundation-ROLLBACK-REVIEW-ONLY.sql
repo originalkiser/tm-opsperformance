@@ -1,13 +1,19 @@
--- REVIEW ONLY. NOT EXECUTED. Separate authorization required.
+-- ISOLATED-TEST REFERENCE ONLY. NOT A PRODUCTION RECOVERY SCRIPT.
+-- Full rollback removes assignment guards, contrary to the approved production
+-- disablement policy. Production recovery must retain guards and use forward repair.
 -- Conservative rollback: refuses ANY non-NULL employee IDs, including IDs that
 -- predate Phase 1. If those exist, review a tailored forward-repair plan instead.
 begin;
 set local lock_timeout = '2s';
 set local statement_timeout = '15s';
-lock table public.employees, public.daily_logs in access exclusive mode;
 
 do $rollback_preconditions$
 begin
+  if current_database()<>'tm_identity_foundation_test' or current_user<>'identity_test_admin'
+     or inet_server_addr() is not null then
+    raise exception 'Full rollback is isolated-test-only; production requires guard-preserving recovery';
+  end if;
+  lock table public.employees, public.daily_logs in access exclusive mode;
   if exists(select 1 from public.daily_logs where employee_id is not null) then
     raise exception 'Non-NULL employee IDs exist: preserve them and review forward repair; no automatic rollback';
   end if;

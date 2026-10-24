@@ -1,4 +1,4 @@
--- PREPARED, NOT EXECUTED. psql-only, separately approved disposable LOCAL DB.
+-- PREPARED, Authorized isolated tests only. psql-only, separately approved disposable LOCAL DB.
 -- This suite WILL apply draft DDL to the guarded synthetic fixture if authorized.
 -- It is deliberately NOT part of npm/node test automation and never links remote.
 \set ON_ERROR_STOP on
