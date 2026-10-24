@@ -1,5 +1,7 @@
 # Employee Performance Score — Team Sales
 
+> Historical policy, superseded by [Unified Team Member Sales](employee-leaderboard-policy.md). The unified leaderboard removes these weights and separate formula cohorts.
+
 The score uses existing employee/site Daily Log totals and Reports filters. This correction changes only Team Sales; Site Performance, Budget Tracking and shared `logMath` remain unchanged.
 
 ## Scoring
