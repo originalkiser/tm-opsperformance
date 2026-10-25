@@ -1,4 +1,4 @@
-import { createEmployeeIfMissing, employeeNameKey } from '../utils/employeeIdentity.js'
+import { loadDailyLogEmployees, resolvePastedEmployee, saveDailyLogCheckpoint } from '../utils/dailyLogEmployees.js'
 import { netMemberStyle, netMembersCls } from '../utils/netMemberColors'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
@@ -139,98 +139,6 @@ const parseTSV = (text) => {
   return rows
 }
 
-// ── Edit Employees Modal ─────────────────────────────────────────────────────
-
-function EditEmployeesModal({ locationId, onClose, onRefresh }) {
-  const [emps, setEmps]   = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => { fetchAll() }, [])
-
-  const fetchAll = async () => {
-    const { data } = await supabase
-      .from('employees').select('*').eq('location_id', locationId).order('name')
-    setEmps(data || [])
-    setLoading(false)
-  }
-
-  const toggle = async (emp) => {
-    await supabase.from('employees').update({ is_active: !emp.is_active }).eq('id', emp.id)
-    fetchAll()
-    onRefresh()
-  }
-
-  const del = async (id) => {
-    if (!window.confirm('Delete this employee permanently?')) return
-    await supabase.from('employees').delete().eq('id', id)
-    fetchAll()
-    onRefresh()
-  }
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative max-w-sm w-full mx-4 bg-white dark:bg-tm-dark-card rounded-xl shadow-2xl p-5 z-10">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-brand font-bold text-sm text-tm-blue dark:text-tm-dark-text">Employees</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-white text-xl leading-none transition-colors"
-          >
-            ×
-          </button>
-        </div>
-        {loading ? (
-          <div className="flex justify-center py-4"><TmLoader size={56} /></div>
-        ) : (
-          <div className="space-y-1 max-h-72 overflow-y-auto">
-            {emps.map(emp => (
-              <div
-                key={emp.id}
-                className="flex items-center gap-2 py-1.5 border-b border-gray-100 dark:border-tm-dark-border"
-              >
-                <span className={`flex-1 font-brand text-sm ${
-                  emp.is_active
-                    ? 'text-gray-800 dark:text-tm-dark-text'
-                    : 'line-through text-gray-400 dark:text-tm-dark-muted'
-                }`}>
-                  {emp.name}
-                </span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded font-brand font-semibold ${
-                  emp.is_active
-                    ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                    : 'bg-gray-100 text-gray-500 dark:bg-tm-dark-surface dark:text-gray-400'
-                }`}>
-                  {emp.is_active ? 'Active' : 'Inactive'}
-                </span>
-                <button
-                  onClick={() => toggle(emp)}
-                  className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
-                    emp.is_active
-                      ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-                      : 'bg-green-100 text-green-700 hover:bg-green-200'
-                  }`}
-                >
-                  {emp.is_active ? 'Deactivate' : 'Reactivate'}
-                </button>
-                <button
-                  onClick={() => del(emp.id)}
-                  className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
-                >
-                  Del
-                </button>
-              </div>
-            ))}
-            {!emps.length && (
-              <p className="text-sm text-gray-400 dark:text-tm-dark-muted py-3">No employees yet.</p>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ── Paste Data Modal ─────────────────────────────────────────────────────────
 
 function PasteModal({ onClose, onApply }) {
@@ -304,6 +212,9 @@ export default function DailyLogTable({
   const lossRevision = useRef(0)
   const [rows, setRows]       = useState(TIME_SLOTS.map(s => emptyRow(s.value)))
   const [employees, setEmps]  = useState([])
+  const [rosterLoading, setRosterLoading] = useState(true)
+  const [rosterError, setRosterError] = useState('')
+  const rosterRequest = useRef(0)
   const [saveStatus, setSaveStatus] = useState('idle') // 'idle' | 'saving' | 'saved'
   const [saveError, setSaveError]   = useState(null)
   const [viewMode, setViewMode] = useState(() => {
@@ -321,7 +232,6 @@ export default function DailyLogTable({
   // Storage indices of split rows explicitly removed via "×" this session —
   // keeps a cleared-but-unsaved split row from lingering in the display list.
   const [removedSplitIndices, setRemovedSplitIndices] = useState(() => new Set())
-  const [showEditModal, setShowEditModal] = useState(false)
   const [showPasteModal, setShowPasteModal] = useState(false)
   const [copyFeedback, setCopyFeedback]     = useState(false)
 
@@ -365,11 +275,10 @@ export default function DailyLogTable({
   const rowsRef      = useRef(rows)
   rowsRef.current    = rows
   const batchTimer  = useRef(null)
+  const pendingSaves = useRef(new Map())
   const dirtySet    = useRef(new Set())
   const savedTimer  = useRef(null)
   const historyRef   = useRef([])
-  const employeesRef = useRef(employees)
-  employeesRef.current = employees
 
   const locationIdRef = useRef(locationId)
   const dateRef       = useRef(selectedDate)
@@ -419,14 +328,27 @@ export default function DailyLogTable({
   }, [])
 
   const fetchEmployees = async () => {
-    const { data } = await supabase
-      .from('employees')
-      .select('id, name')
-      .eq('location_id', locationIdRef.current)
-      .eq('is_active', true)
-      .order('name')
-    setEmps(data || [])
+    const request = ++rosterRequest.current
+    const scope = locationIdRef.current
+    setRosterLoading(true)
+    setRosterError('')
+    // Never leave selections from an earlier location visible during a request.
+    setEmps([])
+    try {
+      const active = await loadDailyLogEmployees(supabase, scope)
+      if (request === rosterRequest.current && scope === locationIdRef.current) setEmps(active)
+    } catch {
+      if (request === rosterRequest.current) setRosterError('Roster could not load.')
+    } finally {
+      if (request === rosterRequest.current) setRosterLoading(false)
+    }
   }
+
+  useEffect(() => {
+    const refresh = () => fetchEmployees()
+    window.addEventListener('focus', refresh)
+    return () => { rosterRequest.current++; window.removeEventListener('focus', refresh) }
+  }, [])
 
   const hydrateRow = (existing, timeSlot, splitIndex) => {
     if (!existing) return emptyRow(timeSlot, splitIndex)
@@ -437,6 +359,8 @@ export default function DailyLogTable({
       ...ALL_KEYS.reduce((acc, f) => ({ ...acc, [f]: existing[f] ?? '' }), {}),
       split_index: splitIndex,
       employee_name: existing.employee_name ?? '',
+      _savedEmployeeName: existing.employee_name ?? '',
+      _recordedEmployeeName: existing.employee_name ?? '',
     }
   }
 
@@ -563,88 +487,72 @@ export default function DailyLogTable({
 
   // ── Save / delete ────────────────────────────────────────────────────────────
 
-  const doSave = useCallback(async (index) => {
-    if (!canEditRef.current || !logLoadedRef.current) return
-    const row = rowsRef.current[index]
-    if (!row) return
+  const doSave = useCallback((index) => {
+    const run = async () => {
+      try {
+        if (!canEditRef.current || !logLoadedRef.current) return
+        const row = rowsRef.current[index]
+        if (!row) return
 
-    if (!rowHasData(row)) {
-      if (row.id) {
-        await supabase.from('daily_logs').delete().eq('id', row.id)
-        setRows(prev => {
-          const next = [...prev]
-          next[index] = { ...next[index], id: undefined }
-          return next
-        })
+        if (!rowHasData(row)) {
+          if (row.id) {
+            const { error } = await supabase.from('daily_logs').delete().eq('id', row.id)
+            if (error) throw error
+            const next = [...rowsRef.current]
+            next[index] = { ...next[index], id: undefined, _savedEmployeeName: '' }
+            rowsRef.current = next
+            setRows(prev => {
+              const next = [...prev]
+              next[index] = { ...next[index], id: undefined, _savedEmployeeName: '' }
+              return next
+            })
+          }
+          return
+        }
+
+        const { memberships_sold, opportunities } = compute(row, formulaRef.current)
+        const saved = await saveDailyLogCheckpoint(supabase, row,
+          {
+            location_id:      locationIdRef.current,
+            log_date:         dateRef.current,
+            time_slot:        row.time_slot,
+            split_index:      row.split_index ?? 0,
+            employee_name:    row.employee_name || null,
+            google_reviews:   toInt(row.google_reviews),
+            total_washes:     toInt(row.total_washes),
+            member_washes:    toInt(row.member_washes),
+            basic:            toInt(row.basic),
+            good:             toInt(row.good),
+            better:           toInt(row.better),
+            best:             toInt(row.best),
+            ...(formulaRef.current !== 'simple' ? { reactivations: toInt(row.reactivations) } : {}),
+            memberships_sold,
+            opportunities,
+          },
+        )
+        // Update the ref immediately; repeated/flush saves must PATCH this same row.
+        const current = rowsRef.current[index]
+        if (current && current.time_slot === row.time_slot && current.split_index === row.split_index) {
+          const next = [...rowsRef.current]
+          next[index] = { ...current, id: saved.id,
+            ...(current.employee_name === row.employee_name ? { employee_name: saved.employee_name ?? '' } : {}),
+            _savedEmployeeName: saved.employee_name ?? '' }
+          rowsRef.current = next
+          setRows(next)
+        }
+        return true
+      } catch (error) {
+        setSaveError(`Checkpoint not saved: ${error.message}. Reload this date if it changed in another session.`)
+        return false
       }
-      return
     }
-
-    const { memberships_sold, opportunities } = compute(row, formulaRef.current)
-    const { data: saved, error } = await supabase.from('daily_logs').upsert(
-      {
-        location_id:      locationIdRef.current,
-        log_date:         dateRef.current,
-        time_slot:        row.time_slot,
-        split_index:      row.split_index ?? 0,
-        employee_name:    row.employee_name || null,
-        google_reviews:   toInt(row.google_reviews),
-        total_washes:     toInt(row.total_washes),
-        member_washes:    toInt(row.member_washes),
-        basic:            toInt(row.basic),
-        good:             toInt(row.good),
-        better:           toInt(row.better),
-        best:             toInt(row.best),
-        ...(formulaRef.current !== 'simple' ? { reactivations: toInt(row.reactivations) } : {}),
-        memberships_sold,
-        opportunities,
-      },
-      { onConflict: 'location_id,log_date,time_slot,split_index' }
-    ).select('id').single()
-
-    if (error) {
-      console.error('Save failed:', error)
-      setSaveError(`Save failed: ${error.message}`)
-      setTimeout(() => setSaveError(null), 5000)
-    } else if (saved?.id && !rowsRef.current[index]?.id) {
-      setRows(prev => {
-        const next = [...prev]
-        next[index] = { ...next[index], id: saved.id }
-        return next
-      })
-    }
+    const pending = (pendingSaves.current.get(index) || Promise.resolve()).then(run)
+    pendingSaves.current.set(index, pending)
+    pending.finally(() => { if (pendingSaves.current.get(index) === pending) pendingSaves.current.delete(index) })
+    return pending
   }, [])
 
-  const flushSave = useCallback(async (index) => {
-    if (!canEditRef.current || !logLoadedRef.current) return
-    const row = rowsRef.current[index]
-    if (!row) return
-    if (!rowHasData(row)) {
-      if (row.id) await supabase.from('daily_logs').delete().eq('id', row.id)
-      return
-    }
-    const { memberships_sold, opportunities } = compute(row, formulaRef.current)
-    await supabase.from('daily_logs').upsert(
-      {
-        location_id:      locationIdRef.current,
-        log_date:         dateRef.current,
-        time_slot:        row.time_slot,
-        split_index:      row.split_index ?? 0,
-        employee_name:    row.employee_name || null,
-        google_reviews:   toInt(row.google_reviews),
-        total_washes:     toInt(row.total_washes),
-        member_washes:    toInt(row.member_washes),
-        basic:            toInt(row.basic),
-        good:             toInt(row.good),
-        better:           toInt(row.better),
-        best:             toInt(row.best),
-        ...(formulaRef.current !== 'simple' ? { reactivations: toInt(row.reactivations) } : {}),
-        memberships_sold,
-        opportunities,
-      },
-      { onConflict: 'location_id,log_date,time_slot,split_index' }
-    )
-  }, [])
+  const flushSave = doSave
 
   const scheduleBatch = useCallback((indices) => {
     indices.forEach(i => dirtySet.current.add(i))
@@ -654,8 +562,8 @@ export default function DailyLogTable({
       if (!toSave.length) return
       dirtySet.current.clear()
       setSaveStatus('saving')
-      await Promise.all(toSave.map(i => doSave(i)))
-      setSaveStatus('saved')
+      const results = await Promise.all(toSave.map(i => doSave(i)))
+      setSaveStatus(results.includes(false) ? 'idle' : 'saved')
       clearTimeout(savedTimer.current)
       savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000)
     }, 2500)
@@ -669,6 +577,9 @@ export default function DailyLogTable({
     historyRef.current = historyRef.current.slice(0, -1)
 
     const current       = rowsRef.current
+    snapshot.forEach((row, i) => {
+      if (current[i]?.id) { row.id = current[i].id; row._savedEmployeeName = current[i]._savedEmployeeName }
+    })
     const changedIndices = snapshot
       .map((_, i) => i)
       .filter(i => JSON.stringify(snapshot[i]) !== JSON.stringify(current[i]))
@@ -698,7 +609,7 @@ export default function DailyLogTable({
 
   useEffect(() => {
     const handler = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey && !e.target.closest('[data-plans-lost]')) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey && !e.target.closest('[data-plans-lost], [role="combobox"]')) {
         e.preventDefault()
         undo()
       }
@@ -757,24 +668,7 @@ export default function DailyLogTable({
     scheduleBatch([index])
   }
 
-  const autoAddEmployee = async (name) => {
-    const locationId = locationIdRef.current
-    if (!employeeNameKey(name)) return
-    if (employeesRef.current.some(e => employeeNameKey(e.name) === employeeNameKey(name))) return
-    try {
-      const result = await createEmployeeIfMissing(supabase, locationId, name)
-      if (result.created && locationIdRef.current === locationId) fetchEmployees()
-    } catch {
-      // Roster auto-add must never block or rewrite the named Daily Log activity.
-      // A failed verification/insert can be retried on the next explicit save.
-    }
-  }
-
-  const saveImmediately = (index) => {
-    scheduleBatch([index])
-    const row = rowsRef.current[index]
-    if (row?.employee_name?.trim()) autoAddEmployee(row.employee_name)
-  }
+  const saveImmediately = (index) => scheduleBatch([index])
 
   // ── Arrow key navigation ─────────────────────────────────────────────────────
 
@@ -1039,11 +933,9 @@ export default function DailyLogTable({
     headers.forEach((h, i) => { if (FIELD_MAP[h]) colMap[i] = FIELD_MAP[h] })
 
     const snapshot = rowsRef.current.map(r => ({ ...r }))
-    historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), snapshot]
-
     const next = [...rowsRef.current]
     let updated = 0
-    parsed.slice(1).forEach(cells => {
+    try { parsed.slice(1).forEach(cells => {
       const slot = parseTimeToSlot(cells[timeIdx]?.trim())
       if (!slot) return
       const slotIdx = TIME_SLOTS.findIndex(s => s.value === slot)
@@ -1051,14 +943,20 @@ export default function DailyLogTable({
       const updatedRow = { ...next[slotIdx] }
       Object.entries(colMap).forEach(([ci, field]) => {
         // blank cells paste as empty string — toInt treats '' as 0
-        updatedRow[field] = cells[ci]?.trim() ?? ''
+        if (field === 'employee_name') {
+          const name = cells[ci]?.trim() ?? ''
+          if (name && name !== updatedRow.employee_name && (rosterLoading || rosterError)) throw new Error('Load the active roster before pasting employee names.')
+          updatedRow[field] = resolvePastedEmployee(name, updatedRow.employee_name, employees)
+        } else updatedRow[field] = cells[ci]?.trim() ?? ''
       })
       next[slotIdx] = updatedRow
       updated++
     })
 
+    } catch (error) { return { error: error.message } }
     if (!updated) return { error: 'No matching time slots found (e.g. "8:00 AM", "1:00 PM").' }
 
+    historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), snapshot]
     rowsRef.current = next
     setRows(next)
     scheduleBatch(next.map((_, idx) => idx))
@@ -1112,7 +1010,8 @@ export default function DailyLogTable({
   const totals      = latestRow ?? {}
   const totComputed = latestRow ? compute(latestRow, opportunitiesFormula) : {}
 
-  const cardSlotIdx = TIME_SLOTS.findIndex(s => s.value === cardHour)
+  const cardSlotIdx = Math.max(0, rows.findIndex(row => ((row.split_index ?? 0) > 0
+    ? `${row.time_slot}:${row.split_index}` : row.time_slot) === cardHour))
   const cardRow     = rows[cardSlotIdx >= 0 ? cardSlotIdx : 0] ?? emptyRow(cardHour)
   const cardComputed = compute(cardRow, opportunitiesFormula)
 
@@ -1211,7 +1110,7 @@ export default function DailyLogTable({
           </button>
           {canEdit && (
             <button
-              onClick={() => setShowEditModal(true)}
+              onClick={() => { window.location.hash = '/employees' }}
               className="px-3 py-1.5 rounded-md border border-gray-200 dark:border-tm-dark-border text-gray-600 dark:text-tm-dark-muted bg-white dark:bg-tm-dark-surface hover:border-tm-teal hover:text-tm-blue dark:hover:text-tm-teal transition-colors font-brand text-xs font-semibold"
             >
               ✎ Employees
@@ -1282,9 +1181,12 @@ export default function DailyLogTable({
                   value={cardHour}
                   onChange={e => setCardHour(e.target.value)}
                 >
-                  {TIME_SLOTS.map(s => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
+                  {displayRows.map(({ row }) => {
+                    const split = row.split_index ?? 0
+                    const value = split > 0 ? `${row.time_slot}:${split}` : row.time_slot
+                    const label = TIME_SLOTS.find(s => s.value === row.time_slot)?.label
+                    return <option key={value} value={value}>{label}{split > 0 ? ` (split ${split})` : ''}</option>
+                  })}
                 </select>
               </div>
               <div>
@@ -1296,9 +1198,9 @@ export default function DailyLogTable({
                     <EmployeeSelect
                       value={cardRow.employee_name}
                       onChange={v => update(cardSlotIdx, 'employee_name', v)}
-                      onBlur={() => saveImmediately(cardSlotIdx)}
                       employees={employees}
-                      placeholder="Tap to select…"
+                      loading={rosterLoading} error={rosterError} onRefresh={fetchEmployees} disabled={!logLoaded}
+                      align="right"
                     />
                   </div>
                 ) : (
@@ -1448,8 +1350,8 @@ export default function DailyLogTable({
                         <EmployeeSelect
                           value={row.employee_name}
                           onChange={v => update(i, 'employee_name', v)}
-                          onBlur={() => saveImmediately(i)}
                           employees={employees}
+                          loading={rosterLoading} error={rosterError} onRefresh={fetchEmployees} disabled={!logLoaded}
                         />
                       ) : (
                         <span className="px-1 text-gray-700 dark:text-tm-dark-text">{row.employee_name}</span>
@@ -1547,15 +1449,6 @@ export default function DailyLogTable({
             </tbody>
           </table>
         </div>
-      )}
-
-      {/* Edit Employees Modal */}
-      {showEditModal && (
-        <EditEmployeesModal
-          locationId={locationId}
-          onClose={() => setShowEditModal(false)}
-          onRefresh={fetchEmployees}
-        />
       )}
 
       {/* Paste Data Modal */}

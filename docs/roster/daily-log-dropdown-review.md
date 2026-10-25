@@ -1,0 +1,26 @@
+# PR40 — active employee dropdown
+
+Draft stacked on PR39 (`12d4e22fb0cbf0d6a7497be25521a36dd49bbc0c`), which depends on PR38. Keep all three draft/unmerged/undeployed. PR37 stays paused. This PR adds no migrations, policy changes, dependencies or production mutations.
+
+## Behavior and compatibility
+
+- The card hour selector includes existing split checkpoints. Daily Log table and card share one accessible searchable combobox. Typing is a local search; only explicit keyboard/pointer selection changes a name. Escape, Tab or focus leaving the picker cancels unselected searches. Active employees are scoped to the selected location, alphabetized and deduplicated by trimmed lowercase name. A stable roster UUID breaks display-name ties; it is never written to a log. Actual selected roster spelling is saved exactly.
+- Missing, empty and failed roster reads show Employees guidance. Failed/incomplete paginated reads cannot become a partial list. Refresh on picker focus/window focus and before new-name saves; stale responses cannot repopulate another location. The existing Dashboard location/date key remounts DailyLogTable when either changes.
+- Existing historical names (inactive, nicknames, unmatched and their whitespace) remain visible and unchanged on unrelated edits. Empty existing names remain permitted; this does not introduce a mandatory-name entry rule. The picker does not clear a name merely because its search is empty. Historical names are selectable only through existing-record undo; no new historical attribution is invented.
+- Clipboard imports resolve changed names to active roster spelling and reject an invalid-name batch before applying it. Blank name cells preserve existing names. Undo can restore the exact original recorded name, guarded against concurrent name changes. Numerical paste behavior is unchanged.
+- Removed Daily Log auto-creation and its obsolete embedded roster editor (including its delete control); Employees maintenance goes to PR39's Employees tab.
+- Numeric payloads still use the existing `compute` function and formula selection. Team Member Sales, qualification/rankings, store scoring, Budget Tracking and calculation utilities are unchanged. No employee roster join was added to historical reporting.
+- Both save paths use the same name-aware writer. Existing rows PATCH only supplied metric columns; `employee_name` is omitted unless deliberately changed. An explicit replacement checks its original name to detect concurrent replacement. The returned current server name updates local state, so a later unrelated save cannot restore an earlier name. New checkpoints INSERT; concurrent unique-key conflicts surface instead of overwriting another writer's new checkpoint. Per-checkpoint queues serialize debounce/unmount saves. The existing split-hour unique key remains authoritative.
+- Neither INSERT nor PATCH includes `employee_id`; an existing non-null employee ID remains unchanged. Existing production employee FK/uniqueness and Plans Lost guard are not altered. Same-day loss-only anchors still use their separate existing writer. Existing name-only checkpoints are not backfilled.
+
+## Scope limits / review decisions
+
+1. This is application-level roster selection, not a new database validation rule. Authorized older clients or direct API callers retain existing text-column semantics. Disabling those writers or adding server enforcement would require separate review.
+2. A roster deactivation/rename can occur after the final active-roster read but before the text-name write commits. Selection is revalidated immediately before saving and conflicts are surfaced; atomic roster/name enforcement cannot be guaranteed by the current two-request text schema. No identity migration is proposed.
+3. New checkpoint conflicts require reload/reconciliation; they no longer silently overwrite a checkpoint inserted by another session. Existing metric edits retain current last-writer behavior. Explicit name edits additionally detect name conflicts.
+4. This PR does not promise unload delivery through browser termination/network loss. Normal route changes flush pending saves through the shared guarded writer; failed requests display an error while mounted. Existing data remains unchanged on rejected name validation.
+5. Production authorization for PR38/PR39 SQL remains outstanding. Production release review must consider all three drafts together. No production authorization is requested here.
+
+## Validation
+
+See `daily-log-dropdown-validation.md`. Hosted development lacks production's `employee_id`, Plans Lost columns/trigger and computed views; we did not change it to match. Real hosted tests cover name-based checkpoint persistence, Auth/RLS and split-hour constraints. Existing-ID preservation and both Simple/Detailed calculations are covered by local component/service regression tests. Mobile evidence uses the real picker inside 393px/1024px iframe viewports with synthetic data; actual authenticated persistence was separately exercised through the real DailyLogTable in Edge. No physical-phone test is claimed.
