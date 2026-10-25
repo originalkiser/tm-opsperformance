@@ -17,7 +17,7 @@ export async function loadDailyLogEmployees(client, locationId) {
 
 export function resolvePastedEmployee(name, previous, employees) {
   // Blank paste cells never erase a recorded name. Preserve historical spelling.
-  if (!name || name === previous) return previous
+  if (!name || employeeNameKey(name) === employeeNameKey(previous)) return previous
   const match = employees.find(e => employeeNameKey(e.name) === employeeNameKey(name))
   if (!match) throw new Error(`“${name}” is not an active roster name. Review the Employees tab before pasting.`)
   return match.name

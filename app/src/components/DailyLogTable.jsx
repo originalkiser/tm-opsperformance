@@ -573,11 +573,13 @@ export default function DailyLogTable({
 
   const undo = useCallback(() => {
     if (!historyRef.current.length) return
-    const snapshot = historyRef.current[historyRef.current.length - 1].map(row => isLossAnchor(row) ? { ...row, plans_lost_today: plansLost(rowsRef.current) } : row)
+    const entry = historyRef.current[historyRef.current.length - 1]
+    const snapshot = entry.map(row => isLossAnchor(row) ? { ...row, plans_lost_today: plansLost(rowsRef.current) } : row)
     historyRef.current = historyRef.current.slice(0, -1)
 
     const current       = rowsRef.current
     snapshot.forEach((row, i) => {
+      if (current[i] && !entry.employeeChanges?.includes(i)) row.employee_name = current[i].employee_name
       if (current[i]?.id) { row.id = current[i].id; row._savedEmployeeName = current[i]._savedEmployeeName }
     })
     const changedIndices = snapshot
@@ -621,10 +623,9 @@ export default function DailyLogTable({
   // ── Edit handlers ────────────────────────────────────────────────────────────
 
   const update = (index, field, value) => {
-    historyRef.current = [
-      ...historyRef.current.slice(-(MAX_HISTORY - 1)),
-      rowsRef.current.map(r => ({ ...r })),
-    ]
+    const snapshot = rowsRef.current.map(r => ({ ...r }))
+    if (field === 'employee_name') snapshot.employeeChanges = [index]
+    historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), snapshot]
     // Update ref immediately so saves triggered synchronously after onChange see the new value
     if (field === 'net_members') return
     const next = [...rowsRef.current]
@@ -654,10 +655,9 @@ export default function DailyLogTable({
   }
 
   const removeSplit = (index) => {
-    historyRef.current = [
-      ...historyRef.current.slice(-(MAX_HISTORY - 1)),
-      rowsRef.current.map(r => ({ ...r })),
-    ]
+    const snapshot = rowsRef.current.map(r => ({ ...r }))
+    snapshot.employeeChanges = [index]
+    historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), snapshot]
     const next = [...rowsRef.current]
     // Keep the id so a previously-saved split gets deleted (doSave/flushSave
     // already delete any row that no longer rowHasData()).
@@ -956,6 +956,7 @@ export default function DailyLogTable({
     } catch (error) { return { error: error.message } }
     if (!updated) return { error: 'No matching time slots found (e.g. "8:00 AM", "1:00 PM").' }
 
+    snapshot.employeeChanges = next.flatMap((row, i) => row.employee_name !== snapshot[i]?.employee_name ? [i] : [])
     historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), snapshot]
     rowsRef.current = next
     setRows(next)

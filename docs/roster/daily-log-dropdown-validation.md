@@ -2,8 +2,8 @@
 
 ## Automated checks
 
-- Complete application suite: **305 passed, 0 failed, 0 skipped**. Includes all PR38/PR39 Node authorization/roster/UI regressions. Replaced the obsolete Daily Log auto-add expectation with selection-only regression coverage.
-- New service/picker tests cover alphabetical normalized deduplication, active location scope, incomplete/error reads, uncommitted searches, keyboard/pointer selection, historical names, empty/loading/error lists, guarded PATCH versus conflict-safe INSERT, no employee-ID writes, exact historical undo and late location responses.
+- Complete application suite: **306 passed, 0 failed, 0 skipped**. Includes all PR38/PR39 Node authorization/roster/UI regressions. Replaced the obsolete Daily Log auto-add expectation with selection-only regression coverage.
+- New service/picker tests cover alphabetical normalized deduplication, active location scope, incomplete/error reads, uncommitted searches, keyboard/pointer selection, historical names, empty/loading/error lists, guarded PATCH versus conflict-safe INSERT, no employee-ID writes, exact historical undo, unrelated-undo preservation after concurrent renames and late location responses.
 - Real DailyLogTable component harness exercises backdated table/card edits under both Simple and Detailed opportunity formulas, historical UUID/name preservation, explicit name replacement, repeat saves, split-hour inserts and card selection of existing splits. Numeric formulas were not changed.
 - Both Vite production targets passed: repository GitHub Pages base and `--base=/` for Cloudflare Pages. Existing large chunk warnings and the pre-existing duplicate `title` attribute warning in Admin.jsx remain outside this PR.
 

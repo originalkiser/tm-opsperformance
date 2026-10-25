@@ -8,7 +8,7 @@ import { shopTotals } from '../src/utils/logMath.js'
 import { fmtNum } from '../src/utils/format.js'
 const Picker=()=>null
 function log(view='table',formula='simple') {
- let live,timer,id=0
+ let live,timer,id=0,keydown
  const db=[{id:'historic',location_id:'a',log_date:'2025-01-15',time_slot:'08:00:00',split_index:0,employee_id:'stable-identity',employee_name:'  Nickname  ',total_washes:20,member_washes:10,basic:2,reactivations:1}],writes=[]
  const active=[{id:'cam',location_id:'a',name:'Cam',is_active:true}]
  const client={from(table){let action,body,filters=[];const q={
@@ -25,9 +25,9 @@ function log(view='table',formula='simple') {
   ...membership,...employeeHelpers,netMemberStyle,netMembersCls,shopTotals,fmtNum,supabase:client,
   useCallback:f=>f,useAuth:()=>({updateProfileSettings(){}}),EmployeeSelect:Picker,PlansLostInput:()=>null,TmLoader:()=>null,DowntimeModal:()=>null,
   pmixCls:()=>'',convCls:()=>'',pmixTotalsCls:()=>'',convTotalsCls:()=>'',localStorage:{getItem:()=>view,setItem(){}},
-  window:{addEventListener(){},removeEventListener(){}},clearTimeout(){},setTimeout(fn,ms){if(ms===2500)timer=fn},
+  window:{addEventListener(type,fn){if(type==='keydown')keydown=fn},removeEventListener(){}},clearTimeout(){},setTimeout(fn,ms){if(ms===2500)timer=fn},
  },{locationId:'a',selectedDate:'2025-01-15',canEdit:true,opportunitiesFormula:formula,profile:{role:'store'},onRowsChange:r=>{live=r}})
- return Object.assign(h,{db,writes,live:()=>live,async save(){await timer();await h.flush()},picker:()=>h.find(n=>n.type===Picker)})
+ return Object.assign(h,{db,writes,undo(){keydown({ctrlKey:true,key:'z',target:{closest:()=>false},preventDefault(){}})},live:()=>live,async save(){await timer();await h.flush()},picker:()=>h.find(n=>n.type===Picker)})
 }
 for(const view of ['table','card'])for(const formula of ['simple','detailed'])test(`${view}/${formula}: backdated edits preserve historical name/ID and formulas; explicit replacement saves name only`,async()=>{
  const h=log(view,formula);h.render();await h.flush()
@@ -63,4 +63,14 @@ test('card hour selector addresses existing split checkpoints without changing t
  hour.props.onChange({target:{value:'08:00:00:1'}});await h.flush()
  assert.equal(h.picker().props.value,'Cam')
  assert.equal(h.live().find(r=>r.split_index===1).id,h.db.find(r=>r.split_index===1).id)
+})
+
+test('undoing unrelated metrics cannot restore an earlier name after a concurrent rename',async()=>{
+ const h=log();h.render();await h.flush()
+ h.db[0].employee_name='Concurrent recorded name'
+ h.find(n=>n.type==='input'&&n.props.type==='number'&&n.props.min===0&&!n.props.disabled).props.onChange({target:{value:'3'}})
+ await h.save();assert.equal(h.picker().props.value,'Concurrent recorded name')
+ h.undo();await h.save()
+ assert.equal(h.db[0].employee_name,'Concurrent recorded name')
+ assert.ok(!('employee_name' in h.writes.at(-1).body))
 })
