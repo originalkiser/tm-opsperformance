@@ -26,8 +26,13 @@ The employee-only adapter and name/review migration were applied to development
 with explicit administrator approval. Original rows, unrelated policy/helper
 fingerprints were preserved. SQL-role tests passed with all data probes rolled back.
 Anonymous HTTP resolved both RPC signatures and returned HTTP 401 / SQLSTATE 42501.
-**Signed-in Auth/PostgREST tests remain BLOCKED**: no approved reusable session was
-found. The prior approved synthetic accounts exist and the dev-only localhost
-preview is running; administrator private sign-in was requested. No Auth users,
-passwords or Auth configuration were created/changed. Do not report login tests
-as passed until they actually execute.
+**Real signed-in Admin and store Auth/PostgREST tests passed on 2026-10-25.**
+See authenticated-browser-results.md and the local-only browser test fixture.
+The administrator privately signed in to the existing synthetic accounts. No Auth
+users/passwords/configuration or credentials were created/read/exported. All six
+owned test records were removed only after exact ownership and fingerprint checks;
+the original three employees and twelve logs and unrelated policies remain intact.
+The preview launcher now sets its working directory to appRoot for Tailwind content
+resolution; dark/light desktop rendering passed. The API guard is verified with
+actual signed-in HTTP, including parallel inserts and crafted cross-site writes.
+No production query/change, merge or deployment is authorized by these results.

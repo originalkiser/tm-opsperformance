@@ -22,6 +22,8 @@ if (!/^sb_publishable_[A-Za-z0-9_-]+$/.test(env.VITE_SUPABASE_PUBLISHABLE_KEY ||
 if (process.argv.includes('--check')) {
   console.log('Development configuration validated for bmfvcnsuduttebxbjvwx; no server started and key hidden.')
 } else {
+  // Tailwind content paths are relative to the process directory.
+  process.chdir(appRoot)
   const server = await createServer({ ...appConfig, configFile: false, root: appRoot, envDir, mode: 'tmopsdev',
     cacheDir: '/private/tmp/tm-ops-dev-vite-cache',
     server: { host: '127.0.0.1', port: 5175, strictPort: true } })

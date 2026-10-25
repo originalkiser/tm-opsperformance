@@ -84,14 +84,16 @@ is attempted against existing duplicate names.
 
 ## Outstanding release gates
 
-**Signed-in Supabase Auth/PostgREST and authenticated visual tests are not completed.**
-The approved existing synthetic accounts are present, but no reusable authenticated
-session/configuration was found. A fresh dev-only preview using the current public
-key was started at http://127.0.0.1:5175/tm-opsperformance/#/login. It explicitly
-rejects production URLs and inherited VITE configuration. Administrator private
-sign-in with synthetic Admin/store accounts is needed; no credentials in chat or Git.
-No SQL impersonation, anonymous denial, or locally mocked UI is called real login.
-Do not create test users through SQL or enable anonymous Auth as a shortcut.
+**Real Admin and store Auth/PostgREST tests now passed**; see
+[authenticated results](authenticated-browser-results.md). Browser CRUD,
+confirmation/cancel, status filters and Admin atomic review passed. Real signed-in
+store HTTP probes proved own-site writes, cross-site rejection, Admin-RPC denial,
+client-delete denial and concurrent duplicate rejection. Original data was verified
+unchanged after exact cleanup of all six test records. No SQL impersonation is
+called real login. The dev preview launcher's working directory was corrected after
+visual testing found ungenerated utility CSS. Dark/light desktop layouts now render
+correctly. Mobile visual testing remains unclaimed. No production authorization
+is requested merely because the Auth validation gate is complete.
 
 Also required: fresh production employee-policy/ACL preflight, review the small SQL
 migrations together, named execution/recovery owner and explicit production approval.

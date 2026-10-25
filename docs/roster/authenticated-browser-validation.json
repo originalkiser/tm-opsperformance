@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-25",
+  "project": "bmfvcnsuduttebxbjvwx",
+  "real_supabase_auth": true,
+  "real_postgrest": true,
+  "roles_tested": [
+    "admin",
+    "store"
+  ],
+  "admin_http_behavior_checks_passed": 7,
+  "store_http_behavior_checks_passed": 12,
+  "concurrent_http_insert": {
+    "accepted": 1,
+    "rejected_23505": 1
+  },
+  "browser_admin_crud_confirm_cancel_filters_and_atomic_review": "passed",
+  "browser_store_assigned_location_and_no_admin_controls": "passed",
+  "desktop_light_dark": "passed",
+  "mobile_visual": "not tested",
+  "test_records_cleaned": 6,
+  "original_employee_count": 3,
+  "original_daily_log_count": 12,
+  "original_employee_fingerprint_unchanged": true,
+  "daily_log_fingerprint_unchanged": true,
+  "unrelated_policies_unchanged": true,
+  "production_modified": false,
+  "merge_or_deploy_performed": false
+}
