@@ -1,4 +1,4 @@
-import { loadDailyLogEmployees, resolvePastedEmployee, saveDailyLogCheckpoint } from '../utils/dailyLogEmployees.js'
+import { loadDailyLogEmployees, resolvePastedEmployee, dailyLogPersistence } from '../utils/dailyLogEmployees.js'
 import { netMemberStyle, netMembersCls } from '../utils/netMemberColors'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
@@ -7,7 +7,7 @@ import EmployeeSelect from './EmployeeSelect'
 import TmLoader from './TmLoader'
 import DowntimeModal from './DowntimeModal'
 import PlansLostInput from './PlansLostInput'
-import { plansLost, dailyNetMembers, runningNetMembers, hasLegacyNet, parsePlansLost, lossWriter, isLossAnchor } from '../utils/dailyMemberships'
+import { plansLost, dailyNetMembers, runningNetMembers, hasLegacyNet, parsePlansLost, isLossAnchor } from '../utils/dailyMemberships'
 import { shopTotals } from '../utils/logMath'
 import { fmtNum } from '../utils/format'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
@@ -208,7 +208,6 @@ export default function DailyLogTable({
   const [lossStatus, setLossStatus] = useState('')
   const [lossError, setLossError] = useState('')
   const [logLoaded, setLogLoaded] = useState(false)
-  const writeLoss = useRef(lossWriter(supabase, locationId, selectedDate))
   const lossRevision = useRef(0)
   const [rows, setRows]       = useState(TIME_SLOTS.map(s => emptyRow(s.value)))
   const [employees, setEmps]  = useState([])
@@ -270,12 +269,15 @@ export default function DailyLogTable({
     }
   }, [profile])
 
+  const logRequest = useRef(0)
   const logLoadedRef = useRef(false)
   logLoadedRef.current = logLoaded
   const rowsRef      = useRef(rows)
   rowsRef.current    = rows
   const batchTimer  = useRef(null)
-  const pendingSaves = useRef(new Map())
+  const persistence = useRef(null)
+  const mounted = useRef(true)
+  const pendingWrites = useRef(0)
   const dirtySet    = useRef(new Set())
   const savedTimer  = useRef(null)
   const historyRef   = useRef([])
@@ -298,6 +300,7 @@ export default function DailyLogTable({
     fetchEmployees()
     historyRef.current = []
     setRemovedSplitIndices(new Set())
+    return () => { logRequest.current++ }
   }, [locationId, selectedDate])
 
   // Downtime: fetch active downtime + reasons when location changes
@@ -318,13 +321,23 @@ export default function DailyLogTable({
   }, [activeDowntime])
 
   useEffect(() => {
+    mounted.current = true
     return () => {
+      mounted.current = false
       clearTimeout(batchTimer.current)
       clearTimeout(savedTimer.current)
       const dirty = [...dirtySet.current]
       dirtySet.current.clear()
-      dirty.forEach(i => flushSave(i))
+      if (dirty.length) flushSave()
     }
+  }, [])
+
+  useEffect(() => {
+    const warn = event => {
+      if (dirtySet.current.size || pendingWrites.current) { event.preventDefault(); event.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
   }, [])
 
   const fetchEmployees = async () => {
@@ -365,6 +378,7 @@ export default function DailyLogTable({
   }
 
   const fetchData = async () => {
+    const request = ++logRequest.current
     setLogLoaded(false)
     const { data, error } = await supabase
       .from('daily_logs')
@@ -372,7 +386,20 @@ export default function DailyLogTable({
       .eq('location_id', locationId)
       .eq('log_date', selectedDate)
 
+    if (request !== logRequest.current) return
     if (error) { setLossError('Daily Log could not load. Reopen this date to retry.'); return }
+    persistence.current = dailyLogPersistence(supabase, locationId, selectedDate, (key, saved, intent) => {
+      const next = rowsRef.current.map(row => {
+        if (`${row.time_slot}|${row.split_index ?? 0}` !== key) return row
+        const name = intent && row.employee_name === (intent.employee_name ?? '') ? saved?.employee_name ?? '' : row.employee_name
+        return { ...row, id: saved?.id, employee_name: name, _savedEmployeeName: saved?.employee_name ?? '',
+          _recordedEmployeeName: row._recordedEmployeeName ?? intent?.employee_name ?? '',
+          ...(saved?.plans_lost_today != null ? { plans_lost_today: saved.plans_lost_today } : {}) }
+      })
+      rowsRef.current = next
+      setRows(next)
+    })
+    persistence.current.load(data || [])
     setLossDraft(plansLost(data || []))
     setLogLoaded(true)
     // Base row (split_index 0) for every hour, in fixed TIME_SLOTS order —
@@ -487,83 +514,46 @@ export default function DailyLogTable({
 
   // ── Save / delete ────────────────────────────────────────────────────────────
 
-  const doSave = useCallback((index) => {
-    const run = async () => {
-      try {
-        if (!canEditRef.current || !logLoadedRef.current) return
-        const row = rowsRef.current[index]
-        if (!row) return
-
-        if (!rowHasData(row)) {
-          if (row.id) {
-            const { error } = await supabase.from('daily_logs').delete().eq('id', row.id)
-            if (error) throw error
-            const next = [...rowsRef.current]
-            next[index] = { ...next[index], id: undefined, _savedEmployeeName: '' }
-            rowsRef.current = next
-            setRows(prev => {
-              const next = [...prev]
-              next[index] = { ...next[index], id: undefined, _savedEmployeeName: '' }
-              return next
-            })
-          }
-          return
-        }
-
-        const { memberships_sold, opportunities } = compute(row, formulaRef.current)
-        const saved = await saveDailyLogCheckpoint(supabase, row,
-          {
-            location_id:      locationIdRef.current,
-            log_date:         dateRef.current,
-            time_slot:        row.time_slot,
-            split_index:      row.split_index ?? 0,
-            employee_name:    row.employee_name || null,
-            google_reviews:   toInt(row.google_reviews),
-            total_washes:     toInt(row.total_washes),
-            member_washes:    toInt(row.member_washes),
-            basic:            toInt(row.basic),
-            good:             toInt(row.good),
-            better:           toInt(row.better),
-            best:             toInt(row.best),
-            ...(formulaRef.current !== 'simple' ? { reactivations: toInt(row.reactivations) } : {}),
-            memberships_sold,
-            opportunities,
-          },
-        )
-        // Update the ref immediately; repeated/flush saves must PATCH this same row.
-        const current = rowsRef.current[index]
-        if (current && current.time_slot === row.time_slot && current.split_index === row.split_index) {
-          const next = [...rowsRef.current]
-          next[index] = { ...current, id: saved.id,
-            ...(current.employee_name === row.employee_name ? { employee_name: saved.employee_name ?? '' } : {}),
-            _savedEmployeeName: saved.employee_name ?? '' }
-          rowsRef.current = next
-          setRows(next)
-        }
-        return true
-      } catch (error) {
-        setSaveError(`Checkpoint not saved: ${error.message}. Reload this date if it changed in another session.`)
-        return false
-      }
+  const stageSave = (row, forceDelete = false) => {
+    if (!row || !persistence.current) return
+    const { memberships_sold, opportunities } = compute(row, formulaRef.current)
+    persistence.current.stage(row, !forceDelete && rowHasData(row) ? {
+      location_id: locationIdRef.current, log_date: dateRef.current,
+      time_slot: row.time_slot, split_index: row.split_index ?? 0,
+      google_reviews: toInt(row.google_reviews), total_washes: toInt(row.total_washes),
+      member_washes: toInt(row.member_washes), basic: toInt(row.basic), good: toInt(row.good),
+      better: toInt(row.better), best: toInt(row.best),
+      ...(formulaRef.current !== 'simple' ? { reactivations: toInt(row.reactivations) } : {}),
+      memberships_sold, opportunities,
+    } : null)
+  }
+  const doSave = useCallback(async () => {
+    if (!canEditRef.current || !logLoadedRef.current) return false
+    try {
+      pendingWrites.current++
+      await persistence.current?.flush()
+      setSaveError(null)
+      return true
+    } catch (error) {
+      setSaveError(`Checkpoint not saved: ${error.message}. Reload this date if it changed in another session.`)
+      if (!mounted.current && window.dispatchEvent) window.dispatchEvent(new CustomEvent('daily-log-save-error', {
+        detail: { userId: profile?.id, date: selectedDate, message: error.message },
+      }))
+      return false
+    } finally {
+      pendingWrites.current = Math.max(0, pendingWrites.current - 1)
     }
-    const pending = (pendingSaves.current.get(index) || Promise.resolve()).then(run)
-    pendingSaves.current.set(index, pending)
-    pending.finally(() => { if (pendingSaves.current.get(index) === pending) pendingSaves.current.delete(index) })
-    return pending
   }, [])
-
   const flushSave = doSave
-
   const scheduleBatch = useCallback((indices) => {
-    indices.forEach(i => dirtySet.current.add(i))
+    indices.forEach(i => { dirtySet.current.add(i); stageSave(rowsRef.current[i]) })
     clearTimeout(batchTimer.current)
     batchTimer.current = setTimeout(async () => {
-      const toSave = [...dirtySet.current]
-      if (!toSave.length) return
+      if (!dirtySet.current.size) return
       dirtySet.current.clear()
       setSaveStatus('saving')
-      const results = await Promise.all(toSave.map(i => doSave(i)))
-      setSaveStatus(results.includes(false) ? 'idle' : 'saved')
+      const ok = await doSave()
+      setSaveStatus(ok ? 'saved' : 'idle')
       clearTimeout(savedTimer.current)
       savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000)
     }, 2500)
@@ -595,7 +585,8 @@ export default function DailyLogTable({
     setRows(snapshot)
 
     if (changedIndices.length) scheduleBatch(changedIndices)
-    droppedRows.forEach(r => { if (r.id) supabase.from('daily_logs').delete().eq('id', r.id) })
+    droppedRows.forEach(r => stageSave(r, true))
+    if (droppedRows.length) { dirtySet.current.add(-1); scheduleBatch([]) }
 
     // Undoing a "remove split" (×) restores the row's data here, but it was
     // also hidden from display via removedSplitIndices — un-hide it now that
@@ -668,7 +659,7 @@ export default function DailyLogTable({
     scheduleBatch([index])
   }
 
-  const saveImmediately = (index) => scheduleBatch([index])
+  const saveImmediately = () => { if (dirtySet.current.size) scheduleBatch([]) }
 
   // ── Arrow key navigation ─────────────────────────────────────────────────────
 
@@ -960,7 +951,7 @@ export default function DailyLogTable({
     historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), snapshot]
     rowsRef.current = next
     setRows(next)
-    scheduleBatch(next.map((_, idx) => idx))
+    scheduleBatch(next.flatMap((row, idx) => JSON.stringify(row) !== JSON.stringify(snapshot[idx]) ? [idx] : []))
   }
 
   // ── Column order ─────────────────────────────────────────────────────────────
@@ -999,11 +990,15 @@ export default function DailyLogTable({
     setRows(previous => previous.map(row => isLossAnchor(row) ? { ...row, plans_lost_today: parsed } : row))
     setLossStatus('Saving…'); setLossError('')
     try {
-      await writeLoss.current(parsed)
+      pendingWrites.current++
+      await persistence.current.loss(parsed)
       if (revision === lossRevision.current) setLossStatus('Saved')
     } catch (error) {
       if (revision === lossRevision.current) { setLossStatus(''); setLossError(`Not saved: ${error.message}. Edit the value to retry.`) }
-    }
+      if (!mounted.current && window.dispatchEvent) window.dispatchEvent(new CustomEvent('daily-log-save-error', {
+        detail: { userId: profile?.id, date: selectedDate, message: error.message },
+      }))
+    } finally { pendingWrites.current = Math.max(0, pendingWrites.current - 1) }
   }
   const lossInput = <PlansLostInput value={lossDraft} onChange={changeLoss} disabled={!canEdit || !logLoaded}
     status={lossStatus} error={lossError} />

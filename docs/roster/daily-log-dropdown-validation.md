@@ -1,5 +1,22 @@
 # PR40 validation — 2026-10-25
 
+## Persistence blocker correction — current draft
+
+This supersedes the original persistence claims/counts below; the earlier dropdown evidence remains historical context.
+
+- **337 application tests passed, zero failed/skipped**, including **30 component stress cases** (all 18 original integrated-review assertions plus 12 additional concurrency/lifecycle cases). The original four persistence defects now pass. Focus/blur and paste no longer enqueue untouched zero checkpoints for deletion.
+- **7/7 production-shaped PostgreSQL writer probes passed** on the guarded isolated local PostgreSQL 17.6 database, with the existing employee-ID FK, both checkpoint unique keys, RLS and production Plans Lost trigger. The fixture applies only PR38/PR39 SQL; no PR37 dependency.
+- Actual approved development Auth/PostgREST: **14/14 Admin checks passed** with the revised coordinator. Saved selection and Undo also verified through the real card UI and scoped database reads. Original historical nickname and numeric activity retained.
+- Admin synthetic cleanup restored the exact original 3 employee / 12 Daily Log counts and fingerprints. Store repeat is pending private synthetic-account sign-in; do not claim final hosted validation or production GO until it completes.
+- Both production build targets pass with the existing Admin duplicate-title and chunk-size warnings. No deployment is performed by building.
+- Migration files and calculation/reporting modules remain unchanged. No production query/write, migration, merge or deploy was executed for this correction.
+
+The day-scoped queue orders hourly, delete/Undo and Plans Lost writes by stable checkpoint key. Conditional mutations reject concurrent activity/identity changes. Confirmed deletion snapshots restore original UUIDs, existing employee IDs, NULL/blank names, counters and historical values. Own INSERT UUIDs allow exact reconciliation of lost responses; unresolved outcomes remain explicit errors. Navigation flushes staged operations and reports failures after unmount; browser unload warns while writes are pending.
+
+Limits: hosted development lacks production employee_id / Plans Lost schema, so those paths are verified in the isolated production-shaped database rather than by changing shared dev. Existing Plans Lost guards can prevent reinsertion of a deleted manual-Net-Members checkpoint after a day changes calculation mode; such deletions are blocked where detectable, and any later conflicting change is reported. Browser termination/network loss cannot guarantee delivery, and true concurrent edits require reload/reconciliation. Active-roster read and text-name write remain separate requests.
+
+## Original dropdown validation (before integrated blocker corrections)
+
 ## Automated checks
 
 - Complete application suite: **306 passed, 0 failed, 0 skipped**. Includes all PR38/PR39 Node authorization/roster/UI regressions. Replaced the obsolete Daily Log auto-add expectation with selection-only regression coverage.

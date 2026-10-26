@@ -12,9 +12,9 @@ function log(view='table',formula='simple') {
  const db=[{id:'historic',location_id:'a',log_date:'2025-01-15',time_slot:'08:00:00',split_index:0,employee_id:'stable-identity',employee_name:'  Nickname  ',total_washes:20,member_washes:10,basic:2,reactivations:1}],writes=[]
  const active=[{id:'cam',location_id:'a',name:'Cam',is_active:true}]
  const client={from(table){let action,body,filters=[];const q={
-  select(){return q},eq(k,v){filters.push([k,v]);return q},or(){return q},order(){return q},range(){return Promise.resolve({data:active,count:1})},
+  select(){return q},eq(k,v){filters.push([k,v]);return q},is(k,v){filters.push([k,v]);return q},or(){return q},order(){return q},range(){return Promise.resolve({data:active,count:1})},
   update(p){action='update';body=p;return q},insert(p){action='insert';body=p;return q},delete(){action='delete';return q},
-  maybeSingle(){writes.push({action,body});let row
+  maybeSingle(){if(!action)return Promise.resolve({data:structuredClone(db.find(r=>filters.every(([k,v])=>r[k]===v)))??null,error:null});writes.push({action,body});let row
    if(action==='update')row=db.find(r=>filters.every(([k,v])=>r[k]===v))
    else {row={id:`new${++id}`};db.push(row)}
    if(row)Object.assign(row,body)

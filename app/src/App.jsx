@@ -12,6 +12,7 @@ import Insights from './pages/Insights'
 import Reports from './pages/Reports'
 import AmEntry from './pages/AmEntry'
 import UpdateBanner from './components/UpdateBanner'
+import DailyLogSaveNotice from './components/DailyLogSaveNotice'
 import TargetsBanner from './components/TargetsBanner'
 import TmLoader from './components/TmLoader'
 import { useVersionCheck } from './hooks/useVersionCheck'
@@ -58,6 +59,7 @@ export default function App() {
         <VersionWatcher />
         <HashRouter>
           <TargetsBanner />
+          <DailyLogSaveNotice />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

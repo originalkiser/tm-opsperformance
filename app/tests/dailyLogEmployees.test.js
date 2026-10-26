@@ -90,7 +90,7 @@ test('all Daily Log entry paths use roster picker and guarded writer; no roster 
  assert.equal((src.match(/loading=\{rosterLoading\}/g)||[]).length,2)
  assert.doesNotMatch(src,/createEmployeeIfMissing|autoAddEmployee|EditEmployeesModal|employee_id:/)
  assert.match(src,/resolvePastedEmployee/);assert.match(src,/const flushSave = doSave/)
- assert.match(src,/pendingSaves.current/)
+ assert.match(src,/persistence.current/ )
 })
 
 test('undo may restore the exact originally recorded historical name with a guarded PATCH',async()=>{
