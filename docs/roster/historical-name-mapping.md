@@ -55,17 +55,24 @@ and proposal reads are paginated/completeness checked. No production access used
 - Added synthetic attribution and UI/client cases cover aliases, split shifts,
   distinct-date identities, overlapping ambiguity, duplicate checkpoint IDs,
   no-mapping compatibility, source preservation, proposals and Admin decisions.
-- `app/tests/roster/historical_mapping_postgres.sql` is an executable, guarded
-  empty-local-database fixture for role/RLS, overlap, audit, stale decisions,
-  locking/correction/revocation, narrow reporting and source preservation.
-  It has NOT been executed here: this Mac has no PostgreSQL runtime. It must not
-  be run against any hosted project. A two-connection overlap probe also remains
-  required; the single-session fixture does not establish concurrency behavior.
-- Before deployment: run that fixture plus concurrent approvals/corrections in
-  isolated PostgreSQL 17, then real signed-in Admin/Store checks in an explicitly
-  authorized development setup. Verify primary/additional/revoked assignments,
-  inactive/deleted/missing accounts, cross-site targets and protected audit writes.
-  Check browser layout and load time on representative synthetic location history.
+- Isolated PostgreSQL 17.11 authorization/lifecycle checks passed on tm-ops-dev
+  in a temporary schema and rolled back. The local psql fixture was adapted to
+  that schema because this Mac has no native PostgreSQL runtime.
+- Real signed-in synthetic Auth/PostgREST: 27 Admin + 18 Store checks passed.
+  Two simultaneous HTTP approvals with a test-only transaction delay admitted
+  exactly one; the contender waited 2807ms and failed 23P01. Approved aliases
+  produced 6 membership sales; unapproved/ambiguous activity remained 2/1 (total 9).
+  Original Daily Logs were unchanged in both sessions. Cleanup returned dev to
+  its original 3 employees / 12 logs and exact fingerprints, with no mapping/audit
+  fixtures, temporary delay or isolated schemas. Existing policies are unchanged.
+  The empty mapping schema remains installed in dev. No full suite repeated.
+- Additional-assignment and assignment-removal probes passed and rolled back.
+- Fixed stale-version errors to PT409 (HTTP 409). PostgREST 14 retries 40001;
+  the stale-version HTTP probe exposed a hang, which the corrected code resolves.
+  SQL fixture temporary-schema GRANT was corrected to use its actual namespace.
+- Evidence: historical-mapping-dev-results.json and the development-only browser
+  fixture app/tests/browser/historical-mapping-auth.html. The fixture requires
+  exact owned PR41 records and an isolated temporary test delay, never production.
 - After review and explicit production authorization: fresh preflight/backup and
   approved SQL execution; inspect tables/RLS/grants/function definitions and RPC
   visibility, then release the reviewed app. No migration ledger push/repair.

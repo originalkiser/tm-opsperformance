@@ -140,7 +140,7 @@ begin
     select m.* into old_row from public.employee_name_mappings m
       where m.id = mapping_id and m.location_id = loc_id for update;
     if not found or expected_version is null or old_row.version <> expected_version then
-      raise exception 'Mapping changed or is unavailable; reload' using errcode = '40001';
+      raise exception 'Mapping changed or is unavailable; reload' using errcode = 'PT409';
     end if;
     new_row := old_row;
     new_row.version := old_row.version + 1;

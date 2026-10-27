@@ -52,7 +52,7 @@ BEGIN
   BEGIN EXECUTE statement; EXCEPTION WHEN OTHERS THEN actual:=SQLSTATE; END;
   IF actual IS DISTINCT FROM expected THEN RAISE EXCEPTION 'Expected %, got %: %',expected,actual,statement; END IF;
 END $$;
-GRANT USAGE ON SCHEMA pg_temp TO authenticated,anon;
+DO $$ BEGIN EXECUTE format('GRANT USAGE ON SCHEMA %I TO authenticated,anon', pg_my_temp_schema()::regnamespace::text); END $$;
 -- Role/assignment, protected decisions, cross-location target and direct-write checks.
 BEGIN;
 SET LOCAL ROLE authenticated;
@@ -86,7 +86,7 @@ BEGIN;
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','20000000-0000-0000-0000-000000000001',true);
 SELECT change_employee_name_mapping('approve','10000000-0000-0000-0000-000000000001',:'mapping_id',1,'Alias',NULL,NULL,NULL,'Reviewed evidence',true);
-SELECT pg_temp.expect_error(format($q$SELECT change_employee_name_mapping('lock','10000000-0000-0000-0000-000000000001',%L,1,'Alias',NULL,NULL,NULL,'Stale',true)$q$,:'mapping_id'),'40001');
+SELECT pg_temp.expect_error(format($q$SELECT change_employee_name_mapping('lock','10000000-0000-0000-0000-000000000001',%L,1,'Alias',NULL,NULL,NULL,'Stale',true)$q$,:'mapping_id'),'PT409');
 SELECT change_employee_name_mapping('lock','10000000-0000-0000-0000-000000000001',:'mapping_id',2,'Alias',NULL,NULL,NULL,'Lock verified identity',true);
 SELECT change_employee_name_mapping('correct','10000000-0000-0000-0000-000000000001',:'mapping_id',3,'Alias','30000000-0000-0000-0000-000000000001',NULL,'2026-01-01','Corrected evidence',true);
 SELECT pg_temp.check_true((SELECT status='locked' AND version=4 FROM employee_name_mappings WHERE id=:'mapping_id'),'Correction preserves lock');
