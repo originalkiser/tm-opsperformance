@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PR39 Development Auth Validation</title>
+<style>body{font:16px system-ui;max-width:960px;margin:2rem auto;padding:1rem}button,a{font:inherit;padding:.7rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}button:disabled{opacity:.5}</style></head>
+<body><h1>PR39 Development Auth Validation</h1><p>Local test fixture only. Uses the privately signed-in synthetic dev session. No token/password is displayed. Only PR39 test employees are created; no Daily Log writes. Cleanup is performed separately for exact returned IDs.</p>
+<p id="session">Checking real Supabase Auth…</p><button id="run" disabled>Run signed-in roster API checks</button><p><a href="../../index.html#/employees">Return to Employees</a></p><pre id="results" role="status"></pre>
+<script type="module">
+import { supabase } from '../../src/lib/supabase.js'
+const button=document.querySelector('#run'), output=document.querySelector('#results'), session=document.querySelector('#session')
+const A='16000000-0000-4000-8000-000000000001', B='16000000-0000-4000-8000-000000000002'
+const created=[], checks=[]
+function record(name,passed,detail){checks.push({name,passed,detail});output.textContent=JSON.stringify({checks,created},null,2);if(!passed)throw Error(name+' failed')}
+let profile,user
+try {
+ if(location.hostname!=='127.0.0.1'||supabase.supabaseUrl!=='https://bmfvcnsuduttebxbjvwx.supabase.co')throw Error('Approved local dev origin required')
+ const identity=await supabase.auth.getUser();if(identity.error)throw identity.error
+ user=identity.data.user
+ if(!['pr16-admin@example.test','pr16-gm@example.test'].includes(user?.email))throw Error('Privately sign in to an existing approved synthetic account first')
+ const p=await supabase.from('user_profiles').select('role,location_id,is_active,deleted_at').eq('id',user.id).single();if(p.error)throw p.error;profile=p.data
+ if(profile.is_active!==true||profile.deleted_at)throw Error('Active synthetic account required')
+ if(profile.role!==(user.email==='pr16-admin@example.test'?'admin':'store'))throw Error('Synthetic account role does not match the approved test role')
+ session.textContent='Real Auth verified: '+user.email+' — '+profile.role
+ button.disabled=false
+}catch(e){session.textContent=e.message}
+async function insert(location_id,name){
+ const r=await supabase.from('employees').insert({location_id,name,is_active:true}).select('*').single()
+ record('creation with actual defaults: '+name,!r.error&&!!r.data?.id,r.error?.code||'ok')
+ created.push({id:r.data.id,location_id,name:r.data.name});return r.data
+}
+button.onclick=async()=>{
+ button.disabled=true
+ try{
+ const isAdmin=profile.role==='admin',tag='PR39 HTTP '+(isAdmin?'Admin':'Store')+' '+Date.now()
+ const one=await insert(A,tag)
+ let r=await supabase.from('employees').update({is_active:false}).eq('id',one.id).select('id,is_active').single()
+ record('deactivation',!r.error&&r.data.is_active===false,r.error?.code||'ok')
+ r=await supabase.from('employees').insert({location_id:A,name:' '+tag.toUpperCase()+' ',is_active:true})
+ record('inactive normalized duplicate rejected',r.error?.code==='23505',r.error?.code)
+ r=await supabase.from('employees').update({name:tag+' Renamed'}).eq('id',one.id).select('id,name').single()
+ record('rename preserves UUID',!r.error&&r.data.id===one.id,r.error?.code||'ok');created[0].name=tag+' Renamed'
+ if(!isAdmin){
+  const raced=await Promise.all([tag+' Race',' '+tag.toUpperCase()+' RACE '].map(name=>supabase.from('employees').insert({location_id:A,name,is_active:true}).select('*').single()))
+  const winners=raced.filter(x=>!x.error),losers=raced.filter(x=>x.error?.code==='23505')
+  record('concurrent normalized HTTP inserts admit exactly one',winners.length===1&&losers.length===1,'winner='+winners.length+', duplicate='+losers.length)
+  if(winners[0]?.data)created.push({id:winners[0].data.id,location_id:A,name:winners[0].data.name})
+  r=await supabase.from('employees').update({name:tag+' RACE'}).eq('id',one.id)
+  record('HTTP rename collision rejected',r.error?.code==='23505',r.error?.code)
+ }
+ if(isAdmin){
+  const two=await insert(B,tag+' CrossSite')
+  r=await supabase.rpc('can_maintain_employee_roster',{loc_id:B});record('Admin other location authorized',r.data===true&&!r.error,r.error?.code||'ok')
+ }else{
+  r=await supabase.rpc('can_maintain_employee_roster',{loc_id:B});record('store other location denied',r.data===false&&!r.error,r.error?.code||'ok')
+  r=await supabase.from('employees').insert({location_id:B,name:tag+' Forbidden',is_active:true})
+  record('crafted cross-location insert denied',r.error?.code==='42501',r.error?.code)
+  const target=await supabase.from('employees').select('id').eq('location_id',B).like('name','PR39 HTTP Admin % CrossSite').order('id').limit(1).single()
+  record('owned synthetic cross-site target available',!target.error&&!!target.data?.id,target.error?.code||'ok')
+  r=await supabase.from('employees').update({is_active:false}).eq('id',target.data.id).select('id')
+  record('crafted cross-location update affects no rows',(!r.error&&r.data.length===0)||r.error?.code==='42501',r.error?.code||'zero rows')
+  r=await supabase.rpc('review_employee_duplicates',{loc_id:A,selected_ids:[one.id,target.data.id],primary_id:one.id,confirmed:true,reviewed_rows:[]})
+  record('store cannot invoke Admin review',r.error?.code==='42501',r.error?.code)
+ }
+ r=await supabase.from('employees').delete().eq('id',one.id)
+ record('permanent client deletion denied',r.error?.code==='42501',r.error?.code)
+ record('completed',true,'Cleanup only exact IDs listed above; never delete original fixtures')
+ }catch(e){output.textContent+='\nSTOP: '+e.message}
+}
+</script></body></html>

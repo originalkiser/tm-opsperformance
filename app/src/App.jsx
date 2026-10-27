@@ -7,6 +7,7 @@ import { useDarkMode } from './hooks/useDarkMode'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
+import Employees from './pages/Employees'
 import Insights from './pages/Insights'
 import Reports from './pages/Reports'
 import AmEntry from './pages/AmEntry'
@@ -76,6 +77,7 @@ export default function App() {
               path="/am-entry"
               element={<ProtectedRoute><ManagerRoute><AmEntry /></ManagerRoute></ProtectedRoute>}
             />
+            <Route path="/employees" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </HashRouter>
