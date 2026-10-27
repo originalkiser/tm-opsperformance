@@ -1,4 +1,5 @@
 import { employeeDeltasByDay } from './logMath.js'
+import { mappedEmployeeLogs } from './employeeMappingAttribution.js'
 
 const COUNTS = ['total_washes', 'member_washes', 'basic', 'good', 'better', 'best']
 const integer = v => v !== null && v !== undefined && String(v).trim() !== '' && typeof v !== 'boolean' && Number.isSafeInteger(Number(v)) && Number(v) >= 0
@@ -53,7 +54,9 @@ export function inspectEmployeeDay(rows) {
   return { reliable: uncertain.size === 0, issues: [...issues], uncertain, rows: normalized }
 }
 
-export function buildEmployeePerformance(data, locations, range) {
+export function buildEmployeePerformance(data, locations, range, mappings = []) {
+  const mapped = mappedEmployeeLogs(data, mappings)
+  data = mapped.data
   const locationMap = new Map(locations.map(l => [l.id, l]))
   const days = new Map(), employees = new Map(), attributionNotes = []
   const seenIds = new Map(), ambiguousIds = new Set()
@@ -61,7 +64,7 @@ export function buildEmployeePerformance(data, locations, range) {
     const name = rawName?.trim()
     if (!name) return null
     const key = `${locationId}::${name.toLowerCase()}`
-    if (!employees.has(key)) employees.set(key, { key, name, locationId, site: locationMap.get(locationId).name,
+    if (!employees.has(key)) employees.set(key, { key, name: mapped.labels.get(key) || name, locationId, site: locationMap.get(locationId).name,
       formula: locationMap.get(locationId).opportunities_formula ?? 'detailed',
       total_washes: 0, member_washes: 0, google_reviews: 0, basic: 0, good: 0, better: 0, best: 0,
       uncertain: new Set(), issues: [] })
@@ -72,7 +75,7 @@ export function buildEmployeePerformance(data, locations, range) {
     if (row.id && seenIds.has(row.id)) {
       // Repeated identical read rows are not additional activity.
       const prior = seenIds.get(row.id)
-      if (['location_id', 'log_date', 'time_slot', 'split_index', 'employee_name', ...COUNTS].every(k => prior[k] === row[k])) continue
+      if (['location_id', 'log_date', 'time_slot', 'split_index', 'employee_name', '_mappingOriginalName', ...COUNTS].every(k => prior[k] === row[k])) continue
       // Keep conflicting copies so both affected days are withheld below.
       ambiguousIds.add(row.id)
     } else if (row.id) seenIds.set(row.id, row)

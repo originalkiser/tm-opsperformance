@@ -94,7 +94,7 @@ test('late reads after unmount cannot restore a different location roster', asyn
 
 test('Employees page offers only current authorized location options and guards inactive profiles', () => {
   const context = { user: { id: 'manager' }, profile: { role: 'store', is_active: true, deleted_at: null }, locations: [{ id: 'assigned', name: 'Assigned Site' }] }
-  const h = locationHelpHarness('pages/Employees', { useAuth: () => context, NavBar: () => null }, {})
+  const h = locationHelpHarness('pages/Employees', { useAuth: () => context, NavBar: () => null, HistoricalEmployeeMappings: () => null }, {})
   const opts = h.all(n => n.type === 'option')
   assert.deepEqual(opts.map(n => n.props.value), ['assigned'])
   context.profile.is_active = false
