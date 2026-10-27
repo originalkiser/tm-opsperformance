@@ -3,19 +3,25 @@ import assert from 'node:assert/strict'
 import React from 'react'
 import { netMemberStyle, netMembersCls } from '../src/utils/netMemberColors.js'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
+import { dailyLogPersistence } from '../src/utils/dailyLogEmployees.js'
 import * as membership from '../src/utils/dailyMemberships.js'
 import { shopTotals } from '../src/utils/logMath.js'
 import { fmtNum } from '../src/utils/format.js'
 const Input = () => null
 function openLog(canEdit = true, role = 'store', db = [{ id: 'old', location_id: 'a', log_date: '2026-10-20', time_slot: '08:00:00', split_index: 0, basic: 4, net_members: 6, net_members_legacy: true }], opportunitiesFormula = 'detailed', view = 'table') {
   const writes = []; let live
-  const supabase = { from(table) { const q = {
-    select() { return q }, eq() { return q }, order() { return q },
-    async upsert(row) { writes.push(row); const old = db.find(r => r.time_slot === row.time_slot); Object.assign(old, row); return { error: null } },
+  const supabase = { from(table) { let body, action, filters=[]; const q = {
+    select() { return q }, eq(k,v) { filters.push([k,v]); return q }, is(k,v) { filters.push([k,v]); return q }, order() { return q },
+    update(row) { body=row; action='update'; return q }, insert(row) { body=row; action='insert'; return q },
+    async maybeSingle() {
+      let old=db.find(r=>filters.every(([k,v])=>r[k]===v || r[k]===undefined))
+      if(action) { writes.push(body); if(!old){old={id:'new'};db.push(old)};Object.assign(old,body) }
+      return {data:old?structuredClone(old):null,error:null}
+    },
     then(resolve) { return Promise.resolve({ data: table === 'daily_logs' ? structuredClone(db) : [], error: null }).then(resolve) },
   }; return q } }
   const h = locationHelpHarness('components/DailyLogTable', {
-    ...membership, netMemberStyle, netMembersCls, supabase, shopTotals, fmtNum, PlansLostInput: Input,
+    ...membership, dailyLogPersistence, netMemberStyle, netMembersCls, supabase, shopTotals, fmtNum, PlansLostInput: Input,
     useCallback: f => f, useAuth: () => ({ updateProfileSettings() {} }),
     EmployeeSelect: () => null, TmLoader: () => null, DowntimeModal: () => null,
     pmixCls: () => '', convCls: () => '', pmixTotalsCls: () => '', convTotalsCls: () => '',

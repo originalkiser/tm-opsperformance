@@ -78,19 +78,6 @@ test('Admin shows duplicate/error messages and prevents repeated submissions bef
   assert.match(source,/duplicateEmployeeGroups\(employees\)/)
 })
 
-test('Daily Log auto-add uses shared guard while preserving log saves and avoiding cross-location refresh',async()=>{
-  const source=readFileSync(new URL('../src/components/DailyLogTable.jsx',import.meta.url),'utf8')
-  const block=source.slice(source.indexOf('  const autoAddEmployee = async (name) => {'),source.indexOf('  const saveImmediately'))
-  let resolve,calls=0,refresh=0
-  const loc={current:'carencro'},bindings={employeeNameKey,locationIdRef:loc,employeesRef:{current:[]},supabase:{},
-    createEmployeeIfMissing:(_,locationId)=>{calls++;assert.equal(locationId,'carencro');return new Promise(r=>{resolve=r})},fetchEmployees:()=>{refresh++}}
-  const auto=new Function(...Object.keys(bindings),block+';return autoAddEmployee')(...Object.values(bindings))
-  const p=auto('Cam');loc.current='other';resolve({created:true});await p;assert.equal(refresh,0);assert.equal(calls,1)
-  assert.match(source,/scheduleBatch\(\[index\]\)/)
-  assert.match(source,/employee_name:\s+row.employee_name \|\| null/)
-  assert.doesNotMatch(source,/employee_id:/)
-})
-
 test('seven roster records do not fan out Daily Log rows or leaderboard sales/opportunities',async()=>{
   const roster=Array.from({length:7},(_,i)=>emp(`cam-${i}`))
   const logs=[{id:'log1',location_id:'carencro',log_date:'2026-10-20',time_slot:'08:00:00',split_index:0,employee_name:'Cam',total_washes:100,member_washes:20,basic:1,good:0,better:2,best:3},

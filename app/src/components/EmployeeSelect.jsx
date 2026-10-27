@@ -1,121 +1,52 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useId } from 'react'
 
-export default function EmployeeSelect({
-  value,
-  onChange,
-  onBlur,
-  employees = [],
-  placeholder = 'Name…',
-  disabled = false,
-}) {
-  const [open, setOpen]           = useState(false)
-  const [search, setSearch]       = useState(value || '')
+export default function EmployeeSelect({ value, onChange, employees = [], disabled = false,
+  loading = false, error = '', onRefresh, label = 'Employee name', align = 'left' }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const [highlight, setHighlight] = useState(-1)
-  const wrapRef  = useRef(null)
-  const inputRef = useRef(null)
-
-  // Sync display when value changes from parent
-  useEffect(() => { setSearch(value || '') }, [value])
-
-  const filtered = employees
-    .filter(e => e.name.toLowerCase().includes(search.toLowerCase()))
-    .slice(0, 20)
-
-  const exactMatch = employees.some(e => e.name.toLowerCase() === search.toLowerCase())
-  const showFreeText = search.trim() && !exactMatch
-  const options = [...filtered, ...(showFreeText ? [{ id: '__free__', name: search.trim() }] : [])]
-
-  const select = (name) => {
-    onChange(name)
-    setSearch(name)
-    setOpen(false)
-    setHighlight(-1)
-    onBlur?.()
-  }
-
-  const handleKeyDown = (e) => {
-    if (!open) {
-      if (e.key === 'ArrowDown' || e.key === 'Enter') {
-        e.preventDefault()
-        setOpen(true)
-        setHighlight(0)
-      }
-      return
-    }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setHighlight(h => Math.min(h + 1, options.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setHighlight(h => Math.max(h - 1, 0))
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      if (highlight >= 0 && options[highlight]) select(options[highlight].name)
-      else if (search.trim()) select(search.trim())
-    } else if (e.key === 'Escape') {
-      setOpen(false)
-      setHighlight(-1)
-    } else if (e.key === 'Tab') {
-      setOpen(false)
-    }
-  }
-
-  // Keep a ref to the latest onBlur so the listener never needs to re-register
-  const onBlurRef = useRef(onBlur)
-  useEffect(() => { onBlurRef.current = onBlur })
-
-  // Close on outside click — registered once at mount, never re-registers
-  useEffect(() => {
-    const handler = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
-        setOpen(false)
-        setHighlight(-1)
-        onBlurRef.current?.()
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
+  const wrapRef = useRef(null)
+  const id = useId()
+  const options = (loading || error ? [] : employees).filter(e => e.name.toLowerCase().includes(search.toLowerCase()))
+  const close = () => { setOpen(false); setSearch(''); setHighlight(-1) }
+  useEffect(() => { close() }, [value])
+  useEffect(() => { setHighlight(-1) }, [employees, loading, error])
+  const select = name => { onChange(name); close() }
+  const historical = value && !employees.some(e => e.name === value)
+  const message = error ? 'Roster unavailable. Retry before selecting a name.'
+    : loading ? 'Loading active employees…' : !employees.length ? 'No active employees.' : !options.length ? 'No matching active employees.' : ''
   return (
-    <div ref={wrapRef} className="relative w-full">
-      <input
-        ref={inputRef}
-        type="text"
-        className="w-full py-1.5 px-1 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded text-xs font-brand text-gray-800 dark:text-tm-dark-text placeholder:text-gray-500 dark:placeholder:text-tm-dark-muted transition-colors disabled:cursor-default"
-        value={search}
-        disabled={disabled}
-        placeholder={placeholder}
-        onChange={e => {
-          const v = e.target.value
-          setSearch(v)
-          onChange(v)
-          setOpen(true)
-          setHighlight(-1)
-        }}
-        onFocus={() => { if (!disabled) setOpen(true) }}
-        onKeyDown={handleKeyDown}
-      />
-      {open && !disabled && options.length > 0 && (
-        <div className="absolute left-0 top-full mt-0.5 z-50 w-max min-w-full bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg max-h-44 overflow-y-auto">
-          {options.map((opt, idx) => (
-            <div
-              key={opt.id}
-              className={`px-3 py-2 text-xs cursor-pointer font-brand transition-colors
-                ${idx === highlight
-                  ? 'bg-tm-sky/50 dark:bg-tm-teal/20'
-                  : 'hover:bg-tm-sky/30 dark:hover:bg-tm-teal/10'}
-                ${opt.id === '__free__'
-                  ? 'text-tm-teal italic border-t border-gray-100 dark:border-tm-dark-border'
-                  : 'text-gray-800 dark:text-tm-dark-text'}
-              `}
-              onMouseDown={(e) => { e.preventDefault(); select(opt.name) }}
-            >
-              {opt.id === '__free__' ? `Use "${opt.name}"` : opt.name}
-            </div>
-          ))}
-        </div>
-      )}
+    <div ref={wrapRef} className="relative w-full" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) close() }}>
+      <input type="text" role="combobox" aria-label={label} aria-autocomplete="list"
+        aria-expanded={open} aria-controls={`${id}-list`} aria-describedby={`${id}-help`}
+        aria-activedescendant={open && options[highlight] ? `${id}-${highlight}` : undefined}
+        className="w-full min-w-0 py-1.5 px-1 bg-transparent focus:outline-none focus:ring-2 focus:ring-tm-teal rounded text-base md:text-xs font-brand text-gray-800 dark:text-tm-dark-text placeholder:text-gray-500 dark:placeholder:text-tm-dark-muted"
+        value={open ? search : value || ''} disabled={disabled} placeholder={open ? 'Search active employees…' : 'Select employee…'}
+        onFocus={() => { setOpen(true); setSearch(''); onRefresh?.() }}
+        onChange={e => { setSearch(e.target.value); setOpen(true); setHighlight(-1) }}
+        onKeyDown={e => {
+          if (e.key === 'Escape') { e.preventDefault(); close() }
+          else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault(); setOpen(true)
+            setHighlight(h => e.key === 'ArrowDown' ? Math.min(h + 1, options.length - 1) : Math.max(0, h - 1))
+          } else if (e.key === 'Enter') {
+            e.preventDefault()
+            if (open && !loading && !error && options[highlight]) select(options[highlight].name)
+            else setOpen(true)
+          } else if (e.key === 'Tab') close()
+        }} />
+      <span id={`${id}-help`} className="sr-only">Search, then select an active employee. Unselected searches do not change the recorded name. Missing a name? Use the Employees tab.</span>
+      {!open && historical && !loading && !error && <span className="block text-[10px] text-gray-500 dark:text-tm-dark-muted">Recorded name retained</span>}
+      {open && !disabled && <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full z-50 w-64 max-w-[80vw] rounded-lg border border-gray-200 dark:border-tm-dark-border bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text shadow-lg`}>
+        <ul id={`${id}-list`} role="listbox" aria-label="Active employees" className="max-h-48 overflow-y-auto">
+          {!loading && !error && options.map((employee, index) => <li key={employee.id} id={`${id}-${index}`} role="option" aria-selected={highlight === index}
+            className={`px-3 py-3 text-xs whitespace-normal break-words cursor-pointer ${highlight === index ? 'bg-tm-sky/50 dark:bg-tm-teal/20' : 'hover:bg-tm-sky/30 dark:hover:bg-tm-teal/10'}`}
+            onMouseDown={e => e.preventDefault()} onClick={() => select(employee.name)}>{employee.name}</li>)}
+        </ul>
+        {message && <p role="status" className="px-3 py-2 text-xs">{message}</p>}
+        {error && <button type="button" className="px-3 py-2 text-xs underline" onClick={onRefresh}>Retry roster</button>}
+        <a href="#/employees" className="block border-t border-gray-200 dark:border-tm-dark-border p-3 text-xs text-tm-blue dark:text-tm-teal underline">Missing a name? Manage it in Employees.</a>
+      </div>}
     </div>
   )
 }
