@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import NavBar from '../components/NavBar'
+import HistoricalEmployeeMappings from '../components/HistoricalEmployeeMappings'
+import { loadMappingHistory, rosterHistoricalUsage } from '../utils/historicalEmployeeMappings.js'
 import { addRosterEmployee, filterRoster, loadRoster, reviewRosterDuplicates, rosterError, updateRosterEmployee, validateDuplicateReview } from '../utils/employeeRoster.js'
 
 const control = 'rounded border border-gray-300 dark:border-tm-dark-border bg-white dark:bg-tm-dark-card p-2 text-sm disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-tm-teal'
 export default function Employees() {
   const { user, profile, locations = [] } = useAuth()
   const [selected, setSelected] = useState('')
+  const [view, setView] = useState('roster')
   const allowed = ['admin', 'area_manager', 'store'].includes(profile?.role)
     && profile?.is_active === true && !profile?.deleted_at
   const locationId = locations.some(row => row.id === selected) ? selected : locations[0]?.id || ''
@@ -20,7 +23,14 @@ export default function Employees() {
           {!locations.length && <option value="">No assigned locations</option>}
           {locations.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
         </select></label>
-        {locationId ? <Roster key={`${user.id}:${locationId}`} locationId={locationId} isAdmin={profile.role === 'admin'} />
+        {locationId ? <div key={`${user.id}:${locationId}`} className="space-y-6">
+            {['admin', 'store'].includes(profile.role) && <nav aria-label="Employee sections" className="flex gap-2">
+              <button className={control} aria-pressed={view === 'roster'} onClick={() => setView('roster')}>Roster</button>
+              <button className={control} aria-pressed={view === 'history'} onClick={() => setView('history')}>Historical name mapping</button>
+            </nav>}
+            {view === 'history' && ['admin', 'store'].includes(profile.role)
+              ? <HistoricalEmployeeMappings locationId={locationId} isAdmin={profile.role === 'admin'} />
+              : <Roster locationId={locationId} isAdmin={profile.role === 'admin'} />}</div>
           : <p>No location is assigned. Ask Admin to check your access.</p>}
       </>}
     </main>
@@ -100,6 +110,7 @@ export function Roster({ locationId, isAdmin }) {
     {review && isAdmin && <section aria-label="Duplicate review" className="border-2 border-tm-teal rounded p-4 space-y-3">
       <h2 className="font-bold">Review duplicate records</h2>
       <p>Choose the record to keep active. All other selected records will be deactivated together. Every ID, name and historical Daily Log is retained. This does not merge historical sales.</p>
+      <DuplicateHistoricalUsage locationId={locationId} rows={reviewRows} />
       <fieldset disabled={busy}><legend>Retain one active record</legend>
         {reviewRows.map(row => <label key={row.id} className="block py-2 break-all"><input type="radio" name="primary" value={row.id} checked={primary === row.id} onChange={() => setPrimary(row.id)} /> {row.name} — {row.id} — {row.is_active === true ? 'Active' : 'Inactive'}</label>)}
       </fieldset>
@@ -108,4 +119,24 @@ export function Roster({ locationId, isAdmin }) {
       <button className={control} disabled={busy} onClick={() => { setReview(false); setConfirmed(false) }}>Cancel review</button>
     </section>}
   </section>
+}
+
+function DuplicateHistoricalUsage({ locationId, rows }) {
+  const [history, setHistory] = useState(null), [error, setError] = useState('')
+  useEffect(() => {
+    let active = true
+    setHistory(null); setError('')
+    loadMappingHistory(supabase, locationId).then(result => { if (active) setHistory(result.logs) })
+      .catch(error => { if (active) setError(error.message) })
+    return () => { active = false }
+  }, [locationId])
+  if (error) return <p role="alert">Historical usage unavailable: {error}. Do not infer which duplicate owns name-only history.</p>
+  if (!history) return <p role="status">Loading historical usage…</p>
+  return <div className="space-y-2 text-sm">
+    <p>Usage tied to an original employee ID is shown separately from name-only history. Name-only activity cannot identify which duplicate record was used. Keeping a record active does not transfer history.</p>
+    {rows.map(row => {
+      const usage = rosterHistoricalUsage(history, row)
+      return <p key={row.id}><strong>{row.name}</strong> · {row.id}: {usage.appearances} ID-linked appearances · {usage.memberships ?? 'Unknown'} ID-linked membership sales · latest {usage.last_date || 'None'} · {usage.shared_name_appearances} shared name-only appearances / {usage.shared_name_memberships ?? 'Unknown'} membership sales (not assigned to this ID).</p>
+    })}
+  </div>
 }

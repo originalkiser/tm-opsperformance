@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
+import { readMappings } from '../utils/historicalEmployeeMappings.js'
 import { buildEmployeePerformance, sortEmployeeRows, employeeRankLabel } from '../utils/employeePerformance.js'
 import EmployeeScoreDetails from './EmployeeScoreDetails'
 import { pmixCls, convCls } from '../utils/metricColors'
@@ -33,14 +35,32 @@ function totals(rows) {
 }
 
 export default function TeamSalesTable({ data, locations, dateRange, dataComplete = true }) {
+  const mappingKey = JSON.stringify(locations.map(row => row.id).sort())
+  const [mappingState, setMappingState] = useState({ key: '', rows: [], error: '' })
+  const [mappingReload, setMappingReload] = useState(0)
+  useEffect(() => {
+    let active = true
+    setMappingState({ key: '', rows: [], error: '' })
+    readMappings(supabase, JSON.parse(mappingKey), true).then(rows => {
+      if (active) setMappingState({ key: mappingKey, rows, error: '' })
+    }).catch(error => {
+      if (active) setMappingState({ key: mappingKey, rows: [], error: error.message || 'Could not load approved mappings.' })
+    })
+    return () => { active = false }
+  }, [mappingKey, mappingReload, data])
   const [splitByShop, setSplitByShop] = useState(false)
   const [sort, setSort] = useState({ col: 'rank', dir: 'asc' })
   const toggleSort = col => setSort(s => ({ col, dir: s.col === col && s.dir === 'desc' ? 'asc' : 'desc' }))
 
+  if (mappingState.error) return <div role="alert">Historical mappings could not be verified: {mappingState.error} <button onClick={() => setMappingReload(n => n + 1)}>Reload mappings</button></div>
+  if (mappingState.key !== mappingKey) return <p role="status">Loading approved employee mappings…</p>
   if (!dataComplete) return <p role="alert" className="text-sm text-red-600">Team Sales data is incomplete or still loading. Reload the report before scoring.</p>
   if (!data.length) return <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
 
-  const { rows: allRows, attributionNotes, cutoffs, qualificationSize, population } = buildEmployeePerformance(data, locations, dateRange)
+  let performance
+  try { performance = buildEmployeePerformance(data, locations, dateRange, mappingState.rows) }
+  catch (error) { return <p role="alert">Employee mapping conflict: {error.message} Reload after Admin review.</p> }
+  const { rows: allRows, attributionNotes, cutoffs, qualificationSize, population } = performance
   if (!allRows.length) return <div role="status" className="text-sm text-gray-500 dark:text-tm-dark-muted py-4">No named employee data for this period. {attributionNotes.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.issues.join('; ')}</p>)}</div>
 
   const exportSpec = {
@@ -81,6 +101,7 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
   }
 
   return <div>
+    <p className="text-xs mb-2">Approved historical mappings affect attribution only. Unmapped names retain existing reporting rules. <button className="underline" onClick={() => setMappingReload(n => n + 1)}>Refresh mappings</button></p>
     <p className="text-xs mb-2 text-gray-600 dark:text-gray-300">Total Points = Total Sales + Conversion % + P-Mix %. Qualification: top 50% by sales OR opportunities, including cutoff ties.</p>
     <p className="text-xs mb-3 text-gray-600 dark:text-gray-300">{population} employee/site identities · Top {qualificationSize} cutoff: {countLabel(cutoffs.sales)} sales or {countLabel(cutoffs.opportunities)} opportunities. Same names at different sites remain separate.</p>
     {allRows.some(r => r.ms == null || r.opp == null) && <p role="status" className="text-xs mb-3 text-amber-800 dark:text-amber-300">Qualification compares known totals only; missing values cannot establish qualification. An incomplete score has no official rank.</p>}

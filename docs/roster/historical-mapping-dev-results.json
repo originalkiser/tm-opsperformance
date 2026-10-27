@@ -1,0 +1,39 @@
+{
+  "project": "tm-ops-dev",
+  "project_ref": "bmfvcnsuduttebxbjvwx",
+  "postgres": "17.11",
+  "isolated_authorization_lifecycle": "passed; transaction rolled back",
+  "real_auth_admin_checks": 27,
+  "real_auth_store_checks": 18,
+  "concurrent_approval": {
+    "winner": "approved",
+    "loser_sqlstate": "23P01",
+    "contender_wait_ms": 2807,
+    "approved_attributions": 1
+  },
+  "stale_decision_sqlstate": "PT409",
+  "attributed_membership_sales": {
+    "approved_aliases": 6,
+    "unapproved": 2,
+    "ambiguous": 1,
+    "total": 9
+  },
+  "original_employees_md5": "9a244022053f189b899d7ce7e1d6459d",
+  "original_logs_md5": "96eead632fe3697ce31dbafbe00aeb5d",
+  "cleanup": {
+    "employees": 3,
+    "daily_logs": 12,
+    "source_fingerprints_match": true,
+    "mappings": 0,
+    "audit_events": 0,
+    "test_delay_trigger": 0,
+    "isolated_schemas_remaining": 0,
+    "original_policies_unchanged": true,
+    "mapping_schema_retained_in_dev": true
+  },
+  "production_changes": false,
+  "additional_assignment_allowed": true,
+  "removed_assignment_denied": true,
+  "affected_application_tests_passed": 20,
+  "migration_sha256": "200ecf511535af097c307b5edfe122de07daf1329e46cbb51dbc90197a03e2b8"
+}

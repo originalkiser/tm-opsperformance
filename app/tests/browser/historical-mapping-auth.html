@@ -1,0 +1,81 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>PR41 Development Mapping Validation</title><style>body{font:16px system-ui;max-width:1000px;margin:2rem auto}button{padding:1rem}pre{white-space:pre-wrap}</style></head><body>
+<h1>PR41 development-only signed-in mapping checks</h1><p id="identity">Verifying real Auth…</p><button id="run" disabled>Run synthetic mapping checks</button><p><a href="../../index.html#/employees">Employees UI</a></p><pre id="results"></pre>
+<script type="module">
+import {supabase} from '../../src/lib/supabase.js'
+import {buildEmployeePerformance} from '../../src/utils/employeePerformance.js'
+import {readMappings} from '../../src/utils/historicalEmployeeMappings.js'
+const A='16000000-0000-4000-8000-000000000001',B='16000000-0000-4000-8000-000000000002',one='f4100000-0000-4000-8000-000000000001',two='f4100000-0000-4000-8000-000000000002',other='f4100000-0000-4000-8000-000000000003'
+const out=document.querySelector('#results'),button=document.querySelector('#run'),identity=document.querySelector('#identity'),checks=[]
+let user,profile
+function check(name,passed,detail=''){checks.push({name,passed,detail});out.replaceChildren(...checks.map(x=>{const p=document.createElement('div');p.textContent=(x.passed?'PASS: ':'FAIL: ')+x.name+' '+x.detail;return p}));if(!passed)throw Error(name)}
+const scalar=data=>Array.isArray(data)?data[0]:data
+const req=(operation,old=null,name='PR41 Alias One',target=one,reason='PR41 HTTP evidence')=>({operation,loc_id:A,mapping_id:old?.id||null,expected_version:old?.version??null,recorded_name:name,target_id:target,from_date:null,through_date:'2001-04-01',reason,identity_confirmed:true})
+async function call(args){return supabase.rpc('change_employee_name_mapping',args)}
+async function ok(args,label){const r=await call(args);check(label,!r.error,r.error?.code||'ok');return scalar(r.data)}
+async function snapshot(){const r=await supabase.from('daily_logs').select('*').eq('location_id',A).eq('log_date','2001-04-01').order('id');if(r.error)throw r.error;return r.data}
+try{
+ if(location.hostname!=='127.0.0.1'||supabase.supabaseUrl!=='https://bmfvcnsuduttebxbjvwx.supabase.co')throw Error('Development-only origin/project required')
+ const r=await supabase.auth.getUser();if(r.error)throw r.error;user=r.data.user
+ if(!['pr16-admin@example.test','pr16-gm@example.test'].includes(user?.email))throw Error('Existing synthetic Admin or Store account required')
+ const p=await supabase.from('user_profiles').select('role,location_id,is_active,deleted_at').eq('id',user.id).single();if(p.error)throw p.error;profile=p.data
+ if(!profile.is_active||profile.deleted_at)throw Error('Active synthetic account required')
+ identity.textContent='Real Auth verified: '+user.email+' / '+profile.role;button.disabled=false
+}catch(e){identity.textContent=e.message}
+button.onclick=async()=>{
+ button.disabled=true
+ try{
+  const before=await snapshot();check('five exact synthetic logs loaded',before.length===5)
+  if(profile.role==='admin'){
+   let m=await ok(req('propose'),'Admin proposes alias one')
+   const initial=m
+   m=await ok(req('approve',m),'Admin approves alias one')
+   m=await ok(req('lock',m),'Admin locks alias one')
+   m=await ok(req('correct',m),'Admin corrects locked mapping')
+   check('correction retains lock and increments revision',m.status==='locked'&&m.version===4)
+   let r=await call(req('lock',initial));check('stale version rejected',r.error?.code==='PT409',r.error?.code)
+   m=await ok({...req('reject',m),identity_confirmed:false,reason:'PR41 HTTP explicit revoke'},'Admin revokes locked mapping')
+   check('revocation removes approval',m.status==='rejected')
+   m=await ok(req('propose'),'Replacement explicit proposal')
+   m=await ok(req('approve',m),'Replacement approved')
+   let n=await ok(req('propose',null,'PR41 Alias Two'),'Admin proposes alias two')
+   n=await ok(req('approve',n,'PR41 Alias Two'),'Admin approves second alias to same employee')
+   const r1=await ok(req('propose',null,'PR41 Ambiguous',one),'Race proposal one')
+   const r2=await ok(req('propose',null,'PR41 Ambiguous',two),'Race proposal two')
+   const start=performance.now()
+   const first=call(req('approve',r1,'PR41 Ambiguous',one,'PR41 HTTP race hold')).then(result=>result)
+   await new Promise(resolve=>setTimeout(resolve,250))
+   const secondStart=performance.now()
+   let waited=0
+   const second=call(req('approve',r2,'PR41 Ambiguous',two,'PR41 HTTP concurrent contender')).then(result=>{waited=performance.now()-secondStart;return result})
+   // Each request is already running; preserve its actual completion time.
+   const [a,b]=await Promise.all([first,second])
+   check('concurrent approvals admit exactly one',!a.error&&b.error?.code==='23P01',JSON.stringify([a.error?.code||'ok',b.error?.code||'ok']))
+   check('second HTTP request waited for held transaction',waited>2000,Math.round(waited)+'ms wait; total '+Math.round(performance.now()-start)+'ms')
+   const approvedRace=(await readMappings(supabase,[A],true)).filter(x=>x.original_name==='PR41 Ambiguous')
+   check('database has only one approved attribution',approvedRace.length===1)
+   await ok({...req('reject',scalar(a.data),'PR41 Ambiguous'),identity_confirmed:false},'Return ambiguous identity to unresolved')
+   await ok({...req('reject',r2,'PR41 Ambiguous',two),identity_confirmed:false},'Reject competing ambiguous proposal')
+   r=await supabase.from('employee_name_mapping_audit').select('*').eq('mapping_id',initial.id).order('id')
+   check('audit tracks each Admin lifecycle change',!r.error&&r.data.length===5&&r.data.every(x=>x.actor_id===user.id)&&r.data[0].before_state===null&&r.data.slice(1).every(x=>x.before_state&&x.after_state),r.error?.code||'5 audited decisions')
+  }else{
+   let r=await supabase.rpc('can_propose_employee_mapping',{loc_id:A});check('Store own assignment allowed',!r.error&&r.data===true)
+   r=await supabase.rpc('can_propose_employee_mapping',{loc_id:B});check('Store other location denied',!r.error&&r.data===false)
+   await ok(req('propose',null,'PR41 Unapproved'),'Store proposes at assigned location')
+   r=await call({...req('propose',null,'PR41 Unapproved',other),loc_id:B});check('Store cross-location proposal denied',r.error?.code==='42501',r.error?.code)
+   r=await call(req('propose',null,'PR41 Unapproved',other));check('cross-location roster target denied',r.error?.code==='22023',r.error?.code)
+   const q=await supabase.from('employee_name_mappings').select('*').eq('location_id',A).eq('status','approved').eq('original_name','PR41 Alias Two').single();if(q.error)throw q.error
+   for(const operation of ['approve','lock','correct','reject']){r=await call(req(operation,q.data,'PR41 Alias Two'));check('Store cannot '+operation,r.error?.code==='42501',r.error?.code)}
+   r=await supabase.from('employee_name_mappings').insert({id:crypto.randomUUID()});check('direct mapping insert denied',r.error?.code==='42501',r.error?.code)
+   r=await supabase.from('employee_name_mapping_audit').delete().eq('mapping_id',q.data.id);check('audit deletion denied',r.error?.code==='42501',r.error?.code)
+  }
+  const mappings=await readMappings(supabase,[A],true)
+  const report=buildEmployeePerformance(before,[{id:A,name:'Synthetic site',opportunities_formula:'detailed'}],{start:'2001-04-01',end:'2001-04-01'},mappings)
+  check('approved aliases consolidate exactly once',report.rows.find(x=>x.name==='PR41 Fixture Official One')?.ms===6)
+  check('unapproved name remains separate',report.rows.find(x=>x.name==='PR41 Unapproved')?.ms===2)
+  check('ambiguous name remains unresolved and separate',report.rows.find(x=>x.name==='PR41 Ambiguous')?.ms===1)
+  check('all attributed sales conserved',report.rows.reduce((sum,x)=>sum+x.ms,0)===9)
+  check('original Daily Logs unchanged',JSON.stringify(await snapshot())===JSON.stringify(before))
+  check('completed',true,'No credentials, JWTs or original development records exposed or modified')
+ }catch(e){out.textContent+='\nSTOP: '+e.message}
+}
+</script></body></html>

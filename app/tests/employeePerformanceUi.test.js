@@ -18,9 +18,10 @@ const mod={exports:{}}
 new Function('module','exports','React',transformSync(source,{loader:'jsx',format:'cjs'}).code)(mod,mod.exports,React)
 const Export=()=>null
 const walk=n=>!n||typeof n!=='object'?[]:[n,...React.Children.toArray(n.props?.children).flatMap(walk)]
-function table(data=fixture(),dataComplete=true,locs=locations) {
+async function table(data=fixture(),dataComplete=true,locs=locations,overrides={}) {
   let spec
   const h=locationHelpHarness('components/TeamSalesTable',{
+    supabase:{},readMappings:async()=>[],...overrides,
     ...scoring,...colors,thCls,fmtNum,EmployeeScoreDetails:mod.exports.default,
     ExportMenu:Export,fmtDateRange:()=> 'October',exportCsv:value=>{spec=value},exportXlsx:value=>{spec=value},exportPdf:value=>{spec=value},
   },{data,locations:locs,dateRange,dataComplete})
@@ -32,11 +33,11 @@ function table(data=fixture(),dataComplete=true,locs=locations) {
     const head=walk(table).find(n=>n.type?.name==='TableHead'),tree=head.type(head.props)
     walk(tree).find(n=>n.type==='button'&&n.props.children?.[0]===label).props.onClick()
   }
-  return h
+  h.render();await h.flush();return h
 }
 
-test('unified leaderboard shows requested columns, visible points arithmetic, accessible sorting and themes',()=>{
-  const h=table(),html=h.html()
+test('unified leaderboard shows requested columns, visible points arithmetic, accessible sorting and themes',async()=>{
+  const h=await table(),html=h.html()
   for(const label of ['Rank','Employee','Site','Total Sales','Total Opportunities','Conversion %','P-Mix %','Total Points'])assert.ok(html.includes(label))
   assert.match(html,/130\.0/);assert.match(html,/20 \+ 10\.0 \+ 100\.0/)
   assert.doesNotMatch(html,/Simple #|Detailed #|33\.33|Score details|Google Reviews/)
@@ -46,9 +47,9 @@ test('unified leaderboard shows requested columns, visible points arithmetic, ac
   h.unmount()
 })
 
-test('By Site is a presentation change, retaining unified rank/qualification and aligned exports',()=>{
+test('By Site is a presentation change, retaining unified rank/qualification and aligned exports',async()=>{
   const locs=[...locations,{id:'d',name:'Detailed',opportunities_formula:'detailed'}]
-  const h=table([...fixture(),{...row('Other','08:00:00',100,10),location_id:'d'}],true,locs),before=h.csv()
+  const h=await table([...fixture(),{...row('Other','08:00:00',100,10),location_id:'d'}],true,locs),before=h.csv()
   h.find(n=>n.type==='button'&&n.props.children==='By Site').props.onClick()
   const html=h.html();assert.match(html,/Detailed/);assert.doesNotMatch(html,/Simple #|Detailed #/)
   assert.deepEqual(h.csv().rows,before.rows)
@@ -57,16 +58,16 @@ test('By Site is a presentation change, retaining unified rank/qualification and
   h.unmount()
 })
 
-test('nonqualifiers stay visible with their computed points and no official rank',()=>{
-  const h=table([row('A','08:00:00',200,20),row('B','09:00:00',400,40),row('Low','10:00:00',410,41)])
+test('nonqualifiers stay visible with their computed points and no official rank',async()=>{
+  const h=await table([row('A','08:00:00',200,20),row('B','09:00:00',400,40),row('Low','10:00:00',410,41)])
   assert.match(h.html(),/Not Qualified/)
   const low=h.csv().rows.find(r=>r[1]==='Low');assert.equal(low[0],'Not Qualified');assert.equal(low[7],111)
   h.sort('Rank');assert.equal(h.csv().rows.at(-1)[0],'Not Qualified')
   h.unmount()
 })
 
-test('missing opportunities retain known sales, missing indicators and incomplete status in UI/export',()=>{
-  const h=table([row('Alex','08:00:00',null,20)]),html=h.html(),spec=h.csv()
+test('missing opportunities retain known sales, missing indicators and incomplete status in UI/export',async()=>{
+  const h=await table([row('Alex','08:00:00',null,20)]),html=h.html(),spec=h.csv()
   assert.match(html,/Qualified · Incomplete data/);assert.match(html,/Missing cumulative/)
   assert.match(html,/Known attributed subtotal/);assert.doesNotMatch(html,/NaN|Infinity/)
   assert.equal(spec.rows[0][3],20);assert.equal(spec.rows[0][4],'');assert.equal(spec.rows[0][5],'—');assert.equal(spec.rows[0][7],'')
@@ -74,15 +75,15 @@ test('missing opportunities retain known sales, missing indicators and incomplet
   h.unmount()
 })
 
-test('zero sales and zero opportunities are visible zero rates, points and unified rank',()=>{
-  const h=table([row('Zero','08:00:00',0,0)]),html=h.html(),r=h.csv().rows[0]
+test('zero sales and zero opportunities are visible zero rates, points and unified rank',async()=>{
+  const h=await table([row('Zero','08:00:00',0,0)]),html=h.html(),r=h.csv().rows[0]
   assert.deepEqual(r.slice(0,8),['1','Zero','Site',0,0,'0.0%','0.0%',0])
   assert.match(html,/0\.0%/);assert.doesNotMatch(html,/NaN|Infinity|Not Qualified|Incomplete data/)
   assert.equal(h.csv().totalsRow[5],'0.0%');h.unmount()
 })
 
-test('correction ambiguity does not fabricate totals or rank and unaffected employees retain raw points',()=>{
-  const h=table([row('Alex','08:00:00',200,20),row('Corrector','09:00:00',180,18),row('Blair','10:00:00',200,20)])
+test('correction ambiguity does not fabricate totals or rank and unaffected employees retain raw points',async()=>{
+  const h=await table([row('Alex','08:00:00',200,20),row('Corrector','09:00:00',180,18),row('Blair','10:00:00',200,20)])
   const spec=h.csv();assert.match(h.html(),/Cumulative counts decreased/)
   assert.equal(spec.rows.find(r=>r[1]==='Alex')[7],'')
   assert.equal(spec.rows.find(r=>r[1]==='Blair')[7],112)
@@ -90,8 +91,8 @@ test('correction ambiguity does not fabricate totals or rank and unaffected empl
   h.unmount()
 })
 
-test('all export buttons use the same aligned table specification and selected reporting period',()=>{
-  const h=table(),spec=h.csv()
+test('all export buttons use the same aligned table specification and selected reporting period',async()=>{
+  const h=await table(),spec=h.csv()
   assert.equal(spec.filename,'team-member-sales_2026-10-01_to_2026-10-22')
   assert.match(spec.subtitle,/cutoff ties included/)
   assert.equal(h.find(n=>n.type===Export).props.items.length,3)
@@ -100,11 +101,11 @@ test('all export buttons use the same aligned table specification and selected r
   h.unmount()
 })
 
-test('incomplete reads withhold rankings and unnamed activity remains visible as a limitation',()=>{
-  const failed=table(fixture(),false)
+test('incomplete reads withhold rankings and unnamed activity remains visible as a limitation',async()=>{
+  const failed=await table(fixture(),false)
   assert.match(failed.html(),/role="alert"/);assert.match(failed.html(),/data is incomplete/)
   assert.doesNotMatch(failed.html(),/130\.0/);failed.unmount()
-  const unnamed=table([row('','08:00:00',200,20)])
+  const unnamed=await table([row('','08:00:00',200,20)])
   assert.match(unnamed.html(),/no employee name/);assert.match(unnamed.html(),/No named employee data/);unnamed.unmount()
 })
 
@@ -145,4 +146,21 @@ test('Insights uses verified scoped reads and cancellation prevents late results
   assert.equal(states.at(-1).complete,false);assert.deepEqual(states.at(-1).rows,[])
   assert.match(source,/dataComplete=\{teamLogState\?\.scope === teamScope && teamLogState.complete\}/)
   assert.match(source,/fetchEmployeeLogs\(supabase, locations.map\(l => l.id\), dateRange\)/)
+})
+
+test('Team Sales displays and exports the same approved attribution, without combining pending aliases', async()=>{
+  const logs=[row('Alex','08:00:00',200,20),row('Alias','09:00:00',400,40)]
+  const mappings=['Alex','Alias'].map((original_name,i)=>({id:String(i),original_name,location_id:'s',employee_id:'one',employee_name:'Official',status:'approved'}))
+  const h=await table(logs,true,locations,{readMappings:async()=>mappings})
+  assert.equal(h.csv().rows.length,1)
+  assert.equal(h.csv().rows[0][1],'Official')
+  assert.equal(h.csv().rows[0][3],40)
+  h.unmount()
+})
+test('mapping read failure or missing RPC withholds scores rather than hiding approved decisions',async()=>{
+  const failed=await table(fixture(),true,locations,{readMappings:async()=>{throw new Error('offline')}})
+  assert.match(failed.html(),/Historical mappings could not be verified/)
+  assert.doesNotMatch(failed.html(),/130\.0/);failed.unmount()
+  const absent=await table(fixture(),true,locations,{readMappings:async()=>{throw Object.assign(new Error('missing table'),{code:'42P01'})}})
+  assert.match(absent.html(),/Historical mappings could not be verified/);absent.unmount()
 })
