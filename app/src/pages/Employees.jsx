@@ -80,14 +80,14 @@ export function Roster({ locationId, isAdmin }) {
         <option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option>
       </select></label>
       <button className={control} disabled={busy || loading || review} onClick={reload}>Reload roster</button>
-      {isAdmin && <button className={control} disabled={disabled || review || selected.length < 2} onClick={startReview}>Review selected duplicates ({selected.length})</button>}
+      <button className={control} disabled={disabled || review || selected.length < 2} onClick={startReview}>Review selected duplicates ({selected.length})</button>
     </div>
     {error && <p role="alert" className="text-red-700 dark:text-red-400">{error}</p>}
     {message && <p role="status">{message}</p>}
     {loading ? <p role="status">Loading roster…</p> : <ul className="space-y-2">
       {filterRoster(rows, filter).map(row => <li key={row.id} className="border border-gray-200 dark:border-tm-dark-border rounded p-3 flex flex-wrap gap-3 items-center">
-        {isAdmin && <input type="checkbox" aria-label={`Select ${row.name} (${row.id})`} checked={selected.includes(row.id)} disabled={disabled || review}
-          onChange={e => setSelected(ids => e.target.checked ? [...ids, row.id] : ids.filter(id => id !== row.id))} />}
+        <input type="checkbox" aria-label={`Select ${row.name} (${row.id})`} checked={selected.includes(row.id)} disabled={disabled || review}
+          onChange={e => setSelected(ids => e.target.checked ? [...ids, row.id] : ids.filter(id => id !== row.id))} />
         <div className="flex-1 min-w-0"><strong className="break-words">{row.name}</strong><span className="ml-2 text-sm">{row.is_active === true ? 'Active' : 'Inactive'}</span>
           {isAdmin && <div className="text-xs break-all text-gray-500 dark:text-tm-dark-muted">ID: {row.id}</div>}
         </div>
@@ -107,7 +107,7 @@ export function Roster({ locationId, isAdmin }) {
       <button className={control} disabled={disabled || !editName.trim() || editName === editing.name}>Confirm name change</button>
       <button type="button" className={control} disabled={busy} onClick={() => setEditing(null)}>Cancel</button>
     </form>}
-    {review && isAdmin && <section aria-label="Duplicate review" className="border-2 border-tm-teal rounded p-4 space-y-3">
+    {review && <section aria-label="Duplicate review" className="border-2 border-tm-teal rounded p-4 space-y-3">
       <h2 className="font-bold">Review duplicate records</h2>
       <p>Choose the record to keep active. All other selected records will be deactivated together. Every ID, name and historical Daily Log is retained. This does not merge historical sales.</p>
       <DuplicateHistoricalUsage locationId={locationId} rows={reviewRows} />
