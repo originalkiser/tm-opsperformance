@@ -53,12 +53,12 @@ function harness(extra = {}, isAdmin = true) {
 }
 const button = text => n => n.type === 'button' && n.props.children === text
 const textOf = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(textOf).join(' ') : node?.props ? textOf(node.props.children) : ''
-test('roster initializes from existing rows, filters statuses and hides Admin selection for managers', async () => {
+test('roster initializes from existing rows, filters statuses and offers duplicate selection for assigned managers', async () => {
   const { h } = harness({}, false); await h.flush()
   assert.equal(h.all(n => n.type === 'li').length, 1)
   const filter = h.find(n => n.type === 'select'); filter.props.onChange({ target: { value: 'all' } })
   assert.equal(h.all(n => n.type === 'li').length, 3)
-  assert.equal(h.all(n => n.type === 'input' && n.props.type === 'checkbox').length, 0)
+  assert.equal(h.all(n => n.type === 'input' && n.props.type === 'checkbox').length, 3)
 })
 test('rename cancellation never writes; accepted confirmation explains retained historical sales', async () => {
   let confirmation = ''
@@ -118,4 +118,16 @@ test('confirmed duplicate review sends one atomic operation and clears selection
   h.find(button('Retain selected record and deactivate duplicates')).props.onClick(); await h.flush()
   assert.equal(actions.length, 1); assert.equal(actions[0][0], 'review'); assert.equal(actions[0].at(-1), true)
   assert.equal(h.find(n => n.props?.['aria-label'] === 'Duplicate review'), undefined)
+})
+
+test('assigned Store can complete duplicate review with explicit identity confirmation', async () => {
+  const { h, actions } = harness({}, false); await h.flush()
+  h.find(n => n.type === 'select').props.onChange({ target: { value: 'all' } }); h.render()
+  const selections = h.all(n => n.type === 'input' && n.props.type === 'checkbox')
+  selections[0].props.onChange({ target: { checked: true } }); selections[1].props.onChange({ target: { checked: true } })
+  h.find(n => n.type === 'button' && textOf(n).startsWith('Review selected duplicates')).props.onClick()
+  assert.equal(h.find(button('Retain selected record and deactivate duplicates')).props.disabled, true)
+  h.find(n => n.type === 'input' && n.props.type === 'checkbox' && !n.props['aria-label']).props.onChange({ target: { checked: true } })
+  await h.find(button('Retain selected record and deactivate duplicates')).props.onClick()
+  assert.equal(actions.filter(action => action[0] === 'review').length, 1)
 })
