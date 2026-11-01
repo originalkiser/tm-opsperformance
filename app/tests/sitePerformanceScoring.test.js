@@ -36,9 +36,9 @@ function fixture() {
     balances: ids.map((location_id, i) => ({ location_id, revenue_month: '2026-10-01', amount: 600 - i * 100, cutoff_business_date: '2026-10-02' })),
   }
 }
-function reports(data, locations = data.locations, range = dateRange) {
+function reports(data, locations = data.locations, range = dateRange, logs = []) {
   const rows = buildBudgetReportRows(data, range.end)
-  let sitePool, budgetPool
+  let sitePool, budgetPool, siteSource
   const Budget = compile('BudgetTrackingReport', {
     useAuth: () => ({ profile: { role: 'area_manager' } }), budgetReportPeriod,
     useBudgetReport(pool, day) { budgetPool = { pool, day }; return { rows, loading: false, error: '', refresh() {} } },
@@ -48,15 +48,16 @@ function reports(data, locations = data.locations, range = dateRange) {
   })
   const Site = compile('SitePerformanceReport', {
     useReportNetMembers: () => ({values: undefined}),
-    budgetReportPeriod, shiftDate, selectPerformanceSources, budgetPerformanceRow, PerformanceTable: Table,
+    budgetReportPeriod, shiftDate, selectPerformanceSources, budgetPerformanceRow, PerformanceTable: props => { siteSource = props.source; return React.createElement(Table, props) },
     SiteMetricTable: () => React.createElement('p', {}, 'Legacy range'),
     useBudgetReport(pool, day) { sitePool = { pool, day }; return { rows, loading: false, error: '' } },
   })
   return {
     rows,
     budget: renderToStaticMarkup(React.createElement(Budget, { locations: data.locations, dateRange: range })),
-    site: renderToStaticMarkup(React.createElement(Site, { locations, scoringLocations: data.locations, dateRange: range, data: [] })),
+    site: renderToStaticMarkup(React.createElement(Site, { locations, scoringLocations: data.locations, dateRange: range, data: logs })),
     get pools() { return { sitePool, budgetPool } },
+    get source() { return siteSource },
   }
 }
 const rowsOf = html => [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map(m => [...m[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(c => c[1])).filter(r => r.length)
@@ -266,4 +267,80 @@ test('shared KPI table retains supported stale score/rank, reporting dates and p
  assert.match(html,/Provisional source; not complete verified MTD actual revenue/)
  assert.match(html,/Stale entry/)
  assert.doesNotMatch(html,/no official score|Provisional preview/)
+})
+
+// Synthetic fixtures based on the reported discrepancy, not live source records.
+function overlapFixture() {
+  const data = fixture()
+  data.locations = data.locations.slice(0, 3)
+  data.locations[0].name = '1520-Cleveland'
+  data.locations[1].name = '1519-Greenville'
+  data.locations[2].show_budget_tracking = false
+  data.entries = data.entries.slice(0, 2).map((entry, i) => ({ ...entry,
+    entry_date: '2026-10-31', mtd_washes: i ? 10114 : 10096,
+    mtd_redemptions: 7000, mtd_basic: 20, mtd_good: 30,
+    mtd_better: 40, mtd_best: 50, current_reviews: 12,
+  }))
+  const log = (location_id, total_washes, extra = {}) => ({ location_id,
+    log_date: '2026-10-30', time_slot: '20:00', split_index: 0,
+    total_washes, member_washes: 6000, memberships_sold: 100,
+    opportunities: 2000, better: 30, best: 40, google_reviews: 8, ...extra })
+  return { data, range: { start: '2026-10-01', end: '2026-10-31' }, logs: [
+    log('a', 9390), log('b', 9036),
+    log('c', 50, { member_washes: 30, memberships_sold: 4,
+      opportunities: 24, better: 1, best: 2, google_reviews: 3 }),
+  ] }
+}
+const counts = rows => {
+  const totals = helpers.agg(rows)
+  return Object.fromEntries(['tw', 'mw', 'ms', 'opp', 'gr', 'btr', 'bst'].map(k => [k, totals[k]]))
+}
+
+test('Cleveland and Greenville contribute one Budget snapshot despite overlapping Daily Logs', () => {
+  const { data, range, logs } = overlapFixture()
+  const before = structuredClone({ data, logs })
+  const baseline = reports(data, data.locations, range)
+  const result = reports(data, data.locations, range, logs)
+  for (const [id, tw] of [['a', 10096], ['b', 10114]]) {
+    const selected = result.source.totals.filter(r => r.location_id === id)
+    assert.equal(selected.length, 1)
+    assert.equal(selected[0].budget_source, true)
+    assert.deepEqual(counts(selected), { tw, mw: 7000, ms: 140,
+      opp: tw - 7000, gr: 12, btr: 40, bst: 50 })
+    const rendered = rowsOf(result.site).find(r => plain(r[0]) === data.locations.find(l => l.id === id).name)
+    assert.equal(plain(rendered[1]), tw.toLocaleString('en-US'))
+  }
+  assert.deepEqual(counts(result.source.totals), { tw: 20260, mw: 14030,
+    ms: 284, opp: 6234, gr: 27, btr: 81, bst: 102 })
+  assert.deepEqual(result.rows, baseline.rows, 'KPIs, scores and ranks remain unchanged')
+  const filtered = reports(data, [data.locations[0]], range, logs.filter(r => r.location_id === 'a'))
+  assert.deepEqual(counts(filtered.source.totals), counts(result.source.totals.filter(r => r.location_id === 'a')))
+  assert.deepEqual(filtered.rows, result.rows, 'display filtering preserves the scoring pool')
+  assert.deepEqual({ data, logs }, before)
+})
+
+test('non-Budget logs retain latest split selection and the prior-business-day cutoff', () => {
+  const { data, range, logs } = overlapFixture()
+  logs.push({ ...logs[2], time_slot: '09:00', total_washes: 20 },
+    { ...logs[2], split_index: 1, total_washes: 60 },
+    { ...logs[2], log_date: '2026-10-29', total_washes: 40 },
+    { ...logs[2], log_date: '2026-10-31', total_washes: 999 })
+  const result = reports(data, data.locations, range, logs)
+  const selected = result.source.totals.filter(r => r.location_id === 'c')
+  assert.deepEqual(counts(selected), counts(helpers.toDayTotals(logs.filter(r => r.location_id === 'c' && r.log_date < range.end))))
+  assert.equal(helpers.agg(selected).tw, 100)
+  assert.equal(selected.length, 2)
+  assert.equal(result.source.cutoff, '2026-10-30')
+})
+
+test('missing or invalid Budget snapshots never fall back to overlapping Daily Logs', () => {
+  const { data, range, logs } = overlapFixture()
+  data.entries = data.entries.filter(e => e.location_id !== 'a')
+  data.entries[0].mtd_redemptions = null
+  const result = reports(data, data.locations, range, logs)
+  assert.ok(result.source.totals.every(r => r.location_id === 'c'))
+  for (const name of ['1520-Cleveland', '1519-Greenville']) {
+    const rendered = rowsOf(result.site).find(r => plain(r[0]).startsWith(name))
+    assert.equal(plain(rendered[1]), '—')
+  }
 })

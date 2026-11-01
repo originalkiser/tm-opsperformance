@@ -14,7 +14,10 @@ export default function SitePerformanceReport({ data, locations, scoringLocation
   if (!supported) return <>{netNote}<p className="text-xs mb-3 text-gray-500">Budget scoring is unavailable for this range. Select a month-to-date range ending on a morning reporting date no later than today to compare with Budget Tracking. Existing range metrics remain below.</p><SiteMetricTable tableId="reports-sites" netMembers={net.values} data={data} locations={locations} dateRange={dateRange} /></>
   if (report.loading) return <div className="flex justify-center py-12"><TmLoader /></div>
   if (report.error) return <p role="alert" className="text-red-600">{report.error}</p>
-  const legacy = selectPerformanceSources(data, [], locations.filter(l => !l.show_budget_tracking), dateRange, reportingDate)
+  const legacyLocations = locations.filter(l => !l.show_budget_tracking)
+  const legacyIds = new Set(legacyLocations.map(l => l.id))
+  // Budget sites contribute only their MTD snapshot, never overlapping Daily Logs.
+  const legacy = selectPerformanceSources(data.filter(r => legacyIds.has(r.location_id)), [], legacyLocations, dateRange, reportingDate)
   const visibleIds = new Set(locations.map(l => l.id))
   const budgetRows = report.rows.filter(r => visibleIds.has(r.loc.id))
   const snapshots = budgetRows.map(r => budgetPerformanceRow(r.entry, 'mtd', r.scoringResult.businessDate)).filter(Boolean)
