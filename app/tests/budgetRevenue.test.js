@@ -69,8 +69,8 @@ test('transition finds latest recorded historical reference despite newer blank 
 test('historical reference does not carry into another month and zero is valid', () => {
   const entries = [{ location_id: 'test', entry_date: '2026-10-31', mtd_revenue_actual: 63638.8 }]
   assert.equal(latestHistoricalRevenue(entries, 'test', '2026-11-02'), null)
-  entries.push({ location_id: 'test', entry_date: '2026-11-01', mtd_revenue_actual: 0 })
-  assert.deepEqual(latestHistoricalRevenue(entries, 'test', '2026-11-02'), { amount: 0, entryDate: '2026-11-01' })
+  entries.push({ location_id: 'test', entry_date: '2026-11-02', mtd_revenue_actual: 0 })
+  assert.deepEqual(latestHistoricalRevenue(entries, 'test', '2026-11-02'), { amount: 0, entryDate: '2026-11-02' })
 })
 test('next month switches to automatic totals without backfilling transition month', () => {
   const entries = [row('2026-10-12', 100), row('2026-11-02', 200), row('2026-11-03', 300)]
@@ -96,8 +96,8 @@ test('MTD shifts entry dates, excludes other sites, future entries and prior mon
   assert.equal(result.total, 300.30)
   assert.equal(result.complete, true)
 })
-test('first of month is zero, including year rollover', () => {
-  assert.equal(calculateMtdRevenue([row('2027-01-01', 5000)], 'test', '2027-01-01').total, 0)
+test('first morning closes the prior month, including year rollover', () => {
+  assert.equal(calculateMtdRevenue([row('2027-01-01', 5000)], 'test', '2027-01-01').total, null)
   assert.equal(shiftDate('2027-01-01', -1), '2026-12-31')
 })
 test('missing dates do not become zeros; explicit zero is a complete business day', () => {

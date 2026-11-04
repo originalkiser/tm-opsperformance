@@ -1,3 +1,4 @@
+import { budgetDaysElapsed, budgetMonthStart } from './budgetRevenue.js'
 // Budget Tracking calculations — ported from the MSMO budget workbook's
 // Setup / Daily Input / Dashboard sheets.
 //
@@ -91,7 +92,7 @@ export function revenuePace(mtdRevenueActual, revenueGoal, progress) {
 export function membershipStatus(mtdMembershipActual, membershipGoal, dateStr) {
   const actual = toNum(mtdMembershipActual)
   const goal   = toNum(membershipGoal)
-  const dim    = daysInMonth(dateStr)
+  const dim    = daysInMonth(budgetMonthStart(dateStr))
   let tier = 'Off Track'
   if (goal > 0 || actual > 0) {
     if (actual >= goal + 2 * dim)      tier = '$200 Bonus'
@@ -119,7 +120,7 @@ export function computeMembershipGoal(startingMembers, dailyGrowth, dateStr) {
 export function membershipPace(mtdMembershipActual, startingMembers, dailyGrowth, dateStr) {
   if (startingMembers == null || startingMembers === '') return { expected: null, onTrack: null, paceRatio: 0 }
   const rate     = dailyGrowth == null || dailyGrowth === '' ? DEFAULT_MEMBERSHIP_DAILY_GROWTH : Number(dailyGrowth)
-  const expected = toNum(startingMembers) + rate * daysElapsed(dateStr)
+  const expected = toNum(startingMembers) + rate * budgetDaysElapsed(dateStr)
   const actual   = toNum(mtdMembershipActual)
   return {
     expected,

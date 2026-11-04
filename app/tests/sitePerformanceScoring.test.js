@@ -11,7 +11,7 @@ import { scoreBudgetLocations, SCORE_LABELS, SCORE_WEIGHTS } from '../src/utils/
 import * as helpers from '../src/utils/insightsHelpers.js'
 import * as colors from '../src/utils/metricColors.js'
 import * as display from '../src/utils/budgetDisplay.js'
-import { shiftDate } from '../src/utils/budgetRevenue.js'
+import { shiftDate, budgetMonthStart } from '../src/utils/budgetRevenue.js'
 import { pct1 } from '../src/utils/budgetMath.js'
 import { fmtNum } from '../src/utils/format.js'
 import { selectPerformanceSources, budgetPerformanceRow } from '../src/utils/budgetPerformanceSource.js'
@@ -178,7 +178,7 @@ function reportHook(client, locations, day = date) {
   }
   const source = readFileSync(new URL('../src/hooks/useBudgetReport.js', import.meta.url), 'utf8').replace(/^import .*\n/gm, '')
   const mod = { exports: {} }
-  const bindings = { useState, useEffect, useRef, buildBudgetReportRows, revenueMonthStart: d => d.slice(0,7) + '-01', ...client }
+  const bindings = { useState, useEffect, useRef, buildBudgetReportRows, budgetMonthStart, ...client }
   new Function('module','exports', ...Object.keys(bindings), transformSync(source, { format: 'cjs' }).code)(mod, mod.exports, ...Object.values(bindings))
   const render = () => { do { dirty = false; cursor = 0; queue = []; output = mod.exports.default(currentLocations, currentDay); queue.forEach(fn => fn()) } while (dirty); return output }
   return { render, props(locations, day) { currentLocations = locations; currentDay = day; return render() },
@@ -193,6 +193,7 @@ function reads() {
     requests, watches,
     supabase: { from(table) { assert.equal(table, 'budget_targets'); return { select() { return this }, in(field, ids) { assert.equal(field, 'location_id'); this.ids = ids; return this }, eq(field, month) { const d=deferred(); requests.push({ ...d, ids: this.ids, field, month }); return d.promise } } } },
     fetchRevenueEntries(_client, ids, day) { requests.at(-1).entryScope = { ids, day }; return Promise.resolve(fixture().entries.filter(e => ids.includes(e.location_id))) },
+    fetchDailyRevenueGoals: async () => [],
     fetchStartingBalances(_client, ids, day) { requests.at(-1).balanceScope = { ids, day }; return Promise.resolve(fixture().balances.filter(e => ids.includes(e.location_id))) },
     watchBudgetReport(load) { const watcher={load,stopped:false}; watches.push(watcher); return () => { watcher.stopped=true } },
   }
@@ -343,4 +344,42 @@ test('missing or invalid Budget snapshots never fall back to overlapping Daily L
     const rendered = rowsOf(result.site).find(r => plain(r[0]).startsWith(name))
     assert.equal(plain(rendered[1]), '—')
   }
+})
+
+
+test('December 1 loader requests November targets and includes the closing morning', () => {
+  const client = reads(), data = fixture(), h = reportHook(client, data.locations)
+  h.props(data.locations, '2026-12-01')
+  assert.equal(client.requests.at(-1).month, '2026-11-01')
+  assert.equal(client.requests.at(-1).entryScope.day, '2026-12-01')
+  h.unmount()
+})
+
+test('November reported revenue is dated consistently in both report layouts', () => {
+  const data = fixture()
+  data.targets = data.targets.map(t => ({ ...t, target_month: '2026-11-01' }))
+  data.entries = data.entries.map(e => ({ ...e, entry_date: '2026-11-03', mtd_revenue_actual: 123.45 }))
+  data.balances = []
+  const result = reports(data, data.locations, { start: '2026-11-01', end: '2026-11-03' })
+  assertParity(result)
+  assert.match(result.site, /reported MTD · through 2026-11-02/)
+  assert.match(result.budget, /reported MTD · through 2026-11-02/)
+})
+
+test('a daily-budget read failure leaves reported revenue and other KPIs visible', async () => {
+  const client = reads(), data = fixture()
+  client.fetchDailyRevenueGoals = async () => { throw new Error('denied') }
+  client.fetchStartingBalances = async () => []
+  client.fetchRevenueEntries = async () => data.entries.map(e => ({ ...e, entry_date: '2026-11-02', mtd_revenue_actual: 123.45 }))
+  const h = reportHook(client, data.locations, '2026-11-03')
+  h.render()
+  client.requests[0].resolve({ data: data.targets.map(t => ({ ...t, target_month: '2026-11-01' })) })
+  await h.flush()
+  const result = h.render()
+  assert.equal(result.error, '')
+  assert.match(result.goalError, /Daily revenue goals unavailable/)
+  assert.equal(result.rows[0].rev.reported.amount, 123.45)
+  assert.equal(result.rows[0].plan.expected, null)
+  assert.equal(result.rows[0].scoringResult.washes, 100)
+  h.unmount()
 })

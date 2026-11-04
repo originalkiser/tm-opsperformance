@@ -1,3 +1,4 @@
+import { laborBudget } from '../utils/laborBudget.js'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
@@ -128,14 +129,15 @@ function TargetModal({ location, month, existing, profile, onClose, onSaved }) {
             </div>
           </div>
 
+          <div>{existing?.full_service_labor_percentage != null && <p className="mt-4 text-xs">Full-service labor budget: {Number(existing.full_service_labor_percentage) * 100}%. Weekly hours are not applicable.</p>}</div>
           <div className="mt-4 pt-4 border-t border-gray-100 dark:border-tm-dark-border grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Labor — Regular Hours</label>
-              <input type="number" min="0" value={form.labor_hours_non_salary} onChange={e => setForm(f => ({ ...f, labor_hours_non_salary: e.target.value }))} className={inputCls} />
+              <input type="number" min="0" disabled={existing?.full_service_labor_percentage != null} placeholder={existing?.full_service_labor_percentage != null ? 'Not applicable' : undefined} value={existing?.full_service_labor_percentage != null ? '' : form.labor_hours_non_salary} onChange={e => setForm(f => ({ ...f, labor_hours_non_salary: e.target.value }))} className={inputCls} />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Labor — With Salary</label>
-              <input type="number" min="0" value={form.labor_hours_with_salary} onChange={e => setForm(f => ({ ...f, labor_hours_with_salary: e.target.value }))} className={inputCls} />
+              <input type="number" min="0" disabled={existing?.full_service_labor_percentage != null} placeholder={existing?.full_service_labor_percentage != null ? 'Not applicable' : undefined} value={existing?.full_service_labor_percentage != null ? '' : form.labor_hours_with_salary} onChange={e => setForm(f => ({ ...f, labor_hours_with_salary: e.target.value }))} className={inputCls} />
             </div>
           </div>
         </div>
@@ -217,14 +219,15 @@ export default function BudgetTargetsTable({ locations, profile, onSaved }) {
             <tbody>
               {locations.map((loc, i) => {
                 const t = targets.find(x => x.location_id === loc.id)
+                const labor = laborBudget(t)
                 return (
                   <tr key={loc.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-card'}>
                     <td className="px-3 py-2 font-semibold text-tm-blue dark:text-tm-teal whitespace-nowrap">{loc.name}</td>
                     <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{fmtMoney(t?.revenue_goal)}</td>
                     <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{t?.membership_goal ?? '—'}</td>
                     <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{t?.desired_rating ?? '—'}</td>
-                    <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{t?.labor_hours_non_salary ?? '—'}</td>
-                    <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{t?.labor_hours_with_salary ?? '—'}</td>
+                    <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{labor.method === 'percentage' ? `Full service: ${labor.percentage * 100}%` : labor.hours ?? '—'}</td>
+                    <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{labor.hoursWithManager ?? '—'}</td>
                     <td className="px-2 py-2 text-center">
                       <button onClick={() => setEditingLoc(loc)} title="Edit this site's target"
                         className="text-gray-400 hover:text-tm-teal dark:hover:text-tm-teal transition-colors">

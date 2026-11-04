@@ -146,6 +146,7 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
     }
     if (KPI_COLUMNS.find(c => c.key === key)?.budget) return <td key={key} data-column={key} className={`${cls} text-center dark:text-tm-dark-text`}>
       {key === 'score' ? <BudgetScoreDetails result={r.budget?.scoringResult} /> : budgetCell(r, key)}
+      {key === 'revenue' && r.budget?.rev.reported.source === 'reported MTD' && !r.budget.rev.reported.provisional && r.budget.rev.reported.throughDate && <div className="text-[10px] font-normal">{r.budget.rev.reported.source} · through {r.budget.rev.reported.throughDate}</div>}
       {key === 'revenuePct' && r.budget?.formatting.provisional && <span className="block text-[10px] font-normal">Provisional</span>}
       {key === 'revenuePct' && r.budget?.formatting.stale && <span className="block text-[10px] font-normal">Stale entry</span>}
     </td>

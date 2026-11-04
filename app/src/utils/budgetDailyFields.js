@@ -1,4 +1,4 @@
-import { cashRevenue, revenueError } from './budgetRevenue.js'
+import { cashRevenue, revenueError, revenueCents } from './budgetRevenue.js'
 import { creditCardInputError } from './creditCardCalculator.js'
 import { CASH_COUNT_LABEL, cashCountError } from './cashReconciliation.js'
 // Shared field metadata + validation for the Budget Tracking daily entry
@@ -47,7 +47,7 @@ export const PERFORMANCE_DAILY_FIELDS = [...YESTERDAY_FIELDS, ...MTD_FIELDS, ...
 export const ALL_DAILY_FIELDS = [...PERFORMANCE_DAILY_FIELDS, { key: 'yesterday_cash_counted', label: CASH_COUNT_LABEL }]
 
 export function emptyDailyForm() {
-  return { ...Object.fromEntries(ALL_DAILY_FIELDS.map(f => [f.key, ''])), yesterday_cash_counted: '' }
+  return { ...Object.fromEntries(ALL_DAILY_FIELDS.map(f => [f.key, ''])), yesterday_cash_counted: '', mtd_revenue_actual: '' }
 }
 
 export const isFieldMissing = (form, key) => form[key] === '' || form[key] == null
@@ -65,4 +65,4 @@ export const isPerformanceEntryComplete = (entry) =>
   !!entry && PERFORMANCE_DAILY_FIELDS.every(f => !isFieldMissing(entry, f.key)) && !validateRevenue(entry)
 
 export const calculateCashRevenue = cashRevenue
-export const validateRevenue = form => creditCardInputError(form.yesterday_cc_revenue) || revenueError(form)
+export const validateRevenue = form => (form.mtd_revenue_actual !== '' && form.mtd_revenue_actual != null && revenueCents(form.mtd_revenue_actual) == null ? 'Enter valid reported MTD revenue with at most two decimal places.' : null) || creditCardInputError(form.yesterday_cc_revenue) || revenueError(form)
