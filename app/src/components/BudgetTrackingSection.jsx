@@ -35,7 +35,7 @@ export function PaceBadge({ onTrack, label }) {
 }
 
 export function BonusBadge({ tier }) {
-  const cls = tier === 'Off Track'
+  const cls = tier === 'Off Track' || tier === 'Membership baseline pending'
     ? 'bg-gray-100 text-gray-500 dark:bg-tm-dark-card dark:text-tm-dark-muted'
     : 'bg-tm-teal/20 text-tm-blue dark:bg-tm-teal/15 dark:text-tm-teal'
   return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${cls}`}>{tier}</span>
@@ -188,7 +188,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
               <div className="text-[10px] font-brand font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Current Total Members / End-of-Month Member Goal</div>
               <div className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal">{displayCount(form.mtd_membership_actual)} / {displayCount(target?.membership_goal)}</div>
               <div className="text-[10px] text-gray-400 mt-0.5">
-                {memPace.expected != null ? `pace ${Math.round(memPace.expected)} · ` : ''}goal {target?.membership_goal ?? '—'}
+                {memPace.expected != null ? `pace ${Math.round(memPace.expected)} · ` : ''}{target && target.membership_goal == null ? 'Membership baseline pending' : `goal ${target?.membership_goal ?? '—'}`}
               </div>
             </div>
             <div className="bg-white dark:bg-tm-dark-surface rounded-xl border border-gray-100 dark:border-tm-dark-border p-4">
@@ -255,7 +255,7 @@ function TargetsTab({ locations, allLocations }) {
       location_id: selectedLocId,
       target_month: month,
       revenue_goal: numOrZero(form.revenue_goal),
-      membership_goal: numOrZero(form.membership_goal),
+      membership_goal: form.membership_goal === '' ? null : Number(form.membership_goal),
       desired_rating: numOrZero(form.desired_rating),
       labor_hours_non_salary: numOrZero(form.labor_hours_non_salary),
       labor_hours_with_salary: numOrZero(form.labor_hours_with_salary),
