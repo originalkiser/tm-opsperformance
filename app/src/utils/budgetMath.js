@@ -90,6 +90,7 @@ export function revenuePace(mtdRevenueActual, revenueGoal, progress) {
 // volume = $100, goal + two months' worth = $200, otherwise Off Track.
 
 export function membershipStatus(mtdMembershipActual, membershipGoal, dateStr) {
+  if (membershipGoal == null || membershipGoal === '') return { tier: 'Membership baseline pending', progressRatio: null, actual: mtdMembershipActual == null ? null : Number(mtdMembershipActual), goal: null }
   const actual = toNum(mtdMembershipActual)
   const goal   = toNum(membershipGoal)
   const dim    = daysInMonth(budgetMonthStart(dateStr))

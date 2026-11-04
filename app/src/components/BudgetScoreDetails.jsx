@@ -6,7 +6,7 @@ export default function BudgetScoreDetails({ result }) {
   if (!result) return <span>—</span>
   return <div className="text-gray-800 dark:text-gray-100">
     <div className="font-bold text-tm-blue dark:text-tm-teal">{formatBudgetScore(result)}</div>
-    {result.issues.length > 0 && <div className="text-[10px] font-normal text-amber-800 dark:text-amber-300">Incomplete reporting · unavailable categories receive 0 points</div>}
+    {result.issues.length > 0 && <div className="text-[10px] font-normal text-amber-800 dark:text-amber-300">{result.membershipPending ? 'Membership baseline pending · growth category unavailable' : 'Incomplete reporting · unavailable categories receive 0 points'}</div>}
     <div className="text-[10px] font-normal">Last entry: {result.lastEntryDate || 'None this month'}</div>
     <details className="mt-1 text-[10px] font-normal text-left">
       <summary className="cursor-pointer">Score details · {result.completeness.scoredCategories}/7 categories supported</summary>
@@ -16,7 +16,7 @@ export default function BudgetScoreDetails({ result }) {
       <p>Expected MTD revenue: {result.expectedRevenue == null ? '—' : result.expectedRevenue.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}. Expected net growth: {result.expectedGrowth ?? '—'}. Both use the selected reporting cutoff.</p>
       {result.scoringRevenue != null && <p>Revenue used for scoring: {result.scoringRevenue.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} through {result.reportedThrough}.{result.provisionalRevenue && ' Provisional source; not complete verified MTD actual revenue.'}</p>}
       {Object.entries(SCORE_WEIGHTS).map(([key, max]) => <div key={key}>
-        {SCORE_LABELS[key]}: {(result.components[key] ?? 0).toFixed(2)} / {max}
+        {SCORE_LABELS[key]}: {result.membershipPending && key === 'growth' ? 'Pending' : (result.components[key] ?? 0).toFixed(2)} / {max}
         {result.componentSources?.[key]?.throughDate && <span> · supported through {result.componentSources[key].throughDate}</span>}
         {result.componentIssues?.[key] && <span> · {result.componentIssues[key]}</span>}
       </div>)}

@@ -188,7 +188,7 @@ export default function BudgetTrackingReport({ locations, dateRange }) {
                 <td className={`px-3 py-2 text-center font-semibold ${REPORT_STATUS_CLS[r.formatting.revenue]}`}>{pct1(r.rev.pct)}{r.formatting.provisional && <span className="block text-[10px] font-normal">Provisional</span>}{r.formatting.stale && <span className="block text-[10px] font-normal">Stale entry</span>}</td>
                 <td className="px-3 py-2 text-center text-gray-800 dark:text-gray-100">{pct1(r.plan.progress)}</td>
                 <td className="px-3 py-2 text-center text-gray-800 dark:text-gray-100">{displayCount(r.entry?.mtd_membership_actual)}</td>
-                <td className="px-3 py-2 text-center">{r.formatting.membershipOnTrack == null ? <span className={REPORT_STATUS_CLS.neutral}>—</span> : <PaceBadge onTrack={r.formatting.membershipOnTrack} label={r.formatting.membershipOnTrack ? 'On Track' : 'Off Track'} />}</td>
+                <td className="px-3 py-2 text-center">{r.formatting.membershipOnTrack == null ? <span className={REPORT_STATUS_CLS.neutral}>{r.scoringResult.membershipPending ? 'Membership baseline pending' : '—'}</span> : <PaceBadge onTrack={r.formatting.membershipOnTrack} label={r.formatting.membershipOnTrack ? 'On Track' : 'Off Track'} />}</td>
                 <td className="px-3 py-2"><BudgetRevenueNotes reportingDate={reportingDate} revenue={r.revenue} historical={r.historicalRevenue} monthlyGoal={r.target?.revenue_goal} /></td>
                 <td className="px-3 py-2 text-center text-gray-700 dark:text-tm-dark-text">{r.entry?.current_rating ?? '—'}</td>
                 <td className="px-3 py-2 text-center"><BudgetScoreDetails result={r.scoringResult} /></td>

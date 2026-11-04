@@ -125,13 +125,14 @@ export function scoreBudgetLocations({ locations = [], targets = [], entries = [
     if (components.pmix == null) problem('pmix', 'P-Mix target or tier counts unavailable; 0 points')
     if (!washEntry) problem('washes', 'MTD wash count unavailable; 0 points')
     if (components.revenuePlan == null) problem('revenuePlan', 'Revenue-to-plan unavailable: missing revenue/positive goal or no elapsed days; 0 points')
-    if (components.growth == null) problem('growth', expectedGrowth === 0 ? 'Expected net growth is zero; 0 points (no division by zero)' : 'Current members, month-start members or net-growth target unavailable; 0 points')
+    if (target?.membership_goal === null && baseline == null) problem('growth', 'Membership baseline pending; growth category unavailable')
+    else if (components.growth == null) problem('growth', expectedGrowth === 0 ? 'Expected net growth is zero; 0 points (no division by zero)' : 'Current members, month-start members or net-growth target unavailable; 0 points')
     if (components.rating == null) problem('rating', 'Rating or rating target missing/invalid (valid range 0–5); 0 points')
     const oldMetrics = mtdMetrics(latest), oldYesterday = yesterdayMetrics(latest)
     const oldMem = membershipStatus(latest?.mtd_membership_actual, target?.membership_goal, reportingDate)
     const oldScore = latest ? computeScore({ yesterdayConv: oldYesterday.conversion, mtdConv: oldMetrics.conversion, mtdPmix: oldMetrics.pmix, membershipProgressRatio: oldMem.progressRatio, currentRating: latest.current_rating }) : null
     return { id: loc.id, site: loc.name, entry, loc, reportingDate, businessDate, lastEntryDate: latest?.entry_date ?? null,
-      oldScore, oldDate: latest?.entry_date, components, componentIssues, componentSources, issues,
+      membershipPending: target?.membership_goal === null && baseline == null, oldScore, oldDate: latest?.entry_date, components, componentIssues, componentSources, issues,
       candidate: true, target, revenueResult: revenue, historicalRevenue: historical ?? null, revenueSourceError, revenue: revenueReady ? revenue.total : null, scoringRevenue, washes: washEntry ? Number(washEntry.mtd_washes) : null,
       reportedRevenue: reported.amount, reportedThrough: reported.throughDate, provisionalRevenue: reported.provisional,
       growth, expectedGrowth, expectedRevenue, conversionGoal, pmixGoal,
@@ -150,7 +151,7 @@ export function scoreBudgetLocations({ locations = [], targets = [], entries = [
     if (r.washes != null && !washesPoints.has(r.id)) r.componentIssues.washes = 'Fewer than two valid wash values; 0 competitive points'
     r.availableWeight = Object.entries(r.components).filter(([, v]) => v != null).reduce((sum, [key]) => sum + SCORE_WEIGHTS[key], 0)
     r.completeness.scoredCategories = Object.values(r.components).filter(v => v != null).length
-    r.components = Object.fromEntries(Object.entries(r.components).map(([key, value]) => [key, value ?? 0]))
+    r.components = Object.fromEntries(Object.entries(r.components).map(([key, value]) => [key, key === 'growth' && r.membershipPending ? null : value ?? 0]))
     r.score = Math.max(0, Math.min(100, Math.round(Object.values(r.components).reduce((sum, value) => sum + value, 0) * 10) / 10))
   }
   const ranks = competitionRanks(rows)

@@ -15,7 +15,7 @@ async function saveTarget(item, form) {
     location_id: item.location.id,
     target_month: item.month,
     revenue_goal: numOrZero(form.revenue_goal),
-    membership_goal: numOrZero(form.membership_goal),
+    membership_goal: form.membership_goal === '' ? null : Number(form.membership_goal),
     desired_rating: numOrZero(form.desired_rating),
     labor_hours_non_salary: numOrZero(form.labor_hours_non_salary),
     labor_hours_with_salary: numOrZero(form.labor_hours_with_salary),

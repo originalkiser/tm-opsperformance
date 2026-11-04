@@ -1,5 +1,6 @@
+import MonthlyBudgetImport from './MonthlyBudgetImport'
 import { laborBudget } from '../utils/laborBudget.js'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import TmLoader from './TmLoader'
 import { firstOfMonth, computeMembershipGoal, DEFAULT_MEMBERSHIP_DAILY_GROWTH } from '../utils/budgetMath'
@@ -49,11 +50,13 @@ function TargetModal({ location, month, existing, profile, onClose, onSaved }) {
   const computedGoal = computeMembershipGoal(form.starting_members, form.membership_daily_growth, month)
 
   const handleSave = async () => {
+    if (existing?.starting_members != null && String(existing.starting_members) !== form.starting_members.toString() && !window.confirm('Replace the approved opening membership balance?')) return
     setSaving(true)
-    const numOrZero = (v) => v === '' ? 0 : Number(v)
-    // Keep the previously-stored goal if Starting Members isn't set yet, rather
-    // than silently zeroing out a site that hasn't switched over to pace tracking.
-    const membershipGoal = computedGoal != null ? computedGoal : (existing?.membership_goal ?? 0)
+    // PostgREST accepts numeric strings; do not round imported fractional cents.
+    const numOrZero = (v) => v === '' ? 0 : String(v)
+    // Preserve a legacy goal when no opening was supplied; pending stays NULL.
+    // Clearing an approved opening (after confirmation) also clears its goal.
+    const membershipGoal = computedGoal != null ? computedGoal : (existing?.starting_members == null ? existing?.membership_goal ?? null : null)
     const newValues = {
       revenue_goal: numOrZero(form.revenue_goal),
       starting_members: form.starting_members === '' ? null : Number(form.starting_members),
@@ -125,7 +128,7 @@ function TargetModal({ location, month, existing, profile, onClose, onSaved }) {
             </div>
             <div className="mt-2 bg-gray-50 dark:bg-tm-dark-card rounded-lg px-3 py-2 text-xs">
               <span className="text-gray-400 dark:text-tm-dark-muted">Membership Goal by month end:</span>{' '}
-              <strong className="text-tm-blue dark:text-tm-teal">{computedGoal ?? existing?.membership_goal ?? '—'}</strong>
+              <strong className="text-tm-blue dark:text-tm-teal">{computedGoal ?? existing?.membership_goal ?? 'Membership baseline pending'}</strong>
             </div>
           </div>
 
@@ -170,22 +173,28 @@ export default function BudgetTargetsTable({ locations, profile, onSaved }) {
   const [targets, setTargets] = useState([])
   const [loading, setLoading] = useState(true)
   const [editingLoc, setEditingLoc] = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState('')
+  const targetRequest = useRef(0)
 
   useEffect(() => { fetchTargets() }, [locations, month])
 
-  const fetchTargets = async () => {
+  const fetchTargets = async (selectedMonth = month) => {
+    const request = ++targetRequest.current
     setLoading(true)
     const locIds = locations.map(l => l.id)
     if (!locIds.length) { setTargets([]); setLoading(false); return }
-    const { data } = await supabase.from('budget_targets').select('*')
-      .in('location_id', locIds).eq('target_month', month)
+    const { data } = await supabase.from('budget_targets').select('*,revenue_goal:revenue_goal::text,labor_hours_non_salary:labor_hours_non_salary::text,labor_hours_with_salary:labor_hours_with_salary::text,membership_daily_growth:membership_daily_growth::text')
+      .in('location_id', locIds).eq('target_month', selectedMonth)
+    if (request !== targetRequest.current) return
     setTargets(data || [])
     setLoading(false)
   }
 
   const shiftMonth = (n) => {
     const d = new Date(month + 'T00:00:00')
-    setMonth(firstOfMonth(`${d.getFullYear()}-${String(d.getMonth() + 1 + n).padStart(2, '0')}-01`))
+    d.setMonth(d.getMonth() + n)
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`)
   }
 
   if (!locations.length) {
@@ -194,7 +203,10 @@ export default function BudgetTargetsTable({ locations, profile, onSaved }) {
 
   return (
     <div className="space-y-4">
+      {importing && <MonthlyBudgetImport onClose={() => setImporting(false)} onSaved={(importMonth, result) => { setImporting(false); setMonth(importMonth); fetchTargets(importMonth); onSaved?.(); setImportResult(`Imported ${result.sites} sites; ${result.changed_sites} changed; ${result.pending_membership} membership baselines pending.`) }} />}
+      {importResult && <p role="status">{importResult}</p>}
       <div className="flex items-center gap-2">
+        {profile?.role === 'admin' && <button onClick={() => setImporting(true)} className="px-3 py-1 rounded bg-tm-teal text-tm-navy text-sm font-bold">Import Monthly Budget</button>}
         <button onClick={() => shiftMonth(-1)} className="px-2 py-1 rounded border border-gray-200 dark:border-tm-dark-border text-gray-500 hover:text-tm-blue dark:hover:text-tm-teal transition-colors">‹</button>
         <span className="font-brand font-semibold text-tm-blue dark:text-tm-teal text-sm w-36 text-center">{monthLabel(month)}</span>
         <button onClick={() => shiftMonth(1)} className="px-2 py-1 rounded border border-gray-200 dark:border-tm-dark-border text-gray-500 hover:text-tm-blue dark:hover:text-tm-teal transition-colors">›</button>
@@ -224,7 +236,7 @@ export default function BudgetTargetsTable({ locations, profile, onSaved }) {
                   <tr key={loc.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-card'}>
                     <td className="px-3 py-2 font-semibold text-tm-blue dark:text-tm-teal whitespace-nowrap">{loc.name}</td>
                     <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{fmtMoney(t?.revenue_goal)}</td>
-                    <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{t?.membership_goal ?? '—'}</td>
+                    <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{t && t.membership_goal == null ? 'Membership baseline pending' : t?.membership_goal ?? '—'}</td>
                     <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{t?.desired_rating ?? '—'}</td>
                     <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{labor.method === 'percentage' ? `Full service: ${labor.percentage * 100}%` : labor.hours ?? '—'}</td>
                     <td className="px-3 py-2 text-center text-gray-600 dark:text-tm-dark-text">{labor.hoursWithManager ?? '—'}</td>
