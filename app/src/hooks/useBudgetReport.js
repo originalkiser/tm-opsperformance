@@ -1,6 +1,7 @@
+import { fetchDailyRevenueGoals } from '../utils/dailyRevenueGoals.js'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { fetchRevenueEntries, fetchStartingBalances, revenueMonthStart } from '../utils/budgetRevenue.js'
+import { fetchRevenueEntries, fetchStartingBalances, budgetMonthStart } from '../utils/budgetRevenue.js'
 import { buildBudgetReportRows } from '../utils/budgetReportRows.js'
 import { watchBudgetReport } from '../utils/budgetReportRefresh.js'
 
@@ -8,7 +9,7 @@ import { watchBudgetReport } from '../utils/budgetReportRefresh.js'
 export default function useBudgetReport(locations, reportingDate) {
   const ids = locations.filter(l => l.show_budget_tracking && !l.exclude_from_reporting).map(l => l.id).sort().join(',')
   const key = `${ids}:${reportingDate}`
-  const [state, setState] = useState({ key: null, targets: [], entries: [], balances: [], error: '' })
+  const [state, setState] = useState({ key: null, targets: [], entries: [], balances: [], dailyGoals: [], goalError: '', error: '' })
   const reload = useRef(() => {})
   useEffect(() => {
     let active = true, generation = 0
@@ -16,15 +17,17 @@ export default function useBudgetReport(locations, reportingDate) {
       const request = ++generation
       try {
         const locIds = ids ? ids.split(',') : []
-        const [targetResult, entries, balances] = locIds.length && reportingDate ? await Promise.all([
-          supabase.from('budget_targets').select('*').in('location_id', locIds).eq('target_month', revenueMonthStart(reportingDate)),
+        const [targetResult, entries, balances, goals] = locIds.length && reportingDate ? await Promise.all([
+          supabase.from('budget_targets').select('*').in('location_id', locIds).eq('target_month', budgetMonthStart(reportingDate)),
           fetchRevenueEntries(supabase, locIds, reportingDate),
           fetchStartingBalances(supabase, locIds, reportingDate),
-        ]) : [{ data: [] }, [], []]
+          fetchDailyRevenueGoals(supabase, locIds, reportingDate)
+            .then(data => ({ data })).catch(() => ({ data: [], error: 'Daily revenue goals unavailable; actuals remain visible.' })),
+        ]) : [{ data: [] }, [], [], { data: [] }]
         if (targetResult.error) throw targetResult.error
-        if (active && request === generation) setState({ key, targets: targetResult.data || [], entries, balances, error: '' })
+        if (active && request === generation) setState({ key, targets: targetResult.data || [], entries, balances, dailyGoals: goals.data, goalError: goals.error || '', error: '' })
       } catch {
-        if (active && request === generation) setState({ key, targets: [], entries: [], balances: [], error: 'Unable to load the report. Revenue totals and pace are unavailable; please reload.' })
+        if (active && request === generation) setState({ key, targets: [], entries: [], balances: [], dailyGoals: [], goalError: '', error: 'Unable to load the report. Revenue totals and pace are unavailable; please reload.' })
       }
     }
     reload.current = load
@@ -35,6 +38,6 @@ export default function useBudgetReport(locations, reportingDate) {
   const current = state.key === key
   return {
     rows: current && !state.error && reportingDate ? buildBudgetReportRows({ locations, ...state }, reportingDate) : [],
-    loading: !current, error: current ? state.error : '', refresh: () => reload.current(),
+    goalError: current ? state.goalError : '', loading: !current, error: current ? state.error : '', refresh: () => reload.current(),
   }
 }

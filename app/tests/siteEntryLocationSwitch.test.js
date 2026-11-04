@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild'
 import React from 'react'
 import * as fields from '../src/utils/budgetDailyFields.js'
 import * as revenue from '../src/utils/budgetRevenue.js'
+import { fetchDailyRevenueGoals } from '../src/utils/dailyRevenueGoals.js'
 import * as math from '../src/utils/budgetMath.js'
 import { cashCountError } from '../src/utils/cashReconciliation.js'
 import { entryLocationOptions, resolveEntryLocation } from '../src/utils/locationAccess.js'
@@ -62,7 +63,7 @@ function api() {
 }
 
 function hook(client, id, onSaved = () => {}) {
-  return harness('hooks/useBudgetDailyEntry.js', 'default', [id, date, onSaved], { ...fields, ...revenue, cashCountError, ...client })
+  return harness('hooks/useBudgetDailyEntry.js', 'default', [id, date, onSaved], { ...fields, ...revenue, fetchDailyRevenueGoals, cashCountError, ...client })
 }
 const Placeholder = () => null
 const Daily = () => null, Budget = () => null, Ownership = () => null, Rollup = () => null, Snapshot = () => null, Summary = () => null, Picker = () => null

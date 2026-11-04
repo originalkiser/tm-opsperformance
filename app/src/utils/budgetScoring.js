@@ -1,5 +1,6 @@
-import { computeScore, rankByScore, yesterdayMetrics, mtdMetrics, membershipStatus, daysElapsed, daysInMonth } from './budgetMath.js'
-import { calculateMtdRevenue, latestHistoricalRevenue, revenuePresentation, shiftDate } from './budgetRevenue.js'
+import { revenueDisplayPlan } from './budgetDisplay.js'
+import { computeScore, rankByScore, yesterdayMetrics, mtdMetrics, membershipStatus, daysInMonth } from './budgetMath.js'
+import { calculateMtdRevenue, latestHistoricalRevenue, revenuePresentation, shiftDate, budgetMonthStart, budgetDaysElapsed, usesReportedMtd } from './budgetRevenue.js'
 import { DEFAULT_THRESHOLDS } from './metricColors.js'
 import { PERFORMANCE_DAILY_FIELDS, isPerformanceEntryComplete } from './budgetDailyFields.js'
 
@@ -34,9 +35,9 @@ export function competitionRanks(rows, scoreKey = 'score') {
   return new Map(sorted.map((r, i) => { if (r[scoreKey] !== previous) rank = i + 1; previous = r[scoreKey]; return [r.id, rank] }))
 }
 
-export function scoreBudgetLocations({ locations = [], targets = [], entries = [], balances = [] }, reportingDate) {
+export function scoreBudgetLocations({ locations = [], targets = [], entries = [], balances = [], dailyGoals = null }, reportingDate) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(reportingDate) || new Date(reportingDate + 'T00:00:00Z').toISOString().slice(0, 10) !== reportingDate) throw new Error('Invalid reporting date')
-  const businessDate = shiftDate(reportingDate, -1), elapsed = daysElapsed(reportingDate), month = reportingDate.slice(0, 7) + '-01'
+  const businessDate = shiftDate(reportingDate, -1), elapsed = budgetDaysElapsed(reportingDate), month = budgetMonthStart(reportingDate)
   const eligible = locations.filter(l => l.show_budget_tracking && !l.exclude_from_reporting)
   const tierFields = ['mtd_basic', 'mtd_good', 'mtd_better', 'mtd_best']
   const validTiers = entry => tierFields.every(key => count(entry[key]) != null)
@@ -107,7 +108,9 @@ export function scoreBudgetLocations({ locations = [], targets = [], entries = [
     const growth = currentMembers != null && baseline != null ? currentMembers - baseline : null
     const expectedGrowth = dailyGrowth != null ? dailyGrowth * elapsed : null
     const goal = number(target?.revenue_goal), rating = number(ratingEntry?.current_rating), ratingGoal = number(target?.desired_rating)
-    const expectedRevenue = goal != null ? Math.round(goal * 100 * elapsed / daysInMonth(reportingDate)) / 100 : null
+    const expectedRevenue = usesReportedMtd(reportingDate)
+      ? revenueDisplayPlan(revenue, historical, goal, reportingDate, dailyGoals, loc.id).expected
+      : goal != null ? Math.round(goal * 100 * elapsed / daysInMonth(reportingDate)) / 100 : null
     const components = {
       conversion: cappedPoints(metrics?.conversion, conversionGoal != null ? conversionGoal / 100 : null, SCORE_WEIGHTS.conversion),
       revenue: null,

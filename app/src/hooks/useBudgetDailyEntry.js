@@ -1,8 +1,9 @@
+import { fetchDailyRevenueGoals } from '../utils/dailyRevenueGoals.js'
 import { cashCountError } from '../utils/cashReconciliation.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { emptyDailyForm, countMissing, validateRevenue } from '../utils/budgetDailyFields'
-import { calculateMtdRevenue, dailyPayload, fetchRevenueEntries, revenueMonthStart, latestHistoricalRevenue, fetchStartingBalances } from '../utils/budgetRevenue'
+import { calculateMtdRevenue, dailyPayload, fetchRevenueEntries, budgetMonthStart, latestHistoricalRevenue, fetchStartingBalances } from '../utils/budgetRevenue'
 
 export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
 
@@ -10,6 +11,8 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
   const [entry, setEntry] = useState(null)
   const [target, setTarget] = useState(null)
   const [entries, setEntries] = useState([])
+  const [dailyGoals, setDailyGoals] = useState([])
+  const [goalError, setGoalError] = useState('')
   const [startingBalance, setStartingBalance] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadedScope, setLoadedScope] = useState(null)
@@ -31,21 +34,27 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
     setEntry(null)
     setTarget(null)
     setEntries([])
+    setDailyGoals([])
+    setGoalError('')
     setStartingBalance(null)
     setForm(emptyDailyForm())
     setAttemptedSave(false)
     async function load() {
       try {
-        const [rows, result, balances] = await Promise.all([
+        const [rows, result, balances, goals] = await Promise.all([
           fetchRevenueEntries(supabase, [locationId], entryDate),
           supabase.from('budget_targets').select('*').eq('location_id', locationId)
-            .eq('target_month', revenueMonthStart(entryDate)).maybeSingle(),
+            .eq('target_month', budgetMonthStart(entryDate)).maybeSingle(),
           fetchStartingBalances(supabase, [locationId], entryDate),
+          fetchDailyRevenueGoals(supabase, [locationId], entryDate)
+            .then(data => ({ data })).catch(() => ({ data: [], error: 'Daily revenue goals unavailable; actuals can still be saved.' })),
         ])
         if (result.error) throw result.error
         if (generation.current !== id) return
         const current = rows.find(row => row.entry_date === entryDate) || null
         setEntries(rows)
+        setDailyGoals(goals.data)
+        setGoalError(goals.error || '')
         setStartingBalance(balances[0] || null)
         setEntry(current)
         setTarget(result.data)
@@ -73,7 +82,7 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
     { ...form, location_id: locationId, entry_date: entryDate },
   ], locationId, entryDate, startingBalance), [entries, form, locationId, entryDate, startingBalance])
   const missing = countMissing(form)
-  const historicalRevenue = useMemo(() => latestHistoricalRevenue(entries, locationId, entryDate, mtdRevenue.startingBalance), [entries, locationId, entryDate, mtdRevenue.startingBalance])
+  const historicalRevenue = useMemo(() => latestHistoricalRevenue([...entries.filter(row => row.entry_date !== entryDate), { location_id: locationId, entry_date: entryDate, mtd_revenue_actual: form.mtd_revenue_actual }], locationId, entryDate, mtdRevenue.startingBalance), [entries, form.mtd_revenue_actual, locationId, entryDate, mtdRevenue.startingBalance])
   const revenueError = validateRevenue(form) || cashCountError(form.yesterday_cash_counted)
 
   const handleSave = async () => {
@@ -101,5 +110,5 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
       setSaving(false)
     }
   }
-  return { form, entry, target, loading: isLoading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave, startingBalance, updateStartingBalance: setStartingBalance }
+  return { dailyGoals, goalError, form, entry, target, loading: isLoading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave, startingBalance, updateStartingBalance: setStartingBalance }
 }

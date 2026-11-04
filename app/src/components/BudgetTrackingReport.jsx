@@ -36,8 +36,8 @@ function EditIcon() {
 function DailyEntryPane({ location }) {
   const { profile } = useAuth()
   const [entryDate, setEntryDate] = useState(todayStr)
-  const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(location.id, entryDate)
-  const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal)
+  const { dailyGoals, goalError, form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(location.id, entryDate)
+  const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal, entryDate, dailyGoals, location.id)
 
   const baseInputCls = 'w-full border-2 rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
   const fieldCls = (key) => {
@@ -77,11 +77,12 @@ function DailyEntryPane({ location }) {
             <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
           </div>
         ))}
-        <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"><BudgetRevenueFields form={form} set={set} fieldCls={fieldCls} /></div>
+        <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"><BudgetRevenueFields entryDate={entryDate} form={form} set={set} fieldCls={fieldCls} /></div>
         <CashReconciliationSection attemptedSave={attemptedSave} showExpected={profile?.role === 'admin'} locationId={location.id} timeZone={location.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
          <div>
 
-          <BudgetRevenueSummary revenue={mtdRevenue} historical={historicalRevenue} />
+          {goalError && <p role="status" className="text-xs text-amber-800 dark:text-amber-300">{goalError}</p>}
+          <BudgetRevenueSummary dailyGoals={dailyGoals} locationId={location.id} revenue={mtdRevenue} historical={historicalRevenue} />
           <div className="mt-2 text-xs text-gray-800 dark:text-gray-100">Revenue %: {pct1(rev.pct)} · Revenue Pace: {rev.onTrack == null ? '—' : rev.onTrack ? 'On Track' : 'Off Track'}{rev.reported.provisional && <span className="block text-amber-800 dark:text-amber-300">Provisional · through {rev.reported.throughDate}</span>}</div>
         </div>
         <div>
@@ -137,7 +138,7 @@ function EditModal({ location, onClose }) {
 export default function BudgetTrackingReport({ locations, dateRange }) {
   const { profile } = useAuth()
   const { reportingDate, supported } = budgetReportPeriod(dateRange)
-  const { rows, loading, error: reportError, refresh: fetchAll } = useBudgetReport(locations, supported ? reportingDate : null)
+  const { rows, loading, goalError: reportGoalError, error: reportError, refresh: fetchAll } = useBudgetReport(locations, supported ? reportingDate : null)
   const [editingLoc, setEditingLoc] = useState(null)
 
   const cashTools = profile?.role === 'admin' && <AdminCashOnHandPanel locations={locations} />
@@ -149,6 +150,7 @@ export default function BudgetTrackingReport({ locations, dateRange }) {
   return (
     <div>
       {cashTools}
+      {reportGoalError && <p role="status" className="text-xs text-amber-800 dark:text-amber-300">{reportGoalError}</p>}
       <p className="text-xs mb-3 text-gray-500">Morning reporting entry: {reportingDate}. MTD covers through the prior business day; rankings use all accessible eligible Budget sites.</p>
       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-tm-dark-border">
         <table className="w-full text-xs font-brand border-collapse">
@@ -182,7 +184,7 @@ export default function BudgetTrackingReport({ locations, dateRange }) {
                 <td className="px-3 py-2 text-center"><BudgetCashCell cash={r.cash} /></td>
                 <td className={`px-3 py-2 text-center font-semibold ${REPORT_STATUS_CLS[r.formatting.mtdConversion]}`}>{pct1(r.formatting.mtdAvailable ? r.mtd.conversion : null)}</td>
                 <td className={`px-3 py-2 text-center font-semibold ${REPORT_STATUS_CLS[r.formatting.mtdPmix]}`}>{pct1(r.formatting.mtdAvailable ? r.mtd.pmix : null)}</td>
-                <td className="px-3 py-2 text-right whitespace-nowrap w-28 text-gray-800 dark:text-gray-100" aria-label={`${r.rev.reported.provisional ? 'Provisional ' : ''}MTD Revenue through ${r.rev.reported.throughDate || 'unavailable'}`}>{displayMoney(r.rev.reported.amount)}</td>
+                <td className="px-3 py-2 text-right whitespace-nowrap w-28 text-gray-800 dark:text-gray-100" aria-label={`${r.rev.reported.provisional ? 'Provisional ' : ''}MTD Revenue through ${r.rev.reported.throughDate || 'unavailable'}`}>{displayMoney(r.rev.reported.amount)}{r.rev.reported.source === 'reported MTD' && !r.rev.reported.provisional && r.rev.reported.throughDate && <div className="text-[10px] font-normal">{r.rev.reported.source} · through {r.rev.reported.throughDate}</div>}</td>
                 <td className={`px-3 py-2 text-center font-semibold ${REPORT_STATUS_CLS[r.formatting.revenue]}`}>{pct1(r.rev.pct)}{r.formatting.provisional && <span className="block text-[10px] font-normal">Provisional</span>}{r.formatting.stale && <span className="block text-[10px] font-normal">Stale entry</span>}</td>
                 <td className="px-3 py-2 text-center text-gray-800 dark:text-gray-100">{pct1(r.plan.progress)}</td>
                 <td className="px-3 py-2 text-center text-gray-800 dark:text-gray-100">{displayCount(r.entry?.mtd_membership_actual)}</td>

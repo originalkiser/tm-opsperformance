@@ -2,14 +2,16 @@ import { revenuePresentation } from '../utils/budgetRevenue'
 import { revenueDisplayPlan, displayMoney } from '../utils/budgetDisplay'
 const currency = value => value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
-export default function BudgetRevenueSummary({ revenue, historical, monthlyGoal, showGoal = false }) {
+export default function BudgetRevenueSummary({ revenue, historical, monthlyGoal, showGoal = false, dailyGoals = null, locationId = null }) {
   const reported = revenuePresentation(revenue, historical)
-  const plan = revenueDisplayPlan(revenue, historical, monthlyGoal)
+  const plan = revenueDisplayPlan(revenue, historical, monthlyGoal, null, dailyGoals, locationId)
   return <div className="text-xs space-y-1 text-gray-800 dark:text-gray-100" aria-live="polite">
-    <div className="font-semibold">MTD Revenue ({reported.provisional ? `Provisional ${reported.source}` : revenue.startingBalance ? 'October transition' : 'Automatic'})</div>
+    <div className="font-semibold">MTD Revenue ({reported.provisional ? `Provisional ${reported.source}` : reported.source === 'reported MTD' ? 'Reported' : revenue.startingBalance ? 'October transition' : 'Automatic'})</div>
+    {reported.throughDate && <div>{reported.source} · business results through {reported.throughDate}</div>}
+    {showGoal && plan.expected == null && <div>Daily revenue goal unavailable for this period.</div>}
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className="font-semibold">{reported.amount != null ? currency(reported.amount) : '—'}{showGoal && ` / ${displayMoney(plan.expected)}`}</span>
-      {!revenue.complete && <span className="text-amber-800 dark:text-amber-300">Incomplete · {revenue.missingDates.length} missing revenue {revenue.missingDates.length === 1 ? 'day' : 'days'}</span>}
+      {!revenue.complete && <span className="text-amber-800 dark:text-amber-300">Automatic option incomplete · {revenue.missingDates.length} missing revenue {revenue.missingDates.length === 1 ? 'day' : 'days'}</span>}
     </div>
     {showGoal && <div>Actual MTD / Goal MTD{reported.throughDate ? ` · through ${reported.throughDate}` : ''}</div>}
     {reported.provisional && <div className="text-amber-800 dark:text-amber-300">Provisional · {reported.source} through {reported.throughDate}. Revenue % and pace use this reporting date; daily totals remain incomplete.</div>}
@@ -24,7 +26,7 @@ export default function BudgetRevenueSummary({ revenue, historical, monthlyGoal,
       {revenue.startingBalance && <div className="mt-1">Verified starting balance: {currency(Number(revenue.startingBalance.amount))}, including business revenue through {revenue.startingBalance.cutoff_business_date}. Only later daily revenue is added.</div>}
     </details>}
     {revenue.complete && revenue.startingBalance && <div>Starting balance: {currency(Number(revenue.startingBalance.amount))} through {revenue.startingBalance.cutoff_business_date}</div>}
-    {!revenue.complete && historical && <div className="text-gray-700 dark:text-gray-200">
+    {!revenue.complete && historical && reported.provisional && <div className="text-gray-700 dark:text-gray-200">
       Reported MTD: {currency(historical.amount)} · reported {historical.entryDate} · provisional; never added to daily subtotals.
     </div>}
   </div>

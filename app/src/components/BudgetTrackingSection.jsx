@@ -46,11 +46,11 @@ export function BonusBadge({ tier }) {
 function DailyEntryTab({ locations, profile, onSaved }) {
   const [selectedLocId, setSelectedLocId] = useState(() => locations.find(site => site.id === profile?.location_id)?.id || locations[0]?.id || '')
   const [entryDate, setEntryDate] = useState(todayStr)
-  const { form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(selectedLocId, entryDate, onSaved)
+  const { dailyGoals, goalError, form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(selectedLocId, entryDate, onSaved)
 
   const yst = yesterdayMetrics(form)
   const mtd = mtdMetrics(form)
-  const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal)
+  const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal, entryDate, dailyGoals, selectedLocId)
   const mem = membershipStatus(form.mtd_membership_actual, target?.membership_goal, entryDate)
   const memPace = membershipPace(form.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, entryDate)
 
@@ -139,13 +139,14 @@ function DailyEntryTab({ locations, profile, onSaved }) {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
-  <BudgetRevenueFields form={form} set={set} fieldCls={fieldCls} />
+  <BudgetRevenueFields entryDate={entryDate} form={form} set={set} fieldCls={fieldCls} />
 </div>
    <CashReconciliationSection attemptedSave={attemptedSave} showExpected={profile?.role === 'admin'} locationId={selectedLocId} timeZone={locations.find(site => site.id === selectedLocId)?.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-100 dark:border-tm-dark-border">
               <div>
 
-                <BudgetRevenueSummary revenue={mtdRevenue} historical={historicalRevenue} monthlyGoal={target?.revenue_goal} showGoal />
+                {goalError && <p role="status" className="text-xs text-amber-800 dark:text-amber-300">{goalError}</p>}
+          <BudgetRevenueSummary dailyGoals={dailyGoals} locationId={selectedLocId} revenue={mtdRevenue} historical={historicalRevenue} monthlyGoal={target?.revenue_goal} showGoal />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Current Total Members</label>
@@ -348,11 +349,12 @@ function TargetsTab({ locations, allLocations }) {
             <div />
             <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Labor Budget — Regular Hours</label>
-              <input type="number" min="0" value={form.labor_hours_non_salary} onChange={e => setForm(f => ({ ...f, labor_hours_non_salary: e.target.value }))} className={inputCls} />
+              {existing?.full_service_labor_percentage != null && <p className="text-xs">Full-service labor budget: {Number(existing.full_service_labor_percentage) * 100}%. Hours are not applicable.</p>}
+              <input type="number" min="0" disabled={existing?.full_service_labor_percentage != null} placeholder={existing?.full_service_labor_percentage != null ? 'Not applicable' : undefined} value={existing?.full_service_labor_percentage != null ? '' : form.labor_hours_non_salary} onChange={e => setForm(f => ({ ...f, labor_hours_non_salary: e.target.value }))} className={inputCls} />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Labor Budget — With Salary</label>
-              <input type="number" min="0" value={form.labor_hours_with_salary} onChange={e => setForm(f => ({ ...f, labor_hours_with_salary: e.target.value }))} className={inputCls} />
+              <input type="number" min="0" disabled={existing?.full_service_labor_percentage != null} placeholder={existing?.full_service_labor_percentage != null ? 'Not applicable' : undefined} value={existing?.full_service_labor_percentage != null ? '' : form.labor_hours_with_salary} onChange={e => setForm(f => ({ ...f, labor_hours_with_salary: e.target.value }))} className={inputCls} />
             </div>
           </div>
           <div className="mt-4">

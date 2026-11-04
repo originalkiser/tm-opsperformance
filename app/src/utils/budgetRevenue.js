@@ -8,9 +8,18 @@ export function shiftDate(date, days) {
 
 export const revenueMonthStart = date => `${date.slice(0, 7)}-01`
 
+// November's reporting change starts with November 1 business results.
+// Preserve historical October reporting behavior.
+export const usesReportedMtd = entryDate => entryDate >= '2026-11-02'
+export const budgetMonthStart = entryDate => revenueMonthStart(usesReportedMtd(entryDate) ? shiftDate(entryDate, -1) : entryDate)
+export const budgetDaysElapsed = entryDate => usesReportedMtd(entryDate)
+  ? Number(shiftDate(entryDate, -1).slice(-2)) : Math.max(0, Number(entryDate.slice(-2)) - 1)
+
 // Presentation fallback is a dated cumulative figure, NEVER a partial daily
 // subtotal or a sum of overlapping reported/verified amounts.
 export function revenuePresentation(revenue, historical) {
+  if (historical && usesReportedMtd(historical.entryDate) && revenueCents(historical.amount) != null) return { amount: Number(historical.amount),
+    throughDate: shiftDate(historical.entryDate, -1), reportingDate: historical.entryDate, provisional: false, source: 'reported MTD' }
   if (revenue.complete) return { amount: revenue.total, throughDate: revenue.throughDate,
     reportingDate: shiftDate(revenue.throughDate, 1), provisional: false, source: 'automatic' }
   if (revenue.startingBalance) return { amount: Number(revenue.startingBalance.amount),
@@ -29,9 +38,11 @@ export function latestHistoricalRevenue(entries, locationId, entryDate, activeSt
   if (activeStartingBalance?.location_id === locationId
     && activeStartingBalance.revenue_month === revenueMonthStart(entryDate)
     && entryDate > activeStartingBalance.cutoff_business_date) return null
-  const monthStart = revenueMonthStart(entryDate)
-  const latest = entries.filter(row => row.location_id === locationId
-    && (row.entry_date > monthStart || (row.entry_date === monthStart && revenueCents(row.mtd_revenue_actual) === 0)) && row.entry_date <= entryDate
+  const monthStart = budgetMonthStart(entryDate)
+  const dates = new Map()
+  for (const row of entries.filter(r => r.location_id === locationId)) dates.set(row.entry_date, (dates.get(row.entry_date) || 0) + 1)
+  const latest = entries.filter(row => dates.get(row.entry_date) === 1 && row.location_id === locationId
+    && (row.entry_date > monthStart || (!usesReportedMtd(entryDate) && row.entry_date === monthStart && revenueCents(row.mtd_revenue_actual) === 0)) && row.entry_date <= entryDate
     && revenueCents(row.mtd_revenue_actual) != null)
     .sort((a, b) => b.entry_date.localeCompare(a.entry_date))[0]
   return latest ? { amount: Number(latest.mtd_revenue_actual), entryDate: latest.entry_date } : null
@@ -84,7 +95,7 @@ export function lastCompletedBusinessDate(timeZone = 'America/Chicago', now = ne
 }
 
 export function calculateMtdRevenue(entries, locationId, entryDate, startingBalance = null) {
-  const monthStart = revenueMonthStart(entryDate)
+  const monthStart = budgetMonthStart(entryDate)
   const baseline = monthStart === TRANSITION_MONTH && startingBalance?.location_id === locationId
     && startingBalance?.revenue_month === TRANSITION_MONTH ? startingBalance : null
   if (baseline && (startingBalanceCutoffError(baseline.cutoff_business_date) || revenueCents(baseline.amount) == null)) {
@@ -133,11 +144,12 @@ export function dailyPayload(form, locationId, entryDate) {
   if (form.yesterday_cash_counted !== '' && form.yesterday_cash_counted != null && revenueCents(form.yesterday_cash_counted) == null) {
     throw new Error('Invalid cash count.')
   }
+  if (usesReportedMtd(entryDate) && form.mtd_revenue_actual !== '' && form.mtd_revenue_actual != null && revenueCents(form.mtd_revenue_actual) == null) throw new Error('Invalid reported MTD revenue.')
   const error = revenueError(form)
   if (error) throw new Error(error)
   return {
     ...Object.fromEntries(Object.entries(form)
-      .filter(([key]) => key !== 'mtd_revenue_actual')
+      .filter(([key, value]) => key !== 'mtd_revenue_actual' || (usesReportedMtd(entryDate) && value !== '' && value != null))
       .map(([key, value]) => [key, value === '' || value == null ? null : Number(value)])),
     location_id: locationId,
     entry_date: entryDate,
@@ -153,7 +165,7 @@ export async function fetchRevenueEntries(client, locationIds, entryDate) {
   for (let offset = 0; ; offset += 500) {
     const { data, error } = await client.from('budget_daily_entries').select('*')
       .in('location_id', locationIds)
-      .gte('entry_date', revenueMonthStart(entryDate)).lte('entry_date', entryDate)
+      .gte('entry_date', budgetMonthStart(entryDate)).lte('entry_date', entryDate)
       .order('entry_date').order('location_id').range(offset, offset + 499)
     if (error) throw error
     if (!data) throw new Error('Revenue entries could not be loaded.')
