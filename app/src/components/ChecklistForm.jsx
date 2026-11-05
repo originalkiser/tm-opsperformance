@@ -101,14 +101,27 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
       setEvidence(previous => [...previous, attached.data]); setNotice(`${kind === 'photo' ? 'Photo' : 'Signature'} saved privately.`)
     })
   }
+  // Keep the existing attachment key so saved evidence and validation stay compatible.
+  const sectionPhoto = row.template_key === 'weekly' ? items.find(item => item.id === 'weekly-9' && item.section === 'Communications Board') : null
+  function photoControl(item, section = false) {
+    return <div className="space-y-1 text-sm" aria-label={section ? 'Communications Board section photo' : `Photo evidence ${item.id}`}>
+      <p className="font-semibold">{section ? 'One photo required for the Communications Board section.' : 'One photo required for this item.'}</p>
+      {section && item.instruction && <p>{item.instruction}</p>}
+      {!readonly && <label className="block">Add photo
+        <input aria-label={`Upload photo ${item.id}`} disabled={busy} type="file" accept="image/jpeg,image/png,image/webp"
+          className="block w-full min-h-11 min-w-0 text-sm file:min-h-11 file:mr-2 file:px-3 file:border file:rounded file:bg-transparent file:text-inherit"
+          onChange={e => { const file = e.target.files?.[0]; if (file) upload(file, item.id, 'photo'); e.target.value = '' }} />
+      </label>}
+    </div>
+  }
   function change(id, field, value) { setAnswers(previous => ({ ...previous, [id]: { ...previous[id], [field]: value } })); setErrors({}) }
   function close() {
     if (busy) return
     if (!dirty || window.confirm('Close this draft? Unsaved answers can be recovered in this browser tab. Unsaved photos and drawings cannot.')) onClose()
   }
-  return <section className="space-y-4 border rounded-xl p-4 bg-white dark:bg-tm-dark-surface" aria-label="Checklist responses">
-    <h2 className="text-xl font-bold">{row.template_snapshot.name} · {row.period_date}</h2>
-    <p>Location: {locationLabel || row.location_id} · Authenticated account: {actorName} ({row.created_by})</p>
+  return <section className="space-y-3 border rounded-xl p-3 sm:p-4 text-sm sm:text-base bg-white dark:bg-tm-dark-surface" aria-label="Checklist responses">
+    <h2 className="text-lg sm:text-xl font-bold">{row.template_snapshot.name} · {row.period_date}</h2>
+    <p className="text-xs sm:text-sm break-words">Location: {locationLabel || row.location_id} · Authenticated account: {actorName} ({row.created_by})</p>
     <p>{readonly ? `${row.status} · ${row.manager_name || 'Unnamed draft'} · ${checklistTimestamp(row.submitted_at || row.updated_at, row.template_snapshot.timezone)}` : 'Save Draft to save unfinished progress to TM Ops. An internet connection is required.'}</p>
     {recovery.current && !readonly && <div className="border p-3"><p>Unsaved answers were found in this browser tab. Review before restoring; saved data may have changed.</p>
       <button className="min-h-12 px-4 border rounded" disabled={busy} onClick={() => { setAnswers(recovery.current.answers); setName(recovery.current.name); recovery.current = null; setNotice('Recovered answers are not saved yet.') }}>Restore unsaved answers</button>
@@ -117,22 +130,24 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
     {notice && <p role="status">{notice}</p>}
     {Object.keys(errors).length > 0 && <p role="alert">Complete the highlighted responses and evidence before submitting.</p>}
     {items.map((item, index) => <div key={item.id}>
-      {(index === 0 || items[index - 1].section !== item.section) && <h3 className="text-lg font-bold mt-6 border-b pb-2">{item.section}</h3>}
-      <fieldset disabled={readonly || busy} className={`py-4 space-y-3 ${errors[item.id] ? 'border-2 border-red-500 p-3 rounded' : 'border-b'}`}>
-        <legend className="pt-3 font-semibold">{index - items.findIndex(previous => previous.section === item.section) + 1}. {item.text} {item.critical && <span className="text-red-600 dark:text-red-300"> · Critical question</span>}</legend>
-        {item.instruction && <p>{item.instruction}</p>}
-        <div className="flex flex-wrap gap-3">{[...item.options, ...(item.na_allowed ? ['N/A'] : [])].map(option => <label key={option} className="min-h-12 flex items-center gap-3 border rounded px-4 cursor-pointer">
-          <input type="radio" name={item.id} value={option} checked={answers[item.id]?.value === option} onChange={() => change(item.id, 'value', option)} className="w-6 h-6" />{option}</label>)}</div>
+      {(index === 0 || items[index - 1].section !== item.section) && <div className="mt-4 border-b pb-2 space-y-2">
+        <h3 className="text-lg font-bold">{item.section}</h3>
+        {sectionPhoto?.section === item.section && <>
+          {(sectionPhoto.photo_required || (sectionPhoto.photo_on_failure && sectionPhoto.failure_values.includes(answers[sectionPhoto.id]?.value))) && photoControl(sectionPhoto, true)}
+          <EvidenceLinks files={evidence.filter(file => file.item_id === sectionPhoto.id)} onOpen={openEvidence} />
+        </>}
+      </div>}
+      <fieldset disabled={readonly || busy} className={`py-2 space-y-2 ${errors[item.id] ? 'border-2 border-red-500 p-3 rounded' : 'border-b'}`}>
+        <legend className="pt-2 font-semibold text-sm sm:text-base leading-snug">{index - items.findIndex(previous => previous.section === item.section) + 1}. {item.text} {item.critical && <span className="text-red-600 dark:text-red-300"> · Critical question</span>}</legend>
+        {item.instruction && item !== sectionPhoto && <p className="text-xs sm:text-sm">{item.instruction}</p>}
+        <div className="flex flex-wrap gap-2">{[...item.options, ...(item.na_allowed ? ['N/A'] : [])].map(option => <label key={option} className="min-h-11 flex items-center gap-2 border rounded px-3 text-sm cursor-pointer">
+          <input type="radio" name={item.id} value={option} checked={answers[item.id]?.value === option} onChange={() => change(item.id, 'value', option)} className="w-5 h-5 shrink-0" />{option}</label>)}</div>
         {(item.explanation_required || item.failure_values.includes(answers[item.id]?.value) || answers[item.id]?.value === 'N/A' || answers[item.id]?.explanation) && <label className="block">Explanation / N/A reason
           <textarea className="block w-full border rounded p-3 bg-transparent" maxLength={4000} value={answers[item.id]?.explanation || ''} onChange={event => change(item.id, 'explanation', event.target.value)} /></label>}
-        {(item.photo_required || (item.photo_on_failure && item.failure_values.includes(answers[item.id]?.value))) && <><p>Photo required for this item.</p>
-        <div className="flex flex-wrap gap-4">
-          <label className="block">Take photo<input aria-label={`Take photo ${item.id}`} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="block min-h-12" onChange={e => { const file = e.target.files?.[0]; if (file) upload(file, item.id, 'photo'); e.target.value = '' }} /></label>
-          <label className="block">Choose existing photo<input aria-label={`Upload photo ${item.id}`} type="file" accept="image/jpeg,image/png,image/webp" className="block min-h-12" onChange={e => { const file = e.target.files?.[0]; if (file) upload(file, item.id, 'photo'); e.target.value = '' }} /></label>
-        </div></>}
+        {(item !== sectionPhoto && (item.photo_required || (item.photo_on_failure && item.failure_values.includes(answers[item.id]?.value)))) && photoControl(item)}
         {errors[item.id] && <p role="alert" className="text-red-600 dark:text-red-300">{errors[item.id]}</p>}
       </fieldset>
-      <EvidenceLinks files={evidence.filter(file => file.item_id === item.id)} onOpen={openEvidence} />
+      {item !== sectionPhoto && <EvidenceLinks files={evidence.filter(file => file.item_id === item.id)} onOpen={openEvidence} />}
     </div>)}
     <label className="block font-semibold">Manager full name<input aria-label="Manager full name" disabled={readonly || busy} value={name} maxLength={200} onChange={event => setName(event.target.value)} className="block w-full border rounded p-3 bg-transparent" /></label>
     {errors._name && <p role="alert">{errors._name}</p>}
@@ -144,16 +159,16 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
       <img src={evidenceUrl} alt="Saved checklist photo or manager signature" className="max-h-[70vh] max-w-full object-contain bg-white" />
       <button className="min-h-12 px-4 border rounded" onClick={clearEvidence}>Close evidence</button>
     </figure>}
-    <div className="flex flex-wrap gap-3 sticky bottom-0 bg-white dark:bg-tm-dark-surface py-3 border-t">
-      {!readonly && <><button disabled={busy} className="min-h-12 px-5 border rounded" onClick={() => action(() => save())}>Save Draft</button>
-        <button disabled={busy || signatureDirty || !evidenceReady} className="min-h-12 px-5 rounded bg-tm-teal text-tm-navy font-bold" onClick={() => {
+    <div className="grid grid-cols-[1fr_1fr_auto] gap-2 sticky bottom-0 bg-white dark:bg-tm-dark-surface py-2 border-t pb-[max(0.5rem,env(safe-area-inset-bottom))] text-sm">
+      {!readonly && <><button disabled={busy} className="min-h-11 px-2 sm:px-4 border rounded" onClick={() => action(() => save())}>Save Draft</button>
+        <button disabled={busy || signatureDirty || !evidenceReady} className="min-h-11 px-2 sm:px-4 rounded bg-tm-teal text-tm-navy font-bold" onClick={() => {
           const problems = validateChecklist(items, answers, evidence, name); setErrors(problems)
           if (!Object.keys(problems).length && window.confirm('Submit this pilot checklist? Answers, photos and signature will be locked. MonitorQA remains official.')) action(() => save(true))
-        }}>Submit pilot checklist</button></>}
-      <button disabled={busy} className="min-h-12 px-5 border rounded" onClick={close}>Close checklist</button>
+        }}>Submit</button></>}
+      <button disabled={busy} className="min-h-11 px-2 sm:px-4 border rounded" onClick={close}>Close</button>
     </div>
   </section>
 }
 function EvidenceLinks({ files, onOpen }) {
-  return <div className="flex flex-wrap gap-3">{files.map((file, index) => <button key={file.id} type="button" className="min-h-12 px-3 underline" onClick={() => onOpen(file)}>View saved {file.kind} {index + 1}</button>)}</div>
+  return <div className="flex flex-wrap gap-2 text-sm">{files.map((file, index) => <button key={file.id} type="button" className="min-h-11 px-2 underline" onClick={() => onOpen(file)}>View saved {file.kind} {index + 1}</button>)}</div>
 }

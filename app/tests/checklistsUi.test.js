@@ -31,7 +31,7 @@ function form({submitted=false,other=false,fail=false,slow=false,cached=null,can
 const button=(h,label)=>h.find(n=>n.type==='button'&&n.props.children===label)
 test('blank required items highlighted and final RPC blocked; draft may save incomplete progress',async()=>{
  const h=form();await h.flush()
- button(h,'Submit pilot checklist').props.onClick()
+ button(h,'Submit').props.onClick()
  assert.equal(h.calls.length,0)
  assert.ok(h.all(n=>n.props?.role==='alert').length>0)
  h.find(n=>n.type==='input'&&n.props.value==='No').props.onChange()
@@ -52,7 +52,7 @@ test('double save guarded and stale save failure never retried or marked saved',
 test('submitted and another owner drafts read-only, evidence controls stay separate; no save or submit actions',async()=>{
  for(const args of [{submitted:true},{other:true}]){
   const h=form(args);await h.flush()
-  assert.equal(button(h,'Save Draft'),undefined);assert.equal(button(h,'Submit pilot checklist'),undefined)
+  assert.equal(button(h,'Save Draft'),undefined);assert.equal(button(h,'Submit'),undefined)
   assert.ok(h.all(n=>n.type==='fieldset').every(n=>n.props.disabled));h.unmount()
  }
 })
@@ -69,11 +69,11 @@ test('a new unsaved signature blocks final submission until captured signature i
  const h=form();await h.flush()
  const signature=h.find(n=>n.props?.onDirty)
  signature.props.onDirty(true);h.render()
- assert.equal(button(h,'Submit pilot checklist').props.disabled,true);h.unmount()
+ assert.equal(button(h,'Submit').props.disabled,true);h.unmount()
 })
-test('camera and existing-photo inputs configured only on photo items',async()=>{
+test('single native photo picker appears only for required photo evidence',async()=>{
  const source=readFileSync(new URL('../src/components/ChecklistForm.jsx',import.meta.url),'utf8')
- assert.match(source,/capture="environment"/);assert.match(source,/upsert: false/)
+ assert.doesNotMatch(source,/capture="environment"/);assert.match(source,/upsert: false/)
  const h=form();await h.flush();assert.equal(h.all(n=>n.type==='input'&&n.props.type==='file').length,0);h.unmount()
 })
 test('nonpilot navigation hidden; pilot/Admin visible using access decision',()=>{
@@ -129,12 +129,12 @@ test('canceling browser Back preserves the draft and restores the prior history 
  assert.equal(h.find(n=>n.type==='input'&&n.props.value==='No').props.checked,true);h.unmount()
 })
 
-test('six required photo items expose separate camera/file controls; invalid files never reach RPC/storage',async()=>{
+test('six photo requirements expose one native picker each; invalid files never reach RPC/storage',async()=>{
  for(const templateData of checklistTemplates){
   const h=form({templateData});await h.flush()
   const inputs=h.all(n=>n.type==='input'&&n.props.type==='file')
   const required=templateData.definition.filter(i=>i.photo_required).length
-  assert.equal(inputs.length,required*2);assert.equal(inputs.filter(n=>n.props.capture==='environment').length,required)
+  assert.equal(inputs.length,required);assert.ok(inputs.every(n=>!n.props.capture))
   if(inputs.length){inputs[0].props.onChange({target:{files:[new Blob(['invalid'],{type:'image/svg+xml'})],value:'selected'}});await h.flush();assert.equal(h.calls.length,0)}
   h.unmount()
  }
@@ -142,7 +142,7 @@ test('six required photo items expose separate camera/file controls; invalid fil
 test('photo uploads save draft first, never upsert, and register evidence only after upload succeeds',async()=>{
  for(const config of [{},{uploadFail:true},{attachFail:true}]){
   const h=form({...config,templateData:checklistTemplates[0]});await h.flush()
-  h.find(n=>n.type==='input'&&n.props.capture==='environment').props.onChange({target:{files:[new Blob(['fictional-image'],{type:'image/png'})],value:'selected'}})
+  h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[new Blob(['fictional-image'],{type:'image/png'})],value:'selected'}})
   await h.flush()
   assert.deepEqual(h.calls.map(x=>x.name),config.uploadFail?['save_checklist','upload']:['save_checklist','upload','attach_checklist_evidence'])
   assert.equal(h.calls[0].args.p_submit,false);assert.equal(h.calls[1].options.upsert,false);assert.equal(h.calls[1].options.cacheControl,'0')
@@ -177,4 +177,28 @@ test('leaving during an evidence request aborts it and never creates an orphaned
  await h.flush()
  h.unmount();assert.equal(h.calls.find(c=>c.name==='download').parameters.signal.aborted,true)
  h.finishEvidence();await reading;assert.equal(h.urls.length,0)
+})
+
+
+test('weekly section photo sits outside questions; one picker per requirement preserves attachment keys',async()=>{
+ const weekly=checklistTemplates.find(t=>t.key==='weekly')
+ const h=form({templateData:weekly});await h.flush()
+ const inputs=h.all(n=>n.type==='input'&&n.props.type==='file')
+ assert.equal(inputs.length,2)
+ assert.deepEqual(inputs.map(n=>n.props['aria-label']),['Upload photo weekly-9','Upload photo weekly-13'])
+ const containsPicker=node=>Array.isArray(node)?node.some(containsPicker):!!node&&typeof node==='object'&&(node.props?.['aria-label']==='Upload photo weekly-9'||containsPicker(node.props?.children))
+ assert.ok(h.find(n=>n.props?.['aria-label']==='Communications Board section photo'))
+ assert.ok(h.all(n=>n.type==='fieldset').every(n=>!containsPicker(n)))
+ assert.ok(inputs.every(n=>!n.props.capture&&n.props.accept==='image/jpeg,image/png,image/webp'))
+ const picker=inputs[0],target={files:[new Blob(['photo'],{type:'image/png'})],value:'selected'}
+ picker.props.onChange({target});await h.flush()
+ assert.equal(target.value,'')
+ assert.equal(h.calls.find(c=>c.name==='attach_checklist_evidence').args.p_item,'weekly-9')
+ assert.equal(h.calls.find(c=>c.name==='attach_checklist_evidence').args.p_kind,'photo')
+ assert.equal(h.calls.filter(c=>c.name==='upload').length,1)
+ assert.ok(button(h,'Save Draft'));assert.ok(button(h,'Submit'));assert.ok(button(h,'Close'))
+ h.unmount()
+ const review=form({templateData:weekly,submitted:true});await review.flush()
+ assert.equal(review.all(n=>n.type==='input'&&n.props.type==='file').length,0)
+ review.unmount()
 })
