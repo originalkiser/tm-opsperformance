@@ -1,0 +1,180 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { locationHelpHarness } from './helpers/locationHelpHarness.js'
+import { checklistTemplates } from '../src/utils/checklistTemplates.js'
+import { validateChecklist, validateEvidence, checklistTimestamp } from '../src/utils/checklistRules.js'
+import { downloadChecklistEvidence } from '../src/utils/checklistEvidence.js'
+const template=checklistTemplates.find(t=>t.key==='midday')
+const actor='00000000-0000-0000-0000-000000000002'
+function form({submitted=false,other=false,fail=false,slow=false,cached=null,cancelNavigation=false,templateData=template,uploadFail=false,attachFail=false,evidenceFiles=[],denied=false,slowEvidence=false}={}) {
+ const row={id:'draft',created_by:other?'another':actor,location_id:'site',template_key:templateData.key,period_date:'2026-11-02',status:submitted?'submitted':'draft',revision:1,answers:{},manager_name:'',submitted_at:'2026-11-02T12:00:00Z',updated_at:'2026-11-02T12:00:00Z',template_snapshot:{...templateData,timezone:'America/Los_Angeles'}}
+ const storage=new Map(cached?[['tm_checklist_draft_'+actor+'_draft',JSON.stringify(cached)]]:[]),calls=[],events=new Map(),saved=[]
+ const moves=[],revoked=[],urls=[]
+ let evidenceAllowed=!denied,resolveEvidence
+ const browser={confirm:()=>!cancelNavigation,history:{state:{idx:2},go:delta=>moves.push(delta),replaceState(){}},location:{href:'https://example.invalid/#/checklists'},addEventListener:(k,v)=>events.set(k,v),removeEventListener:k=>events.delete(k)}
+ let unblock
+ const client={
+  from(name){return {select(){return this},eq(){return this},setHeader(){return this},abortSignal(){return this},single(){return Promise.resolve(evidenceAllowed?{data:{object_path:evidenceFiles[0]?.object_path}}:{error:{message:'Access revoked'}})},order(){return Promise.resolve({data:evidenceFiles})},maybeSingle(){return Promise.resolve({data:{name:'Test Store'}})}}},
+  auth:{async getSession(){return {data:{session:{user:{id:actor}}}}}},
+  async rpc(name,args){calls.push({name,args});if(name==='attach_checklist_evidence')return attachFail?{error:{message:'Attachment registration interrupted'}}:{data:{id:args.p_file,item_id:args.p_item,kind:args.p_kind,object_path:args.p_path}};if(slow)await new Promise(resolve=>{unblock=resolve});return fail?{error:{message:'Draft changed elsewhere'}}:{data:{...row,revision:2,answers:args.p_answers,manager_name:args.p_name,status:args.p_submit?'submitted':'draft'}}},
+  storage:{from(){return {async upload(path,file,options){calls.push({name:'upload',path,file,options});return uploadFail?{error:{message:'Upload interrupted'}}:{data:{path}}},async download(path,options,parameters){calls.push({name:'download',path,options,parameters});if(slowEvidence)await new Promise(resolve=>{resolveEvidence=resolve});return evidenceAllowed?{data:new Blob(['fictional-image'],{type:'image/png'})}:{error:{message:'Access revoked'}}}}}},
+ }
+ const h=locationHelpHarness('components/ChecklistForm',{
+  supabase:client,validateChecklist,validateEvidence,checklistTimestamp,downloadChecklistEvidence,URL:{createObjectURL:()=>{const url=`blob:local-${urls.length}`;urls.push(url);return url},revokeObjectURL:url=>revoked.push(url)},AbortController,crypto:{randomUUID:()=> '00000000-0000-0000-0000-000000000100'},ChecklistSignature:()=>null,
+  sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
+  window:browser,
+  document:{addEventListener(){},removeEventListener(){}},
+ },{initial:row,user:{id:actor},locationLabel:'1000-Fictional',onClose(){calls.push({name:'closed'})},onSaved:s=>saved.push(s)})
+ return {...h,calls,saved,storage,events,browser,moves,revoked,urls,revoke:()=>{evidenceAllowed=false},finishEvidence:()=>resolveEvidence?.(),unblock:()=>unblock?.()}
+}
+const button=(h,label)=>h.find(n=>n.type==='button'&&n.props.children===label)
+test('blank required items highlighted and final RPC blocked; draft may save incomplete progress',async()=>{
+ const h=form();await h.flush()
+ button(h,'Submit pilot checklist').props.onClick()
+ assert.equal(h.calls.length,0)
+ assert.ok(h.all(n=>n.props?.role==='alert').length>0)
+ h.find(n=>n.type==='input'&&n.props.value==='No').props.onChange()
+ h.find(n=>n.type==='textarea').props.onChange({target:{value:'Debris cleared'}})
+ await button(h,'Save Draft').props.onClick();await h.flush()
+ assert.equal(h.calls.length,1);assert.equal(h.calls[0].args.p_submit,false)
+ assert.equal(h.calls[0].args.p_answers['midday-1'].explanation,'Debris cleared');assert.equal(h.saved.length,1)
+ assert.equal(h.storage.size,0);h.unmount()
+})
+test('double save guarded and stale save failure never retried or marked saved',async()=>{
+ const h=form({slow:true,fail:true});await h.flush()
+ const save=button(h,'Save Draft').props.onClick
+ const first=save();await save();assert.equal(h.calls.length,1)
+ h.unblock();await first;await h.flush()
+ assert.equal(h.saved.length,0);assert.equal(h.calls.length,1)
+ assert.ok(h.find(n=>n.props?.role==='alert'&&String(n.props.children).includes('Nothing was retried')));h.unmount()
+})
+test('submitted and another owner drafts read-only, evidence controls stay separate; no save or submit actions',async()=>{
+ for(const args of [{submitted:true},{other:true}]){
+  const h=form(args);await h.flush()
+  assert.equal(button(h,'Save Draft'),undefined);assert.equal(button(h,'Submit pilot checklist'),undefined)
+  assert.ok(h.all(n=>n.type==='fieldset').every(n=>n.props.disabled));h.unmount()
+ }
+})
+test('unsaved answers recover explicitly and are not overwritten on mount; unload warns',async()=>{
+ const cached={revision:0,answers:{'midday-1':{value:'No',explanation:'Recovered issue'}},name:'Test Manager'}
+ const h=form({cached});await h.flush()
+ assert.deepEqual(JSON.parse([...h.storage.values()][0]),cached)
+ button(h,'Restore unsaved answers').props.onClick();h.render()
+ assert.equal(h.find(n=>n.type==='textarea').props.value,'Recovered issue')
+ let prevented=false;h.events.get('beforeunload')({preventDefault(){prevented=true}});assert.equal(prevented,true)
+ assert.equal(h.calls.length,0);h.unmount()
+})
+test('a new unsaved signature blocks final submission until captured signature is saved',async()=>{
+ const h=form();await h.flush()
+ const signature=h.find(n=>n.props?.onDirty)
+ signature.props.onDirty(true);h.render()
+ assert.equal(button(h,'Submit pilot checklist').props.disabled,true);h.unmount()
+})
+test('camera and existing-photo inputs configured only on photo items',async()=>{
+ const source=readFileSync(new URL('../src/components/ChecklistForm.jsx',import.meta.url),'utf8')
+ assert.match(source,/capture="environment"/);assert.match(source,/upsert: false/)
+ const h=form();await h.flush();assert.equal(h.all(n=>n.type==='input'&&n.props.type==='file').length,0);h.unmount()
+})
+test('nonpilot navigation hidden; pilot/Admin visible using access decision',()=>{
+ for(const allowed of [false,true]){
+  const h=locationHelpHarness('components/NavBar',{
+   useAuth:()=>({profile:{role:'store'},signOut(){}}),useNavigate:()=>()=>{},useLocation:()=>({pathname:'/'}),
+   useDarkModeCtx:()=>[false,()=>{}],useChecklistAccess:()=>allowed,Link:()=>null,tmLogo:'',SettingsModal:()=>null,TargetsBell:()=>null,HelpPanel:()=>null,
+  })
+  assert.equal(!!h.find(n=>n.props?.to==='/checklists'),allowed);h.unmount()
+ }
+})
+test('signature canvas captures actual pointer strokes; blank signature cannot save',async()=>{
+ const calls=[],dirty=[]
+ const h=locationHelpHarness('components/ChecklistSignature',{}, {disabled:false,onDirty:x=>dirty.push(x),onSave:async b=>{calls.push(b);return true}})
+ const canvas=h.find(n=>n.type==='canvas')
+ const context={beginPath(){},moveTo(){},lineTo(){},stroke(){},clearRect(){}}
+ canvas.ref.current={getBoundingClientRect:()=>({left:0,top:0,width:900,height:260}),setPointerCapture(){},getContext:()=>context,toBlob:cb=>cb(new Blob(['fictional-signature'],{type:'image/png'}))}
+ assert.equal(button(h,'Save signature').props.disabled,true)
+ canvas.props.onPointerDown({pointerId:1,clientX:10,clientY:20});canvas.props.onPointerMove({clientX:40,clientY:50});canvas.props.onPointerUp()
+ assert.equal(button(h,'Save signature').props.disabled,false)
+ button(h,'Save signature').props.onClick();await h.flush()
+ assert.equal(calls.length,1);assert.deepEqual(dirty,[true,false]);assert.equal(button(h,'Save signature').props.disabled,true);h.unmount()
+})
+
+test('actual navigation access hook checks active profiles, enabled dates, assigned sites, and denied reads',async()=>{
+ const source=readFileSync(new URL('../src/hooks/useChecklistAccess.js',import.meta.url),'utf8').replace(/^import .*\n/gm,'').replace('export function','function')
+ async function allowed(profile,data,error=null){
+  let state=[],effectRan=false
+  const hook=new Function('useEffect','useState','supabase','useAuth','localChecklistDate',source+'\nreturn useChecklistAccess')(
+   effect=>{if(!effectRan){effectRan=true;effect()}},()=>[state,value=>{state=value}],
+   {from(){return{select(){return this},eq(){return Promise.resolve({data,error})}}}},
+   ()=>({profile,user:{id:actor},locations:[{id:'site',timezone:'America/Los_Angeles'}]}),()=> '2026-11-05')
+  hook();await Promise.resolve();return hook()
+ }
+ const active={role:'store',is_active:true,deleted_at:null}
+ assert.equal(await allowed(active,[{location_id:'site',enabled_from:'2026-11-05'}]),true)
+ assert.equal(await allowed(active,[]),false)
+ assert.equal(await allowed(active,[{location_id:'other',enabled_from:'2026-11-01'}]),false)
+ assert.equal(await allowed(active,[{location_id:'site',enabled_from:'2026-11-06'}]),false)
+ assert.equal(await allowed({...active,is_active:false},[{location_id:'site',enabled_from:'2026-11-01'}]),false)
+ assert.equal(await allowed({...active,deleted_at:'2026-01-01'},[{location_id:'site',enabled_from:'2026-11-01'}]),false)
+ assert.equal(await allowed(active,null,{message:'denied'}),false)
+ assert.equal(await allowed({...active,role:'admin'},[]),true)
+})
+
+test('canceling browser Back preserves the draft and restores the prior history position',async()=>{
+ const h=form({cancelNavigation:true});await h.flush()
+ h.find(n=>n.type==='input'&&n.props.value==='No').props.onChange();h.render()
+ h.browser.history.state={idx:1};let stopped=false
+ h.events.get('popstate')({stopImmediatePropagation(){stopped=true}})
+ assert.equal(stopped,true);assert.deepEqual(h.moves,[1]);assert.equal(h.calls.length,0)
+ h.browser.history.state={idx:2};h.events.get('popstate')({stopImmediatePropagation(){throw Error('restoration must not be blocked')}})
+ assert.equal(h.find(n=>n.type==='input'&&n.props.value==='No').props.checked,true);h.unmount()
+})
+
+test('six required photo items expose separate camera/file controls; invalid files never reach RPC/storage',async()=>{
+ for(const templateData of checklistTemplates){
+  const h=form({templateData});await h.flush()
+  const inputs=h.all(n=>n.type==='input'&&n.props.type==='file')
+  const required=templateData.definition.filter(i=>i.photo_required).length
+  assert.equal(inputs.length,required*2);assert.equal(inputs.filter(n=>n.props.capture==='environment').length,required)
+  if(inputs.length){inputs[0].props.onChange({target:{files:[new Blob(['invalid'],{type:'image/svg+xml'})],value:'selected'}});await h.flush();assert.equal(h.calls.length,0)}
+  h.unmount()
+ }
+})
+test('photo uploads save draft first, never upsert, and register evidence only after upload succeeds',async()=>{
+ for(const config of [{},{uploadFail:true},{attachFail:true}]){
+  const h=form({...config,templateData:checklistTemplates[0]});await h.flush()
+  h.find(n=>n.type==='input'&&n.props.capture==='environment').props.onChange({target:{files:[new Blob(['fictional-image'],{type:'image/png'})],value:'selected'}})
+  await h.flush()
+  assert.deepEqual(h.calls.map(x=>x.name),config.uploadFail?['save_checklist','upload']:['save_checklist','upload','attach_checklist_evidence'])
+  assert.equal(h.calls[0].args.p_submit,false);assert.equal(h.calls[1].options.upsert,false);assert.equal(h.calls[1].options.cacheControl,'0')
+  assert.equal(h.saved.length,1)
+  const view=h.find(n=>Array.isArray(n.props?.files)&&n.props.files.some(file=>file.kind==='photo'))
+  assert.equal(!!view,!config.uploadFail&&!config.attachFail)
+  if(config.uploadFail||config.attachFail)assert.ok(h.find(n=>n.props?.role==='alert'))
+  h.unmount()
+ }
+})
+
+test('photo/signature previews use only in-memory blobs, freshly authorize every view and release memory',async()=>{
+ for(const kind of ['photo','signature']){
+  const file={id:'file',kind,item_id:kind==='photo'?'midday-1':null,object_path:'draft/file.png'}
+  const h=form({evidenceFiles:[file]});await h.flush()
+  const links=h.find(n=>n.props?.files?.some(f=>f.id===file.id))
+  await links.props.onOpen(file);h.render()
+  assert.equal(h.find(n=>n.type==='img').props.src,'blob:local-0')
+  assert.equal(h.find(n=>n.type==='a'),undefined)
+  button(h,'Close evidence').props.onClick();h.render();assert.deepEqual(h.revoked,['blob:local-0'])
+  await links.props.onOpen(file);h.render();assert.equal(h.find(n=>n.type==='img').props.src,'blob:local-1')
+  h.revoke();await links.props.onOpen(file);h.render()
+  assert.equal(h.find(n=>n.type==='img'),undefined)
+  assert.deepEqual(h.revoked,['blob:local-0','blob:local-1'])
+  assert.equal(h.calls.filter(c=>c.name==='download').length,3);h.unmount()
+ }
+})
+test('leaving during an evidence request aborts it and never creates an orphaned preview URL',async()=>{
+ const file={id:'file',kind:'signature',item_id:null,object_path:'draft/file.png'}
+ const h=form({evidenceFiles:[file],slowEvidence:true});await h.flush()
+ const reading=h.find(n=>n.props?.files?.some(f=>f.id===file.id)).props.onOpen(file)
+ await h.flush()
+ h.unmount();assert.equal(h.calls.find(c=>c.name==='download').parameters.signal.aborted,true)
+ h.finishEvidence();await reading;assert.equal(h.urls.length,0)
+})

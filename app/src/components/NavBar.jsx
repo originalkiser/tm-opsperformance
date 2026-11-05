@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import SettingsModal from './SettingsModal'
 import TargetsBell from './TargetsBell'
+import { useChecklistAccess } from '../hooks/useChecklistAccess'
 
 function CogIcon() {
   return (
@@ -40,6 +41,7 @@ export default function NavBar() {
     : 'bg-tm-blue/60 border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white'}`
   const currentPage = path => pathname === path ? 'page' : undefined
   const isManager = ['admin', 'area_manager'].includes(profile?.role)
+  const checklistAccess = useChecklistAccess()
   const [showSettings, setShowSettings] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   const [dark, setDark] = useDarkModeCtx()
@@ -98,6 +100,8 @@ export default function NavBar() {
           {['admin', 'area_manager', 'store'].includes(profile?.role) && (
             <Link to="/employees" className={navClass('/employees')} aria-current={currentPage('/employees')}>Employees</Link>
           )}
+
+          {checklistAccess && <Link to="/checklists" className={navClass('/checklists')} aria-current={currentPage('/checklists')}>Manager Checklists</Link>}
 
           {/* AM Entry — admins/area managers only */}
           {isManager && (
