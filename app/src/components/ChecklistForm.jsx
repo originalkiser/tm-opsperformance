@@ -1,0 +1,159 @@
+import { useEffect, useRef, useState } from 'react'
+import { supabase } from '../lib/supabase'
+import ChecklistSignature from './ChecklistSignature'
+import { validateChecklist, validateEvidence, checklistTimestamp } from '../utils/checklistRules'
+import { downloadChecklistEvidence } from '../utils/checklistEvidence'
+
+export default function ChecklistForm({ initial, user, locationLabel, onClose, onSaved }) {
+  const key = `tm_checklist_draft_${user.id}_${initial.id}`
+  const cached = () => { try { return JSON.parse(sessionStorage.getItem(key) || 'null') } catch { return null } }
+  const recovery = useRef(cached())
+  const [row, setRow] = useState(initial), [answers, setAnswers] = useState(initial.answers), [name, setName] = useState(initial.manager_name)
+  const [evidence, setEvidence] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
+  const [errors, setErrors] = useState({}), [evidenceUrl, setEvidenceUrl] = useState(''), [signatureDirty, setSignatureDirty] = useState(false)
+  const [actorName, setActorName] = useState(''), [evidenceReady, setEvidenceReady] = useState(false)
+  const working = useRef(false)
+  const preview = useRef(null), evidenceRequest = useRef(null), alive = useRef(true)
+  const position = useRef(null), restoringHistory = useRef(false)
+  const readonly = row.status === 'submitted' || row.created_by !== user.id
+  const dirty = !readonly && (JSON.stringify(answers) !== JSON.stringify(row.answers) || name !== row.manager_name || signatureDirty)
+  const items = row.template_snapshot.definition
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false; evidenceRequest.current?.abort()
+      if (preview.current) URL.revokeObjectURL(preview.current)
+    }
+  }, [])
+  function clearEvidence() {
+    if (preview.current) URL.revokeObjectURL(preview.current)
+    preview.current = null; setEvidenceUrl('')
+  }
+  function openEvidence(file) {
+    return action(async () => {
+      const controller = new AbortController()
+      evidenceRequest.current = controller
+      const blob = await downloadChecklistEvidence(supabase, file, user.id, controller.signal)
+      if (!alive.current || controller.signal.aborted) return
+      preview.current = URL.createObjectURL(blob); setEvidenceUrl(preview.current)
+    })
+  }
+  useEffect(() => {
+    let alive = true
+    supabase.from('checklist_attachments').select('*').eq('submission_id', row.id).order('created_at').then(({ data, error }) => {
+      if (!alive) return
+      if (error) setError(error.message); else { setEvidence(previous => [...new Map([...(data || []), ...previous].map(file => [file.id, file])).values()]); setEvidenceReady(true) }
+    })
+    supabase.from('user_profiles').select('name').eq('id', row.created_by).maybeSingle().then(({ data }) => { if (alive) setActorName(data?.name || '') })
+    return () => { alive = false }
+  }, [row.id])
+  useEffect(() => {
+    if (readonly || recovery.current) return
+    try { if (JSON.stringify(answers) === JSON.stringify(row.answers) && name === row.manager_name) { sessionStorage.removeItem(key); return }
+      sessionStorage.setItem(key, JSON.stringify({ revision: row.revision, answers, name })) } catch { /* Server Save Draft is still available. */ }
+  }, [key, readonly, answers, name, row.revision])
+  useEffect(() => {
+    position.current = { state: window.history?.state, url: window.location?.href }
+    const leave = () => window.confirm('Leave this checklist? Save Draft first to save responses to TM Ops. Unsaved answers can be recovered in this browser tab; unsaved photos and drawings cannot.')
+    const warn = event => { if (dirty || working.current) { event.preventDefault(); event.returnValue = '' } }
+    const guard = event => {
+      const link = event.target.closest('a[href]:not([target="_blank"])')
+      const navigation = event.target.closest('nav') && ['Site Entry', 'My Dashboard', 'Sign Out'].includes(event.target.closest('button')?.textContent.trim())
+      if ((dirty || working.current) && (link || navigation) && !leave()) { event.preventDefault(); event.stopPropagation() }
+    }
+    const back = event => {
+      if (restoringHistory.current) { restoringHistory.current = false; return }
+      if ((dirty || working.current) && !leave()) {
+        event.stopImmediatePropagation()
+        const delta = position.current.state?.idx - window.history.state?.idx
+        if (Number.isFinite(delta) && delta) { restoringHistory.current = true; window.history.go(delta) }
+        else window.history.replaceState(position.current.state, '', position.current.url)
+      } else position.current = { state: window.history.state, url: window.location.href }
+    }
+    window.addEventListener('beforeunload', warn); window.addEventListener('popstate', back, true); document.addEventListener('click', guard, true)
+    return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener('popstate', back, true); document.removeEventListener('click', guard, true) }
+  }, [dirty])
+  async function save(submit = false) {
+    const { data, error } = await supabase.rpc('save_checklist', { p_id: row.id, p_revision: row.revision, p_template: row.template_key,
+      p_location: row.location_id, p_date: row.period_date, p_answers: answers, p_name: name, p_submit: submit })
+    if (error) throw error
+    setRow(data); setNotice(submit ? 'Pilot checklist submitted. MonitorQA remains the official system.' : 'Draft saved to TM Ops.')
+    try { sessionStorage.removeItem(key) } catch { /* No cached data is required to reopen the server draft. */ }
+    onSaved(data)
+    return data
+  }
+  async function action(callback) {
+    if (working.current) return false
+    working.current = true; setBusy(true); setError(''); clearEvidence()
+    try { await callback(); return true } catch (e) { if (alive.current) setError(`${e.message} Nothing was retried automatically. Refresh to confirm server state before retrying, especially after a connection interruption.`); return false }
+    finally { working.current = false; if (alive.current) setBusy(false) }
+  }
+  async function upload(file, item, kind) {
+    return action(async () => {
+      validateEvidence(file)
+      await save()
+      const id = crypto.randomUUID(), extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.type]
+      const path = `${row.id}/${id}.${extension}`
+      const uploaded = await supabase.storage.from('manager-checklist-evidence').upload(path, file, { contentType: file.type, cacheControl: '0', upsert: false })
+      if (uploaded.error) throw uploaded.error
+      const attached = await supabase.rpc('attach_checklist_evidence', { p_submission: row.id, p_file: id, p_item: item, p_kind: kind, p_path: path })
+      if (attached.error) throw attached.error
+      setEvidence(previous => [...previous, attached.data]); setNotice(`${kind === 'photo' ? 'Photo' : 'Signature'} saved privately.`)
+    })
+  }
+  function change(id, field, value) { setAnswers(previous => ({ ...previous, [id]: { ...previous[id], [field]: value } })); setErrors({}) }
+  function close() {
+    if (busy) return
+    if (!dirty || window.confirm('Close this draft? Unsaved answers can be recovered in this browser tab. Unsaved photos and drawings cannot.')) onClose()
+  }
+  return <section className="space-y-4 border rounded-xl p-4 bg-white dark:bg-tm-dark-surface" aria-label="Checklist responses">
+    <h2 className="text-xl font-bold">{row.template_snapshot.name} · {row.period_date}</h2>
+    <p>Location: {locationLabel || row.location_id} · Authenticated account: {actorName} ({row.created_by})</p>
+    <p>{readonly ? `${row.status} · ${row.manager_name || 'Unnamed draft'} · ${checklistTimestamp(row.submitted_at || row.updated_at, row.template_snapshot.timezone)}` : 'Save Draft to save unfinished progress to TM Ops. An internet connection is required.'}</p>
+    {recovery.current && !readonly && <div className="border p-3"><p>Unsaved answers were found in this browser tab. Review before restoring; saved data may have changed.</p>
+      <button className="min-h-12 px-4 border rounded" disabled={busy} onClick={() => { setAnswers(recovery.current.answers); setName(recovery.current.name); recovery.current = null; setNotice('Recovered answers are not saved yet.') }}>Restore unsaved answers</button>
+      <button className="min-h-12 px-4 border rounded" onClick={() => { recovery.current = null; try { sessionStorage.removeItem(key) } catch { /* Server draft is authoritative. */ } setNotice('Using the server draft.') }}>Use saved draft</button></div>}
+    {error && <p role="alert" className="text-red-600 dark:text-red-300">{error}</p>}
+    {notice && <p role="status">{notice}</p>}
+    {Object.keys(errors).length > 0 && <p role="alert">Complete the highlighted responses and evidence before submitting.</p>}
+    {items.map((item, index) => <div key={item.id}>
+      {(index === 0 || items[index - 1].section !== item.section) && <h3 className="text-lg font-bold mt-6 border-b pb-2">{item.section}</h3>}
+      <fieldset disabled={readonly || busy} className={`py-4 space-y-3 ${errors[item.id] ? 'border-2 border-red-500 p-3 rounded' : 'border-b'}`}>
+        <legend className="pt-3 font-semibold">{index - items.findIndex(previous => previous.section === item.section) + 1}. {item.text} {item.critical && <span className="text-red-600 dark:text-red-300"> · Critical question</span>}</legend>
+        {item.instruction && <p>{item.instruction}</p>}
+        <div className="flex flex-wrap gap-3">{[...item.options, ...(item.na_allowed ? ['N/A'] : [])].map(option => <label key={option} className="min-h-12 flex items-center gap-3 border rounded px-4 cursor-pointer">
+          <input type="radio" name={item.id} value={option} checked={answers[item.id]?.value === option} onChange={() => change(item.id, 'value', option)} className="w-6 h-6" />{option}</label>)}</div>
+        {(item.explanation_required || item.failure_values.includes(answers[item.id]?.value) || answers[item.id]?.value === 'N/A' || answers[item.id]?.explanation) && <label className="block">Explanation / N/A reason
+          <textarea className="block w-full border rounded p-3 bg-transparent" maxLength={4000} value={answers[item.id]?.explanation || ''} onChange={event => change(item.id, 'explanation', event.target.value)} /></label>}
+        {(item.photo_required || (item.photo_on_failure && item.failure_values.includes(answers[item.id]?.value))) && <><p>Photo required for this item.</p>
+        <div className="flex flex-wrap gap-4">
+          <label className="block">Take photo<input aria-label={`Take photo ${item.id}`} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="block min-h-12" onChange={e => { const file = e.target.files?.[0]; if (file) upload(file, item.id, 'photo'); e.target.value = '' }} /></label>
+          <label className="block">Choose existing photo<input aria-label={`Upload photo ${item.id}`} type="file" accept="image/jpeg,image/png,image/webp" className="block min-h-12" onChange={e => { const file = e.target.files?.[0]; if (file) upload(file, item.id, 'photo'); e.target.value = '' }} /></label>
+        </div></>}
+        {errors[item.id] && <p role="alert" className="text-red-600 dark:text-red-300">{errors[item.id]}</p>}
+      </fieldset>
+      <EvidenceLinks files={evidence.filter(file => file.item_id === item.id)} onOpen={openEvidence} />
+    </div>)}
+    <label className="block font-semibold">Manager full name<input aria-label="Manager full name" disabled={readonly || busy} value={name} maxLength={200} onChange={event => setName(event.target.value)} className="block w-full border rounded p-3 bg-transparent" /></label>
+    {errors._name && <p role="alert">{errors._name}</p>}
+    <h3 className="font-bold">Manager signature</h3>
+    <EvidenceLinks files={evidence.filter(file => file.kind === 'signature').slice(-1)} onOpen={openEvidence} />
+    {!readonly && <ChecklistSignature disabled={busy} onDirty={setSignatureDirty} onSave={blob => upload(blob, null, 'signature')} />}
+    {errors._signature && <p role="alert">{errors._signature}</p>}
+    {evidenceUrl && <figure aria-label="Private checklist evidence" className="border rounded p-3 space-y-2">
+      <img src={evidenceUrl} alt="Saved checklist photo or manager signature" className="max-h-[70vh] max-w-full object-contain bg-white" />
+      <button className="min-h-12 px-4 border rounded" onClick={clearEvidence}>Close evidence</button>
+    </figure>}
+    <div className="flex flex-wrap gap-3 sticky bottom-0 bg-white dark:bg-tm-dark-surface py-3 border-t">
+      {!readonly && <><button disabled={busy} className="min-h-12 px-5 border rounded" onClick={() => action(() => save())}>Save Draft</button>
+        <button disabled={busy || signatureDirty || !evidenceReady} className="min-h-12 px-5 rounded bg-tm-teal text-tm-navy font-bold" onClick={() => {
+          const problems = validateChecklist(items, answers, evidence, name); setErrors(problems)
+          if (!Object.keys(problems).length && window.confirm('Submit this pilot checklist? Answers, photos and signature will be locked. MonitorQA remains official.')) action(() => save(true))
+        }}>Submit pilot checklist</button></>}
+      <button disabled={busy} className="min-h-12 px-5 border rounded" onClick={close}>Close checklist</button>
+    </div>
+  </section>
+}
+function EvidenceLinks({ files, onOpen }) {
+  return <div className="flex flex-wrap gap-3">{files.map((file, index) => <button key={file.id} type="button" className="min-h-12 px-3 underline" onClick={() => onOpen(file)}>View saved {file.kind} {index + 1}</button>)}</div>
+}

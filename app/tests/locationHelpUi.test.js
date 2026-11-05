@@ -40,7 +40,7 @@ test('Help stays beside Sign Out with no profile/location, for Store and Admin, 
   for (const profile of [null, { role: 'store' }, { role: 'admin' }]) {
     const h = locationHelpHarness('components/NavBar', {
       useAuth: () => ({ profile, signOut() {} }), useNavigate: () => () => {}, useLocation: () => ({ pathname: '/' }),
-      useDarkModeCtx: () => [false, () => {}], Link: () => null, tmLogo: '', SettingsModal: () => null, TargetsBell: () => null, HelpPanel: Help,
+      useDarkModeCtx: () => [false, () => {}], useChecklistAccess: () => false, Link: () => null, tmLogo: '', SettingsModal: () => null, TargetsBell: () => null, HelpPanel: Help,
     })
     const help = h.find(n => n.type === 'button' && n.props.children === 'Help')
     assert.equal(help.props['aria-haspopup'], 'dialog')

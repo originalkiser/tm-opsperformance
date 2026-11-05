@@ -1,0 +1,11 @@
+-- APPLICATION-FIRST RECOVERY INSTRUCTIONS — NO EXECUTABLE SQL.
+-- 1. Revert the checklist application release through the normal GitHub PR workflow.
+--    Confirm GitHub Pages and Cloudflare publish the reviewed revert commit.
+-- 2. Preserve checklist tables, templates, grants, drafts, submissions, audit history,
+--    photos and signatures. Routine rollback does not delete any database objects
+--    or Storage buckets/evidence. Do not run a schema teardown or bypass Storage protection.
+-- 3. If needed, disabling pilot access is a separate authorized Admin operation;
+--    it must retain all historical records and evidence.
+-- 4. Database backups contain Storage metadata, NOT uploaded photo/signature contents.
+--    Do not restore or overwrite production for an application-only problem.
+--    Any exceptional data recovery requires a separate reviewed recovery plan.

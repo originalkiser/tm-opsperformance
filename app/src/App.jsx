@@ -11,6 +11,7 @@ import Employees from './pages/Employees'
 import Insights from './pages/Insights'
 import Reports from './pages/Reports'
 import AmEntry from './pages/AmEntry'
+import ManagerChecklists from './pages/ManagerChecklists'
 import UpdateBanner from './components/UpdateBanner'
 import DailyLogSaveNotice from './components/DailyLogSaveNotice'
 import TargetsBanner from './components/TargetsBanner'
@@ -80,6 +81,7 @@ export default function App() {
               element={<ProtectedRoute><ManagerRoute><AmEntry /></ManagerRoute></ProtectedRoute>}
             />
             <Route path="/employees" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
+            <Route path="/checklists" element={<ProtectedRoute><ManagerChecklists /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </HashRouter>
