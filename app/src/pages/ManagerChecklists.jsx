@@ -53,7 +53,7 @@ export default function ManagerChecklists() {
       <h1 className="text-2xl font-bold">Manager Checklists</h1>
       <p className="border border-amber-500 rounded p-3">Pilot only — MonitorQA remains the official checklist system. No automatic assignments or reminders. Online connection required.</p>
       {error && <p role="alert" className="text-red-600 dark:text-red-300">{error}</p>}
-      {form ? <ChecklistForm key={form.id} initial={form} user={user} locationLabel={locations.find(location => location.id === form.location_id)?.site_code} onSaved={saved => setRows(previous => [...previous.filter(row => row.id !== saved.id), saved])} onClose={() => { setForm(null); load() }} /> : <>
+      {form ? <ChecklistForm key={form.id} initial={form} user={user} admin={admin} locationLabel={locations.find(location => location.id === form.location_id)?.site_code} onSaved={saved => setRows(previous => [...previous.filter(row => row.id !== saved.id), saved])} onClose={() => { setForm(null); load() }} /> : <>
         <div className="flex flex-wrap gap-4">
           <label>Location<select aria-label="Checklist location" disabled={busy} value={site} onChange={e => setSite(e.target.value)} className="block p-3 border rounded bg-white dark:bg-tm-dark-surface">
             {!scope.length && <option value="">No pilot locations</option>}{scope.map(location => <option key={location.id} value={location.id}>{location.site_code}</option>)}</select></label>
@@ -69,7 +69,7 @@ export default function ManagerChecklists() {
           const record = records.find(row => row.template_key === template.key && row.period_date === period)
           return enabled && <section key={template.key} className="border rounded p-4 bg-white dark:bg-tm-dark-surface flex flex-wrap gap-4 justify-between items-center">
             <div><h2 className="font-bold">{template.name}</h2><p>{completionStatus(template, date, records, today)} · {period}{template.cadence === 'weekly' ? ' · Due Monday end of site-local calendar day' : ''}</p></div>
-            <button disabled={busy || date > today} className="min-h-12 px-5 rounded border" onClick={() => open(template, record)}>{record?.status === 'submitted' ? 'View submission' : record ? 'Resume draft' : 'Start checklist'}</button>
+            <button disabled={busy || date > today} className="min-h-12 px-5 rounded border" onClick={() => open(template, record)}>{record?.status === 'submitted' ? 'View submission' : record?.status === 'discarding' ? 'Finish discarding draft' : record ? 'Resume draft' : 'Start checklist'}</button>
           </section>
         })}
         {admin && <>

@@ -10,3 +10,7 @@ verify_jwt = false
 
 [functions.admin-users]
 verify_jwt = false
+
+# Explicit auth.getUser and caller-JWT RPC authorization precede all evidence removal.
+[functions.discard-checklist-draft]
+verify_jwt = false

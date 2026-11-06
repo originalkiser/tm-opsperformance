@@ -297,3 +297,105 @@ test('fresh photo/signature reads honor revocation, active/deleted accounts, loc
   assert.equal((await root(db,'select count(*)::int n from public.checklist_submissions'))[0].n,1)
  }finally{await db.close()}
 })
+
+const discardMigration = readFileSync(new URL('../../app/supabase/migrations/20261105212313_checklist_discard_draft.sql', import.meta.url), 'utf8')
+async function discardSetup() {
+ const fixture=await setup()
+ await fixture.db.exec('reset role');await fixture.db.exec(discardMigration);await actor(fixture.db,store)
+ return fixture
+}
+async function freeze(db,row) { return db.query('select public.begin_discard_checklist($1,$2) as s',[row.id,row.revision]) }
+async function finishDiscard(db,row) { return db.query('select public.finish_discard_checklist($1)',[row.id]) }
+
+test('discard authorization: owner pilot or active Admin only; submitted rows and other sites protected',async()=>{
+ const {db,today}=await discardSetup();try{
+  const row=await save(db,null,{},false,'',today)
+  for(const id of [other,outsider,inactive,deleted,manager,'']){
+   await actor(db,id);await assert.rejects(freeze(db,row),/Authorized draft access/)
+  }
+  await actor(db,'','anon');await assert.rejects(freeze(db,row),/permission denied/)
+  await actor(db,store)
+  await assert.rejects(finishDiscard(db,row),/frozen/)
+  await root(db,'update public.user_profiles set is_active=false where id=$1',[store])
+  await assert.rejects(freeze(db,row),/Authorized draft access/)
+  await root(db,'update public.user_profiles set is_active=true,deleted_at=now() where id=$1',[store])
+  await assert.rejects(freeze(db,row),/Authorized draft access/)
+  await root(db,'update public.user_profiles set deleted_at=null where id=$1',[store])
+  await root(db,'update public.checklist_pilot_access set is_active=false')
+  await assert.rejects(freeze(db,row),/Authorized draft access/)
+  await actor(db,admin);await freeze(db,row);await finishDiscard(db,row)
+  assert.equal((await root(db,'select count(*)::int n from public.checklist_submissions'))[0].n,0)
+  // Active Admin already has companywide checklist review; inactive/deleted Admin does not.
+  await actor(db,admin);let submitted=await save(db,null,{},false,'',today)
+  submitted=await save(db,submitted,await ready(db,submitted),true)
+  await assert.rejects(freeze(db,submitted),/Submitted checklists/)
+  await assert.rejects(finishDiscard(db,submitted),/frozen/)
+  await root(db,"update public.user_profiles set is_active=false where id=$1",[admin])
+  await assert.rejects(freeze(db,submitted),/Authorized draft access/)
+  await root(db,"update public.user_profiles set is_active=true,deleted_at=now() where id=$1",[admin])
+  await assert.rejects(freeze(db,submitted),/Authorized draft access/)
+ }finally{await db.close()}
+})
+
+test('discard freezes writes, catches unregistered evidence and late privileged upload completion, and removes only its draft',async()=>{
+ const {db,today}=await discardSetup();try{
+  const row=await save(db,null,{},false,'Owner',today)
+  await evidence(db,row)
+  const late=uuid(801),unregistered=`${row.id}/${uuid(802)}.png`
+  await db.query('insert into storage.objects(bucket_id,name) values($1,$2)',['manager-checklist-evidence',unregistered])
+  await actor(db,admin);const otherRow=await save(db,null,{},false,'Admin',today,'opening');await evidence(db,otherRow)
+  await actor(db,store);await freeze(db,row)
+  await assert.rejects(save(db,row,{},false),/immutable/)
+  await assert.rejects(save(db,row,{},true),/immutable/)
+  await assert.rejects(save(db,null,{},false,'',today),/unique/)
+  // Even Storage's privileged completion cannot commit metadata after the freeze.
+  await db.exec('reset role')
+  await assert.rejects(db.query('insert into storage.objects(bucket_id,name) values($1,$2)',['manager-checklist-evidence',`${row.id}/${late}.png`]),/unavailable/)
+  assert.equal((await db.query("select count(*)::int n from storage.objects where bucket_id='manager-checklist-evidence' and name=$1",[`${row.id}/${late}.png`])).rows[0].n,0)
+  assert.equal((await db.query('select count(*)::int n from public.checklist_attachments where id=$1',[late])).rows[0].n,0)
+  await db.query("insert into storage.objects(bucket_id,name) values('unrelated','after-freeze.png')")
+  await actor(db,store);await assert.rejects(finishDiscard(db,row),/cleanup is not complete/)
+  // Fictional Storage API deletion simulation ONLY; production cleanup must use Storage.remove.
+  await root(db,"delete from storage.objects where bucket_id='manager-checklist-evidence' and starts_with(name,$1)",[row.id+'/'])
+  await finishDiscard(db,row)
+  assert.equal((await root(db,'select count(*)::int n from public.checklist_submissions where id=$1',[row.id]))[0].n,0)
+  assert.equal((await root(db,'select count(*)::int n from public.checklist_attachments where submission_id=$1',[row.id]))[0].n,0)
+  assert.equal((await root(db,'select count(*)::int n from public.checklist_submissions where id=$1',[otherRow.id]))[0].n,1)
+  assert.equal((await root(db,"select count(*)::int n from storage.objects where bucket_id='unrelated'"))[0].n,2)
+  assert.equal((await root(db,"select count(*)::int n from public.edit_audit_log where summary='Checklist draft discarded'"))[0].n,1)
+  await assert.rejects(save(db,row,{},false),/no rows/)
+  await db.exec('reset role');await assert.rejects(db.query('insert into storage.objects(bucket_id,name) values($1,$2)',['manager-checklist-evidence',`${row.id}/${late}.png`]),/unavailable/)
+  assert.equal((await db.query("select count(*)::int n from storage.objects where bucket_id='manager-checklist-evidence' and starts_with(name,$1)",[row.id+'/'])).rows[0].n,0)
+  assert.equal((await db.query('select count(*)::int n from public.checklist_attachments where submission_id=$1',[row.id])).rows[0].n,0)
+ }finally{await db.close()}
+})
+
+test('changed revision stops discard; audit failure preserves frozen records; retries resume and final authorization is rechecked',async()=>{
+ const {db,today}=await discardSetup();try{
+  const row=await save(db,null,{},false,'',today),newer=await save(db,row,{},false)
+  await assert.rejects(freeze(db,row),/changed elsewhere/)
+  await freeze(db,newer);await freeze(db,row) // Already-frozen cleanup can resume with the original revision.
+  await root(db,'update public.checklist_pilot_access set is_active=false')
+  await assert.rejects(finishDiscard(db,row),/Authorized draft access/)
+  await root(db,'update public.checklist_pilot_access set is_active=true')
+  await root(db,`create function public.fail_discard_audit() returns trigger language plpgsql as $$begin raise exception 'Audit unavailable';end$$` )
+  await root(db,'create trigger fail_discard_audit before insert on public.edit_audit_log for each row execute function public.fail_discard_audit()')
+  await assert.rejects(finishDiscard(db,row),/Audit unavailable/)
+  assert.equal((await root(db,'select status from public.checklist_submissions where id=$1',[row.id]))[0].status,'discarding')
+  await root(db,'drop trigger fail_discard_audit on public.edit_audit_log')
+  await finishDiscard(db,row)
+  assert.deepEqual((await root(db,'select * from public.actuals'))[0],{id:1,value:'123.456'})
+  assert.deepEqual((await root(db,'select * from public.budget_targets'))[0],{id:1,goal:'987.654'})
+ }finally{await db.close()}
+})
+
+
+test('legacy assigned pilot manager may discard only their own draft',async()=>{
+ const {db,today}=await discardSetup();try{
+  await actor(db,admin)
+  await db.query("select public.configure_checklist_pilot('access',$1::jsonb)",[JSON.stringify({location_id:site,user_id:manager,is_active:true})])
+  await actor(db,manager);const row=await save(db,null,{},false,'',today)
+  await freeze(db,row);await finishDiscard(db,row)
+  assert.equal((await root(db,'select count(*)::int n from public.checklist_submissions'))[0].n,0)
+ }finally{await db.close()}
+})
