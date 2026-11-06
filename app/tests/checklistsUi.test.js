@@ -4,29 +4,30 @@ import { readFileSync } from 'node:fs'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 import { checklistTemplates } from '../src/utils/checklistTemplates.js'
 import { validateChecklist, validateEvidence, checklistTimestamp } from '../src/utils/checklistRules.js'
-import { downloadChecklistEvidence } from '../src/utils/checklistEvidence.js'
+import { downloadChecklistEvidence, checklistUploadRejection } from '../src/utils/checklistEvidence.js'
 const template=checklistTemplates.find(t=>t.key==='midday')
 const actor='00000000-0000-0000-0000-000000000002'
-function form({submitted=false,other=false,fail=false,slow=false,cached=null,cancelNavigation=false,templateData=template,uploadFail=false,attachFail=false,evidenceFiles=[],denied=false,slowEvidence=false}={}) {
- const row={id:'draft',created_by:other?'another':actor,location_id:'site',template_key:templateData.key,period_date:'2026-11-02',status:submitted?'submitted':'draft',revision:1,answers:{},manager_name:'',submitted_at:'2026-11-02T12:00:00Z',updated_at:'2026-11-02T12:00:00Z',template_snapshot:{...templateData,timezone:'America/Los_Angeles'}}
+function form({submitted=false,other=false,fail=false,slow=false,cached=null,cancelNavigation=false,templateData=template,uploadFail=false,attachFail=false,evidenceFiles=[],denied=false,slowEvidence=false,discardFail=false,slowDiscard=false,pending=false,admin=false,slowUpload=false,uploadError=null,saveError=null,attachError=null,liveStatus='draft',statusReadFail=false}={}) {
+ const row={id:'draft',created_by:other?'another':actor,location_id:'site',template_key:templateData.key,period_date:'2026-11-02',status:submitted?'submitted':pending?'discarding':'draft',revision:1,answers:{},manager_name:'',submitted_at:'2026-11-02T12:00:00Z',updated_at:'2026-11-02T12:00:00Z',template_snapshot:{...templateData,timezone:'America/Los_Angeles'}}
  const storage=new Map(cached?[['tm_checklist_draft_'+actor+'_draft',JSON.stringify(cached)]]:[]),calls=[],events=new Map(),saved=[]
  const moves=[],revoked=[],urls=[]
  let evidenceAllowed=!denied,resolveEvidence
  const browser={confirm:()=>!cancelNavigation,history:{state:{idx:2},go:delta=>moves.push(delta),replaceState(){}},location:{href:'https://example.invalid/#/checklists'},addEventListener:(k,v)=>events.set(k,v),removeEventListener:k=>events.delete(k)}
- let unblock
+ let unblock,finishDiscard,finishUpload
  const client={
-  from(name){return {select(){return this},eq(){return this},setHeader(){return this},abortSignal(){return this},single(){return Promise.resolve(evidenceAllowed?{data:{object_path:evidenceFiles[0]?.object_path}}:{error:{message:'Access revoked'}})},order(){return Promise.resolve({data:evidenceFiles})},maybeSingle(){return Promise.resolve({data:{name:'Test Store'}})}}},
+  functions:{async invoke(name,args){calls.push({name,args});if(slowDiscard)await new Promise(resolve=>{finishDiscard=resolve});return discardFail?{error:{message:'Cleanup unavailable'}}:{data:{discarded:true,id:'draft'}}}},
+  from(name){return {select(){return this},eq(){return this},setHeader(){return this},abortSignal(){return this},single(){return Promise.resolve(evidenceAllowed?{data:{object_path:evidenceFiles[0]?.object_path}}:{error:{message:'Access revoked'}})},order(){return Promise.resolve({data:evidenceFiles})},maybeSingle(){if(name==='checklist_submissions'){calls.push({name:'read_draft_status'});return Promise.resolve(statusReadFail?{error:{message:'Read unavailable'}}:{data:liveStatus===null?null:{status:liveStatus}})}return Promise.resolve({data:{name:'Test Store'}})}}},
   auth:{async getSession(){return {data:{session:{user:{id:actor}}}}}},
-  async rpc(name,args){calls.push({name,args});if(name==='attach_checklist_evidence')return attachFail?{error:{message:'Attachment registration interrupted'}}:{data:{id:args.p_file,item_id:args.p_item,kind:args.p_kind,object_path:args.p_path}};if(slow)await new Promise(resolve=>{unblock=resolve});return fail?{error:{message:'Draft changed elsewhere'}}:{data:{...row,revision:2,answers:args.p_answers,manager_name:args.p_name,status:args.p_submit?'submitted':'draft'}}},
-  storage:{from(){return {async upload(path,file,options){calls.push({name:'upload',path,file,options});return uploadFail?{error:{message:'Upload interrupted'}}:{data:{path}}},async download(path,options,parameters){calls.push({name:'download',path,options,parameters});if(slowEvidence)await new Promise(resolve=>{resolveEvidence=resolve});return evidenceAllowed?{data:new Blob(['fictional-image'],{type:'image/png'})}:{error:{message:'Access revoked'}}}}}},
+  async rpc(name,args){calls.push({name,args});if(name==='attach_checklist_evidence')return attachError?{error:attachError}:attachFail?{error:{message:'Attachment registration interrupted'}}:{data:{id:args.p_file,item_id:args.p_item,kind:args.p_kind,object_path:args.p_path}};if(slow)await new Promise(resolve=>{unblock=resolve});return saveError?{error:saveError}:fail?{error:{message:'Draft changed elsewhere'}}:{data:{...row,revision:2,answers:args.p_answers,manager_name:args.p_name,status:args.p_submit?'submitted':'draft'}}},
+  storage:{from(){return {async upload(path,file,options){calls.push({name:'upload',path,file,options});if(slowUpload)await new Promise(resolve=>{finishUpload=resolve});return uploadError?{error:uploadError}:uploadFail?{error:{message:'Upload interrupted'}}:{data:{path}}},async download(path,options,parameters){calls.push({name:'download',path,options,parameters});if(slowEvidence)await new Promise(resolve=>{resolveEvidence=resolve});return evidenceAllowed?{data:new Blob(['fictional-image'],{type:'image/png'})}:{error:{message:'Access revoked'}}}}}},
  }
  const h=locationHelpHarness('components/ChecklistForm',{
-  supabase:client,validateChecklist,validateEvidence,checklistTimestamp,downloadChecklistEvidence,URL:{createObjectURL:()=>{const url=`blob:local-${urls.length}`;urls.push(url);return url},revokeObjectURL:url=>revoked.push(url)},AbortController,crypto:{randomUUID:()=> '00000000-0000-0000-0000-000000000100'},ChecklistSignature:()=>null,
+  supabase:client,validateChecklist,validateEvidence,checklistTimestamp,downloadChecklistEvidence,checklistUploadRejection,URL:{createObjectURL:()=>{const url=`blob:local-${urls.length}`;urls.push(url);return url},revokeObjectURL:url=>revoked.push(url)},AbortController,crypto:{randomUUID:()=> '00000000-0000-0000-0000-000000000100'},ChecklistSignature:()=>null,
   sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
   window:browser,
   document:{addEventListener(){},removeEventListener(){}},
- },{initial:row,user:{id:actor},locationLabel:'1000-Fictional',onClose(){calls.push({name:'closed'})},onSaved:s=>saved.push(s)})
- return {...h,calls,saved,storage,events,browser,moves,revoked,urls,revoke:()=>{evidenceAllowed=false},finishEvidence:()=>resolveEvidence?.(),unblock:()=>unblock?.()}
+ },{initial:row,user:{id:actor},admin,locationLabel:'1000-Fictional',onClose(){calls.push({name:'closed'})},onSaved:s=>saved.push(s)})
+ return {...h,calls,saved,storage,events,browser,moves,revoked,urls,revoke:()=>{evidenceAllowed=false},finishEvidence:()=>resolveEvidence?.(),finishDiscard:()=>finishDiscard?.(),finishUpload:()=>finishUpload?.(),unblock:()=>unblock?.()}
 }
 const button=(h,label)=>h.find(n=>n.type==='button'&&n.props.children===label)
 test('blank required items highlighted and final RPC blocked; draft may save incomplete progress',async()=>{
@@ -201,4 +202,104 @@ test('weekly section photo sits outside questions; one picker per requirement pr
  const review=form({templateData:weekly,submitted:true});await review.flush()
  assert.equal(review.all(n=>n.type==='input'&&n.props.type==='file').length,0)
  review.unmount()
+})
+
+
+test('answers use local recovery only; server saves are explicit and discard requires confirmation',async()=>{
+ const h=form({cancelNavigation:true});await h.flush()
+ h.find(n=>n.type==='input'&&n.props.value==='No').props.onChange();await h.flush()
+ assert.equal(h.calls.length,0);assert.equal(h.storage.size,1)
+ await button(h,'Discard Draft').props.onClick();await h.flush()
+ assert.equal(h.calls.length,0);assert.ok(button(h,'Save Draft'));h.unmount()
+})
+test('confirmed discard clears local recovery, closes only on success, and blocks stale save/upload callbacks',async()=>{
+ const h=form({slowDiscard:true,templateData:checklistTemplates[0]});await h.flush()
+ h.find(n=>n.type==='input'&&n.props.value==='Not Completed').props.onChange();await h.flush()
+ const save=button(h,'Save Draft').props.onClick,discard=button(h,'Discard Draft').props.onClick
+ const upload=h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange
+ const first=discard();await discard();await save();upload({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}})
+ assert.deepEqual(h.calls.map(c=>c.name),['discard-checklist-draft'])
+ h.finishDiscard();await first;await h.flush();await save()
+ assert.equal(h.storage.size,0);assert.equal(h.calls.filter(c=>c.name==='closed').length,1)
+ assert.equal(h.calls.filter(c=>c.name==='save_checklist').length,0);h.unmount()
+})
+test('discard unavailable for submitted/other-owner managers; Admin can discard reviewed drafts and resume interrupted cleanup',async()=>{
+ for(const config of [{submitted:true},{other:true},{submitted:true,admin:true}]){
+  const h=form(config);await h.flush();assert.equal(button(h,'Discard Draft'),undefined);h.unmount()
+ }
+ const admin=form({other:true,admin:true});await admin.flush()
+ assert.ok(button(admin,'Discard Draft'));assert.equal(button(admin,'Save Draft'),undefined);admin.unmount()
+ const h=form({pending:true,discardFail:true});await h.flush()
+ assert.equal(button(h,'Save Draft'),undefined);assert.equal(button(h,'Submit'),undefined)
+ await button(h,'Discard Draft').props.onClick();await h.flush()
+ assert.ok(h.find(n=>n.props?.role==='alert'));assert.equal(h.calls.filter(c=>c.name==='closed').length,0)
+ assert.equal(h.calls.filter(c=>c.name==='discard-checklist-draft').length,1);h.unmount()
+})
+test('pending save prevents discard; no overlapping cleanup while an upload/save is active',async()=>{
+ const h=form({slow:true});await h.flush()
+ const discard=button(h,'Discard Draft').props.onClick,save=button(h,'Save Draft').props.onClick
+ const saving=save();await discard();assert.equal(h.calls.length,1);assert.equal(h.calls[0].name,'save_checklist')
+ h.unblock();await saving;h.unmount()
+})
+
+
+test('an in-flight evidence upload prevents discard until upload and registration finish',async()=>{
+ const h=form({slowUpload:true,templateData:checklistTemplates[0]});await h.flush()
+ const discard=button(h,'Discard Draft').props.onClick
+ h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}})
+ await h.flush();await discard()
+ assert.deepEqual(h.calls.map(c=>c.name),['save_checklist','upload'])
+ h.finishUpload();await h.flush()
+ assert.deepEqual(h.calls.map(c=>c.name),['save_checklist','upload','attach_checklist_evidence']);h.unmount()
+})
+
+test('known stale Storage rejection gets a clear message, no attachment and no automatic retry',async()=>{
+ const h=form({templateData:checklistTemplates[0],uploadError:{status:500,statusCode:'500',message:'database error, code: P0001'},liveStatus:null});await h.flush()
+ const upload=h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange
+ upload({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}});await h.flush()
+ assert.deepEqual(h.calls.map(c=>c.name),['save_checklist','upload','read_draft_status'])
+ assert.ok(h.find(n=>n.props?.role==='alert'&&n.props.children==='This draft is no longer available. Uploads are no longer allowed.'))
+ assert.equal(button(h,'Save Draft'),undefined);assert.equal(button(h,'Submit'),undefined);assert.equal(button(h,'Discard Draft'),undefined)
+ upload({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}});await h.flush()
+ assert.equal(h.calls.filter(c=>c.name==='upload').length,1);assert.equal(h.calls.filter(c=>c.name==='attach_checklist_evidence').length,0);h.unmount()
+})
+test('interrupted cleanup blocks uploads with clear guidance while preserving explicit discard resumption',async()=>{
+ const h=form({templateData:checklistTemplates[0],uploadError:{status:500,message:'database error, code: P0001'},liveStatus:'discarding'});await h.flush()
+ const upload=h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange
+ upload({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}});await h.flush()
+ upload({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}});await h.flush()
+ assert.equal(h.calls.filter(c=>c.name==='upload').length,1)
+ assert.ok(h.find(n=>n.props?.role==='alert'&&String(n.props.children).includes('being discarded')))
+ assert.equal(button(h,'Save Draft'),undefined);assert.equal(button(h,'Submit'),undefined);assert.ok(button(h,'Discard Draft'))
+ assert.equal(h.calls.filter(c=>c.name==='attach_checklist_evidence').length,0)
+ assert.equal(h.calls.filter(c=>c.name==='discard-checklist-draft').length,0)
+ await button(h,'Discard Draft').props.onClick();await h.flush()
+ assert.equal(h.calls.filter(c=>c.name==='discard-checklist-draft').length,1);assert.equal(h.calls.filter(c=>c.name==='closed').length,1);h.unmount()
+})
+test('stale photo/signature saves and attachment registration failures are handled without recreating records',async()=>{
+ for(const kind of ['photo','signature']){
+  const h=form({templateData:checklistTemplates[0],saveError:{code:'P0002',message:'query returned no rows'},liveStatus:null});await h.flush()
+  const blob=new Blob(['synthetic'],{type:'image/png'})
+  if(kind==='photo')h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[blob],value:''}})
+  else await h.find(n=>typeof n.props?.onDirty==='function').props.onSave(blob)
+  await h.flush();assert.deepEqual(h.calls.map(c=>c.name),['save_checklist','read_draft_status'])
+  assert.ok(h.find(n=>n.props?.role==='alert'&&String(n.props.children).includes('Uploads are no longer allowed.')));h.unmount()
+ }
+ const h=form({templateData:checklistTemplates[0],attachError:{code:'P0002',message:'query returned no rows'},liveStatus:null});await h.flush()
+ h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}});await h.flush()
+ assert.equal(h.calls.filter(c=>c.name==='attach_checklist_evidence').length,1)
+ assert.equal(h.all(n=>Array.isArray(n.props?.files)&&n.props.files.length>0).length,0);h.unmount()
+})
+test('unknown Storage errors, still-editable drafts and failed state reads keep the original error',async()=>{
+ for(const config of [
+  {uploadError:{status:500,message:'Unexpected backend failure'},liveStatus:null},
+  {uploadError:{status:500,message:'database error, code: P0001'},liveStatus:'draft'},
+  {uploadError:{status:500,message:'database error, code: P0001'},statusReadFail:true},
+ ]){
+  const h=form({...config,templateData:checklistTemplates[0]});await h.flush()
+  h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}});await h.flush()
+  assert.ok(h.find(n=>n.props?.role==='alert'&&String(n.props.children).startsWith(config.uploadError.message)))
+  assert.ok(button(h,'Save Draft'));assert.equal(h.calls.filter(c=>c.name==='upload').length,1)
+  assert.equal(h.calls.filter(c=>c.name==='attach_checklist_evidence').length,0);h.unmount()
+ }
 })

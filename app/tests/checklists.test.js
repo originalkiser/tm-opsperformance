@@ -63,7 +63,7 @@ test('private image format and size limits',()=>{
 
 // Real locked SDK transport, fictional fetch only: no Supabase project is contacted.
 import { createClient } from '@supabase/supabase-js'
-import { downloadChecklistEvidence } from '../src/utils/checklistEvidence.js'
+import { downloadChecklistEvidence, checklistUploadRejection } from '../src/utils/checklistEvidence.js'
 function evidenceClient({ allowed=true, revokeDuringTransfer=false, sessionId='manager' }={}) {
  const calls=[];let current=sessionId,permit=allowed
  const file={id:'file',object_path:'submission/file.png'}
@@ -114,4 +114,38 @@ test('signed-out, changed-account and canceled evidence reads fail closed',async
  }
  const h=evidenceClient(),controller=new AbortController();controller.abort()
  await assert.rejects(downloadChecklistEvidence(h.client,h.file,'manager',controller.signal))
+})
+
+
+test('real locked SDK Storage 500 maps to lifecycle guidance only after an authenticated uncached state read',async()=>{
+ for(const state of [null,'discarding','submitted','draft']){
+  const calls=[]
+  const client=createClient('https://fictional-stale-upload.invalid','fictional-public-key',{
+   realtime:{transport:class {constructor(){throw Error('Realtime forbidden in this fixture')}}},
+   accessToken:async()=> 'fictional-account-token',auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},
+   global:{fetch:async(url,init)=>{
+    const endpoint=new URL(url),headers=new Headers(init.headers);calls.push({endpoint,headers})
+    assert.equal(headers.get('authorization'),'Bearer fictional-account-token')
+    if(endpoint.pathname.startsWith('/storage/'))return new Response(JSON.stringify({statusCode:'500',error:'DatabaseError',message:'database error, code: P0001',code:'DatabaseError'}),{status:500,headers:{'Content-Type':'application/json'}})
+    assert.equal(endpoint.pathname,'/rest/v1/checklist_submissions');assert.equal(endpoint.searchParams.get('id'),'eq.discarded-draft')
+    assert.equal(endpoint.searchParams.get('select'),'status');assert.equal(headers.get('Cache-Control'),'no-cache, no-store')
+    return new Response(JSON.stringify(state===null?[]:[{status:state}]),{headers:{'Content-Type':'application/json'}})
+   }},
+  })
+  const uploaded=await client.storage.from('manager-checklist-evidence').upload('discarded-draft/test.png',new Blob(['synthetic'],{type:'image/png'}),{upsert:false})
+  assert.ok(uploaded.error);assert.equal(uploaded.error.status,500)
+  const result=await checklistUploadRejection(client,'discarded-draft',uploaded.error)
+  assert.equal(result?.status||null,state==='draft'?null:state===null?'unavailable':state)
+  assert.equal(calls.length,2);assert.equal(calls.filter(c=>c.endpoint.pathname.startsWith('/storage/')).length,1)
+ }
+})
+test('lifecycle error explanation fails closed on permission/read/network errors and ignores unrelated 500s',async()=>{
+ const known={status:500,message:'database error, code: P0001'}
+ for(const failure of ['rls','network']){
+  const client={from(){return {select(){return this},eq(){return this},setHeader(){return this},async maybeSingle(){if(failure==='network')throw Error('offline');return {error:{code:'42501',message:'Denied'}}}}}}
+  assert.equal(await checklistUploadRejection(client,'draft',known),null)
+ }
+ const client={from(){throw Error('Unrelated errors must not trigger a lifecycle lookup')}}
+ assert.equal(await checklistUploadRejection(client,'draft',{status:500,message:'Different error'}),null)
+ assert.equal(await checklistUploadRejection(client,'draft',{status:401,message:'Expired session'}),null)
 })

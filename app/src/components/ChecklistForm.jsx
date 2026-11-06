@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import ChecklistSignature from './ChecklistSignature'
 import { validateChecklist, validateEvidence, checklistTimestamp } from '../utils/checklistRules'
-import { downloadChecklistEvidence } from '../utils/checklistEvidence'
+import { downloadChecklistEvidence, checklistUploadRejection } from '../utils/checklistEvidence'
 
-export default function ChecklistForm({ initial, user, locationLabel, onClose, onSaved }) {
+export default function ChecklistForm({ initial, user, locationLabel, onClose, onSaved, admin = false }) {
   const key = `tm_checklist_draft_${user.id}_${initial.id}`
   const cached = () => { try { return JSON.parse(sessionStorage.getItem(key) || 'null') } catch { return null } }
   const recovery = useRef(cached())
@@ -12,10 +12,12 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   const [evidence, setEvidence] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [errors, setErrors] = useState({}), [evidenceUrl, setEvidenceUrl] = useState(''), [signatureDirty, setSignatureDirty] = useState(false)
   const [actorName, setActorName] = useState(''), [evidenceReady, setEvidenceReady] = useState(false)
-  const working = useRef(false)
+  const working = useRef(false), discardRequested = useRef(false), unavailable = useRef(false)
   const preview = useRef(null), evidenceRequest = useRef(null), alive = useRef(true)
   const position = useRef(null), restoringHistory = useRef(false)
-  const readonly = row.status === 'submitted' || row.created_by !== user.id
+  const discarding = row.status === 'discarding' || discardRequested.current
+  const readonly = unavailable.current || discarding || row.status === 'submitted' || row.created_by !== user.id
+  const canDiscard = !unavailable.current && row.status !== 'submitted' && (row.created_by === user.id || admin)
   const dirty = !readonly && (JSON.stringify(answers) !== JSON.stringify(row.answers) || name !== row.manager_name || signatureDirty)
   const items = row.template_snapshot.definition
   useEffect(() => {
@@ -74,6 +76,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
     return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener('popstate', back, true); document.removeEventListener('click', guard, true) }
   }, [dirty])
   async function save(submit = false) {
+    if (unavailable.current || discardRequested.current || row.status === 'discarding') throw new Error('Discard is in progress. Reload before continuing.')
     const { data, error } = await supabase.rpc('save_checklist', { p_id: row.id, p_revision: row.revision, p_template: row.template_key,
       p_location: row.location_id, p_date: row.period_date, p_answers: answers, p_name: name, p_submit: submit })
     if (error) throw error
@@ -82,24 +85,57 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
     onSaved(data)
     return data
   }
-  async function action(callback) {
-    if (working.current) return false
+  async function action(callback, discard = false) {
+    if (working.current || unavailable.current || ((discardRequested.current || row.status === 'discarding') && !discard)) return false
     working.current = true; setBusy(true); setError(''); clearEvidence()
-    try { await callback(); return true } catch (e) { if (alive.current) setError(`${e.message} Nothing was retried automatically. Refresh to confirm server state before retrying, especially after a connection interruption.`); return false }
+    try { await callback(); return true } catch (e) {
+      if (alive.current) {
+        if (e.checklistUploadState) {
+          if (e.checklistUploadState === 'discarding') {
+            discardRequested.current = true
+            setRow(previous => ({ ...previous, status: 'discarding' }))
+          }
+          else unavailable.current = true
+          setError(e.message)
+        } else setError(`${e.message} Nothing was retried automatically. Refresh to confirm server state before retrying, especially after a connection interruption.`)
+      }
+      return false
+    }
     finally { working.current = false; if (alive.current) setBusy(false) }
   }
   async function upload(file, item, kind) {
     return action(async () => {
-      validateEvidence(file)
-      await save()
-      const id = crypto.randomUUID(), extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.type]
-      const path = `${row.id}/${id}.${extension}`
-      const uploaded = await supabase.storage.from('manager-checklist-evidence').upload(path, file, { contentType: file.type, cacheControl: '0', upsert: false })
-      if (uploaded.error) throw uploaded.error
-      const attached = await supabase.rpc('attach_checklist_evidence', { p_submission: row.id, p_file: id, p_item: item, p_kind: kind, p_path: path })
-      if (attached.error) throw attached.error
-      setEvidence(previous => [...previous, attached.data]); setNotice(`${kind === 'photo' ? 'Photo' : 'Signature'} saved privately.`)
+      try {
+        validateEvidence(file)
+        await save()
+        const id = crypto.randomUUID(), extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.type]
+        const path = `${row.id}/${id}.${extension}`
+        const uploaded = await supabase.storage.from('manager-checklist-evidence').upload(path, file, { contentType: file.type, cacheControl: '0', upsert: false })
+        if (uploaded.error) throw uploaded.error
+        const attached = await supabase.rpc('attach_checklist_evidence', { p_submission: row.id, p_file: id, p_item: item, p_kind: kind, p_path: path })
+        if (attached.error) throw attached.error
+        setEvidence(previous => [...previous, attached.data]); setNotice(`${kind === 'photo' ? 'Photo' : 'Signature'} saved privately.`)
+      } catch (error) {
+        const rejection = await checklistUploadRejection(supabase, row.id, error)
+        if (!rejection) throw error
+        const message = new Error(rejection.message)
+        message.checklistUploadState = rejection.status
+        throw message
+      }
     })
+  }
+  function discard() {
+    if (working.current || !canDiscard) return
+    if (!window.confirm('Discard this unfinished checklist? Its saved answers, photos and signature will be permanently removed. This cannot be undone.')) return
+    return action(async () => {
+      discardRequested.current = true
+      const { data, error } = await supabase.functions.invoke('discard-checklist-draft', { body: { id: row.id, revision: row.revision } })
+      if (error) throw new Error('Discard was not confirmed. Refresh to check its state, then resume Discard Draft if needed.')
+      if (data?.discarded !== true || data.id !== row.id) throw new Error('Discard was not confirmed. Refresh before continuing.')
+      try { sessionStorage.removeItem(key) } catch { /* A deleted ID cannot be saved again. */ }
+      recovery.current = null; evidenceRequest.current?.abort(); clearEvidence()
+      onClose()
+    }, true)
   }
   // Keep the existing attachment key so saved evidence and validation stay compatible.
   const sectionPhoto = row.template_key === 'weekly' ? items.find(item => item.id === 'weekly-9' && item.section === 'Communications Board') : null
@@ -122,7 +158,8 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   return <section className="space-y-3 border rounded-xl p-3 sm:p-4 text-sm sm:text-base bg-white dark:bg-tm-dark-surface" aria-label="Checklist responses">
     <h2 className="text-lg sm:text-xl font-bold">{row.template_snapshot.name} · {row.period_date}</h2>
     <p className="text-xs sm:text-sm break-words">Location: {locationLabel || row.location_id} · Authenticated account: {actorName} ({row.created_by})</p>
-    <p>{readonly ? `${row.status} · ${row.manager_name || 'Unnamed draft'} · ${checklistTimestamp(row.submitted_at || row.updated_at, row.template_snapshot.timezone)}` : 'Save Draft to save unfinished progress to TM Ops. An internet connection is required.'}</p>
+    <p>{readonly ? `${row.status} · ${row.manager_name || 'Unnamed draft'} · ${checklistTimestamp(row.submitted_at || row.updated_at, row.template_snapshot.timezone)}` : 'Answers are not autosaved to TM Ops. Use Save Draft; adding a photo or signature also saves your answers. Internet connection required.'}</p>
+    {discarding && <p role="status">Discard pending. Editing and uploads are blocked. Use Discard Draft to finish cleanup.</p>}
     {recovery.current && !readonly && <div className="border p-3"><p>Unsaved answers were found in this browser tab. Review before restoring; saved data may have changed.</p>
       <button className="min-h-12 px-4 border rounded" disabled={busy} onClick={() => { setAnswers(recovery.current.answers); setName(recovery.current.name); recovery.current = null; setNotice('Recovered answers are not saved yet.') }}>Restore unsaved answers</button>
       <button className="min-h-12 px-4 border rounded" onClick={() => { recovery.current = null; try { sessionStorage.removeItem(key) } catch { /* Server draft is authoritative. */ } setNotice('Using the server draft.') }}>Use saved draft</button></div>}
@@ -159,6 +196,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
       <img src={evidenceUrl} alt="Saved checklist photo or manager signature" className="max-h-[70vh] max-w-full object-contain bg-white" />
       <button className="min-h-12 px-4 border rounded" onClick={clearEvidence}>Close evidence</button>
     </figure>}
+    {canDiscard && <button disabled={busy} className="min-h-11 px-3 border border-red-500 rounded text-red-600 dark:text-red-300 text-sm" onClick={discard}>Discard Draft</button>}
     <div className="grid grid-cols-[1fr_1fr_auto] gap-2 sticky bottom-0 bg-white dark:bg-tm-dark-surface py-2 border-t pb-[max(0.5rem,env(safe-area-inset-bottom))] text-sm">
       {!readonly && <><button disabled={busy} className="min-h-11 px-2 sm:px-4 border rounded" onClick={() => action(() => save())}>Save Draft</button>
         <button disabled={busy || signatureDirty || !evidenceReady} className="min-h-11 px-2 sm:px-4 rounded bg-tm-teal text-tm-navy font-bold" onClick={() => {
