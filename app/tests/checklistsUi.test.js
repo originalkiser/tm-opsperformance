@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 import { checklistTemplates } from '../src/utils/checklistTemplates.js'
-import { validateChecklist, validateEvidence, checklistTimestamp } from '../src/utils/checklistRules.js'
+import { validateChecklist, validateEvidence, checklistTimestamp, checklistPeriod } from '../src/utils/checklistRules.js'
 import { downloadChecklistEvidence, checklistUploadRejection } from '../src/utils/checklistEvidence.js'
 const template=checklistTemplates.find(t=>t.key==='midday')
 const actor='00000000-0000-0000-0000-000000000002'
@@ -30,6 +30,22 @@ function form({submitted=false,other=false,fail=false,slow=false,cached=null,can
  return {...h,calls,saved,storage,events,browser,moves,revoked,urls,revoke:()=>{evidenceAllowed=false},finishEvidence:()=>resolveEvidence?.(),finishDiscard:()=>finishDiscard?.(),finishUpload:()=>finishUpload?.(),unblock:()=>unblock?.()}
 }
 const button=(h,label)=>h.find(n=>n.type==='button'&&n.props.children===label)
+test('Admin and pilot managers see explicit checklist order regardless of returned template order',async()=>{
+ for(const role of ['admin','store']){
+  const templates=['closing','weekly','midday','opening'].map(key=>checklistTemplates.find(t=>t.key===key))
+  const before=JSON.stringify(templates)
+  const client={from(name){return {select(){return this},gte(){return this},lte(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:name==='checklist_pilot_access'?[{location_id:'site',is_active:true,enabled_from:'2026-01-01'}]:[]}).then(resolve)}}}}
+  const h=locationHelpHarness('pages/ManagerChecklists',{
+   useAuth:()=>({user:{id:actor},profile:{role},locations:[{id:'site',site_code:'1512',timezone:'America/New_York'}]}),supabase:client,
+   checklistPeriod,completionStatus:()=> 'Not submitted',localChecklistDate:()=> '2026-11-05',checklistTimestamp,
+   NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
+  })
+  await h.flush()
+  assert.deepEqual(h.all(n=>n.type==='h2').slice(0,4).map(n=>n.props.children),['Opening Checklist','Mid-Day Checklist','Closing Checklist','Weekly Manager Administrative Checklist'])
+  assert.equal(JSON.stringify(templates),before)
+  h.unmount()
+ }
+})
 test('blank required items highlighted and final RPC blocked; draft may save incomplete progress',async()=>{
  const h=form();await h.flush()
  button(h,'Submit').props.onClick()

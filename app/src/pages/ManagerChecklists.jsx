@@ -6,6 +6,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { checklistPeriod, completionStatus, localChecklistDate, checklistTimestamp } from '../utils/checklistRules'
 
+const displayOrder = ['opening', 'midday', 'closing', 'weekly']
+
 export default function ManagerChecklists() {
   const { user, profile, locations } = useAuth()
   const admin = profile?.role === 'admin'
@@ -24,14 +26,17 @@ export default function ManagerChecklists() {
     try {
       const start = date ? checklistPeriod({ cadence: 'weekly' }, date) : '9999-01-01'
       const results = await Promise.all([
-        supabase.from('checklist_templates').select('*').order('key'),
+        supabase.from('checklist_templates').select('*'),
         supabase.from('checklist_pilot_access').select('*'),
         supabase.from('checklist_submissions').select('*').gte('period_date', start).lte('period_date', date || start).order('created_at'),
       ])
       if (current !== request.current) return
       const failed = results.find(result => result.error)
       if (failed) throw failed.error
-      setTemplates(results[0].data || []); setGrants(results[1].data || []); setRows(results[2].data || [])
+      setTemplates([...(results[0].data || [])].sort((a, b) =>
+        (displayOrder.indexOf(a.key) < 0 ? displayOrder.length : displayOrder.indexOf(a.key)) -
+        (displayOrder.indexOf(b.key) < 0 ? displayOrder.length : displayOrder.indexOf(b.key))))
+      setGrants(results[1].data || []); setRows(results[2].data || [])
     } catch (error) { if (current === request.current) setError(error.message) } finally { if (current === request.current) setBusy(false) }
   }
   useEffect(() => { load(); return () => { request.current++ } }, [date, user.id])
