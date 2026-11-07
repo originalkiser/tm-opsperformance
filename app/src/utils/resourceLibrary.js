@@ -1,12 +1,15 @@
+import { categoryFolder, resourceLabels } from './resourceCatalog.js'
 export const RESOURCE_BUCKET = 'resource-pdfs'
 export const PDF_LIMIT = 50 * 1024 * 1024
 export const RESOURCE_CATEGORIES = ['General Manager Workbook', 'Equipment Manuals', 'Standard Operating Procedures (SOPs)', 'Employee Handbook', 'Other Reference Materials']
 export const resourceAccess = profile => profile?.is_active === true && !profile.deleted_at && ['admin', 'store'].includes(profile.role)
 
-export function validateResourceMetadata({ title, category, brand = '' }) {
+export function validateResourceMetadata({ title, category, brand = '' }, catalog) {
   if (!title?.trim() || title.trim().length > 200) throw new Error('Enter a title of 1–200 characters.')
-  if (!RESOURCE_CATEGORIES.includes(category)) throw new Error('Select a document category.')
-  if (brand.trim().length > 100 || (category === 'Equipment Manuals' && !brand.trim())) throw new Error('Enter a manufacturer (maximum 100 characters).')
+  const folder = categoryFolder(catalog, category)
+  if (!folder) throw new Error('Select a document category.')
+  if (folder.uses_manufacturers && !catalog.some(c => c.category_key === category && c.brand_key === brand && brand)) throw new Error('Select a manufacturer.')
+  if (!folder.uses_manufacturers && brand) throw new Error('This category does not use manufacturers.')
 }
 
 export async function validatePdf(file) {
@@ -19,11 +22,13 @@ export async function validatePdf(file) {
   return { filename: file.name, size: file.size, sha256: Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('') }
 }
 
-export function filterResources(rows, { query = '', category = '', brand = '' } = {}) {
+export function filterResources(rows, { query = '', category = '', brand = '' } = {}, catalog = []) {
   const search = query.trim().toLocaleLowerCase()
-  return rows.filter(row => (!category || row.category === category) && (!brand || row.brand === brand) &&
-    `${row.title} ${row.category} ${row.brand}`.toLocaleLowerCase().includes(search))
-    .sort((a, b) => RESOURCE_CATEGORIES.indexOf(a.category) - RESOURCE_CATEGORIES.indexOf(b.category) || a.brand.localeCompare(b.brand) || a.title.localeCompare(b.title))
+  return rows.filter(row => {
+    const labels = resourceLabels(row, catalog)
+    return (!category || row.category === category) && (!brand || row.brand === brand) &&
+      `${row.title} ${labels.category} ${labels.brand}`.toLocaleLowerCase().includes(search)
+  }).sort((a, b) => (categoryFolder(catalog, a.category)?.sort_order ?? RESOURCE_CATEGORIES.indexOf(a.category)) - (categoryFolder(catalog, b.category)?.sort_order ?? RESOURCE_CATEGORIES.indexOf(b.category)) || resourceLabels(a, catalog).brand.localeCompare(resourceLabels(b, catalog).brand) || a.title.localeCompare(b.title))
 }
 
 export async function resourceAction(client, action, row, data = {}) {

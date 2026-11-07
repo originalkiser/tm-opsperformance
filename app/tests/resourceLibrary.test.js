@@ -1,3 +1,4 @@
+import * as folderHelpers from '../src/utils/resourceCatalog.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { validatePdf, PDF_LIMIT, RESOURCE_CATEGORIES, resourceAccess, filterResources, validateResourceMetadata, downloadResource, uploadResource, resourceAction, cleanupResource } from '../src/utils/resourceLibrary.js'
@@ -8,6 +9,8 @@ import { Upload as TusUpload } from 'tus-js-client'
 const id='00000000-0000-0000-0000-000000000001',fileId='00000000-0000-0000-0000-000000000002'
 const pdf=(text='%PDF-1.7\nSynthetic test only',name='fictional.pdf')=>Object.assign(new Blob([text],{type:'application/pdf'}),{name})
 const row={id,revision:2,title:'Example manual',category:'Equipment Manuals',brand:'Example Brand',object_path:`${id}/${fileId}.pdf`,original_name:'fictional.pdf',file_size:20}
+const catalog=RESOURCE_CATEGORIES.map((name,i)=>({id:String(i),category_key:name,brand_key:'',name,sort_order:i,revision:1,uses_manufacturers:name==='Equipment Manuals'})).concat(['Example Brand','Coleman Hanna','Siemens'].map((name,i)=>({id:'m'+i,category_key:'Equipment Manuals',brand_key:name,name,sort_order:i,revision:1})))
+
 test('PDF validation accepts a 28 MB Playbook and exact limit; rejects oversize, empty and disguised files',async()=>{
  const large=Object.assign(new Blob(['%PDF-1.7\n',new Uint8Array(28000000-9)],{type:'application/pdf'}),{name:'playbook.pdf'})
  assert.equal((await validatePdf(large)).size,28000000)
@@ -27,9 +30,9 @@ test('manufacturer groups and title/category/brand search preserve source record
  assert.equal(filterResources(rows,{query:'handbook'})[0].id,'c')
  assert.equal(filterResources(rows,{query:'Example manual',brand:'Coleman Hanna'})[0].id,'a')
  assert.equal(JSON.stringify(rows),before)
- assert.throws(()=>validateResourceMetadata({...row,brand:''}),/manufacturer/)
- assert.throws(()=>validateResourceMetadata({...row,category:'Training'}),/category/)
- assert.throws(()=>validateResourceMetadata({...row,title:' '}),/title/)
+ assert.throws(()=>validateResourceMetadata({...row,brand:''},catalog),/manufacturer/)
+ assert.throws(()=>validateResourceMetadata({...row,category:'Training'},catalog),/category/)
+ assert.throws(()=>validateResourceMetadata({...row,title:' '},catalog),/title/)
  assert.equal(RESOURCE_CATEGORIES.length,5)
 })
 test('active Admin/Store navigation and page access only; no Admin management for Store',async()=>{
@@ -38,13 +41,12 @@ test('active Admin/Store navigation and page access only; no Admin management fo
   assert.equal(allowed,status.is_active&&!status.deleted_at&&role!=='area_manager')
   const nav=locationHelpHarness('components/NavBar',{useAuth:()=>({profile,signOut(){}}),useNavigate:()=>()=>{},useLocation:()=>({pathname:'/resources'}),useDarkModeCtx:()=>[false,()=>{}],useChecklistAccess:()=>false,resourceAccess,Link:()=>null,tmLogo:'',SettingsModal:()=>null,TargetsBell:()=>null,HelpPanel:()=>null})
   assert.equal(!!nav.find(n=>n.props?.to==='/resources'),allowed);nav.unmount()
-  const client={from(){return {select(){return this},order:async()=>({data:[row]})}}}
+  const client={from(table){return {select(){return this},order:async()=>({data:table==='resource_catalog'?catalog:[row]})}}}
   const page=locationHelpHarness('pages/Resources',{
-   useAuth:()=>({user:{id},profile}),resourceAccess,RESOURCE_CATEGORIES,filterResources,supabase:client,NavBar:()=>null,ResourceViewer:()=>null,
+   ...folderHelpers,ResourceCatalogEditor:()=>null,useAuth:()=>({user:{id},profile}),resourceAccess,RESOURCE_CATEGORIES,filterResources,supabase:client,NavBar:()=>null,ResourceViewer:()=>null,
   });await page.flush()
   assert.equal(!!page.find(n=>n.type==='input'&&n.props.multiple),allowed&&role==='admin')
-  assert.equal(!!page.find(n=>n.type==='button'&&n.props.children==='Edit metadata'),allowed&&role==='admin')
-  assert.equal(!!page.find(n=>n.type==='button'&&n.props.children==='Open / Download PDF'),allowed)
+  assert.equal(!!page.find(n=>n.type==='button'&&n.props.children==='Open / Download PDF'),false)
   page.unmount()
  }
 })
@@ -118,8 +120,8 @@ test('installed TUS SDK resumes HEAD offset and PATCHes remaining bytes using fr
 test('multiple-file Admin upload validates all files first and publishes each successful PDF once',async()=>{
  const calls=[],profile={role:'admin',is_active:true,deleted_at:null},files=[pdf(),pdf('%PDF-another','second.pdf')]
  const h=locationHelpHarness('pages/Resources',{
-  useAuth:()=>({user:{id},profile}),resourceAccess,RESOURCE_CATEGORIES,filterResources,validateResourceMetadata,validatePdf,
-  supabase:{from(){return {select(){return this},order:async()=>({data:[]})}}},supabasePublicKey:'fictional-key',NavBar:()=>null,ResourceViewer:()=>null,AbortController,
+  ...folderHelpers,ResourceCatalogEditor:()=>null,useAuth:()=>({user:{id},profile}),resourceAccess,RESOURCE_CATEGORIES,filterResources,validateResourceMetadata,validatePdf,
+  supabase:{from(table){return {select(){return this},order:async()=>({data:table==='resource_catalog'?catalog:[]})}}},supabasePublicKey:'fictional-key',NavBar:()=>null,ResourceViewer:()=>null,AbortController,
   resourceAction:async(client,action,record,data)=>{calls.push(action);return action==='prepare'?{...row,pending_upload:{...data,path:row.object_path}}:{...row,cleanup_path:null}},uploadResource:async()=>{calls.push('upload')},
  })
  await h.flush()

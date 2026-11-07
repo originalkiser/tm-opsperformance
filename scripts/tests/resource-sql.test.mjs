@@ -13,7 +13,7 @@ async function root(db,sql,args=[]){await db.exec('reset role');try{return (awai
 async function rpc(db,action,row,data={}){return (await db.query('select public.manage_resource($1,$2,$3,$4::jsonb) d',[action,row?.id||null,row?.revision??null,JSON.stringify(data)])).rows[0].d}
 async function object(db,row,metadata){return db.query('insert into storage.objects(bucket_id,name,metadata) values($1,$2,$3::jsonb)',['resource-pdfs',row.pending_upload.path,JSON.stringify(metadata||{mimetype:'application/pdf',size:row.pending_upload.size})])}
 async function published(db,data=info){const row=await rpc(db,'prepare',null,data);await object(db,row);return rpc(db,'publish',row)}
-async function setup(applyCorrection=true){
+async function setup(applyCorrection=true,applyCatalog=false){
  const db=new PGlite()
  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema storage;
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
@@ -36,6 +36,7 @@ async function setup(applyCorrection=true){
  for(const file of ['20261105173034_manager_checklists_pilot.sql','20261105212313_checklist_discard_draft.sql'])await db.exec(readFileSync(new URL('../../app/supabase/migrations/'+file,import.meta.url),'utf8'))
  const before=await db.query("select policyname,qual,with_check from pg_policies where schemaname='storage' order by policyname")
  await db.exec(migration);if(applyCorrection)await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261106233818_resource_upload_finalization_guard.sql',import.meta.url),'utf8'));await actor(db)
+ if(applyCatalog)await installCatalog(db)
  return {db,before:before.rows}
 }
 test('private PDF bucket, grants, limits, existing checklist policies/triggers and operational data preserved',async()=>{
@@ -170,5 +171,100 @@ test('finalization rejects non-Admin owners, missing owners, stale reservations 
   await root(db,'update public.user_profiles set is_active=false where id=$1',[admin])
   await actor(db,'','service_role');await assert.rejects(insert(admin,pending.pending_upload.path),/no longer authorized/)
   assert.equal((await db.query("select count(*)::int n from storage.objects where bucket_id='resource-pdfs'")).rows[0].n,0)
+ }finally{await db.close()}
+})
+
+const catalogMigration=readFileSync(new URL('../../app/supabase/migrations/20261107053107_resource_catalog.sql',import.meta.url),'utf8')
+async function installCatalog(db){await db.exec('reset role');await db.exec(catalogMigration);await actor(db)}
+const catalogRows=async db=>(await db.query('select * from public.resource_catalog order by sort_order,id')).rows
+const expectedCatalog=async db=>(await db.query('select id,revision from public.resource_catalog order by id')).rows
+async function manageCatalog(db,action,folder,data={},expected){return db.query('select public.manage_resource_catalog($1,$2::jsonb,$3,$4::jsonb)',[action,JSON.stringify(expected||await expectedCatalog(db)),folder?.id||null,JSON.stringify(data)])}
+test('catalog backfill preserves every document field, pending upload, Storage path and policy',async()=>{
+ const {db}=await setup();try{
+  await published(db);await rpc(db,'prepare',null,{...info,title:'Pending'})
+  const beforeDocs=(await db.query('select * from public.resource_documents order by id')).rows
+  const beforeObjects=await root(db,'select * from storage.objects order by id')
+  const beforePolicies=await root(db,"select * from pg_policies where schemaname='storage' order by policyname")
+  await installCatalog(db)
+  assert.deepEqual((await db.query('select * from public.resource_documents order by id')).rows,beforeDocs)
+  assert.deepEqual(await root(db,'select * from storage.objects order by id'),beforeObjects)
+  assert.deepEqual(await root(db,"select * from pg_policies where schemaname='storage' order by policyname"),beforePolicies)
+  assert.equal((await catalogRows(db)).length,6)
+ }finally{await db.close()}
+})
+test('catalog rename, ordering, duplicate rejection and stale Admin plans preserve document associations',async()=>{
+ const {db}=await setup();try{
+  const live=await published(db);await installCatalog(db)
+  let folders=await catalogRows(db),category=folders.find(c=>c.category_key===info.category&&!c.brand_key),brand=folders.find(c=>c.brand_key===info.brand)
+  const stale=await expectedCatalog(db)
+  await manageCatalog(db,'rename',category,{name:'Renamed Equipment'})
+  await assert.rejects(manageCatalog(db,'rename',brand,{name:'Stale'},stale),/Catalog changed/)
+  await manageCatalog(db,'rename',brand,{name:'Renamed Brand'})
+  assert.deepEqual((await db.query('select to_jsonb(d) value from public.resource_documents d where id=$1',[live.id])).rows[0].value,live)
+  await assert.rejects(manageCatalog(db,'add_category',null,{name:' employee handbook '}),/unique/)
+  await assert.rejects(manageCatalog(db,'add_manufacturer',category,{name:'renamed brand'}),/unique/)
+  await manageCatalog(db,'move',category,{direction:-1})
+  assert.equal((await catalogRows(db)).find(c=>c.id===category.id).sort_order,0)
+  await manageCatalog(db,'add_manufacturer',category,{name:'Second Brand'})
+  const second=(await catalogRows(db)).find(c=>c.name==='Second Brand')
+  await manageCatalog(db,'move',second,{direction:-1})
+  assert.equal((await catalogRows(db)).find(c=>c.id===second.id).sort_order,brand.sort_order)
+  const fresh=await rpc(db,'prepare',null,info);await object(db,fresh);const complete=await rpc(db,'publish',fresh)
+  assert.ok(complete.object_path)
+  await actor(db,store);assert.equal((await catalogRows(db)).length,7)
+  assert.equal((await db.query('select id from public.resource_documents')).rows.length,2)
+ }finally{await db.close()}
+})
+test('catalog blocks referenced category/manufacturer deletion including pending and cleanup, allows reassignment',async()=>{
+ const {db}=await setup();try{
+  const live=await published(db),pending=await rpc(db,'prepare',null,{...info,title:'Pending'})
+  await installCatalog(db)
+  const folders=await catalogRows(db),category=folders.find(c=>c.category_key===info.category&&!c.brand_key),brand=folders.find(c=>c.brand_key===info.brand)
+  for(const c of [category,brand])await assert.rejects(manageCatalog(db,'delete',c),/Reassign/)
+  await rpc(db,'edit',live,{title:live.title,category:'Employee Handbook',brand:''})
+  await assert.rejects(manageCatalog(db,'delete',brand),/Reassign/)
+  const canceled=await rpc(db,'cancel',pending)
+  await assert.rejects(manageCatalog(db,'delete',category),/Reassign/)
+  await rpc(db,'finish_cleanup',canceled)
+  await manageCatalog(db,'delete',brand);await manageCatalog(db,'delete',category)
+  assert.equal((await db.query('select object_path from public.resource_documents where id=$1',[live.id])).rows[0].object_path,live.object_path)
+  await manageCatalog(db,'add_category',null,{name:'New folder'})
+  const added=(await catalogRows(db)).find(c=>c.name==='New folder')
+  await rpc(db,'prepare',null,{...info,category:added.category_key,brand:''})
+  await assert.rejects(manageCatalog(db,'delete',added),/Reassign/)
+ }finally{await db.close()}
+})
+test('catalog management is active Admin only, Store read-only, invalid folder associations rejected',async()=>{
+ const {db}=await setup(true,true);try{
+  const expected=await expectedCatalog(db)
+  await assert.rejects(db.query("insert into public.resource_catalog(category_key,name) values('x','x')"),/permission/)
+  for(const id of [store,inactive,deleted,manager,inactiveAdmin]){
+   await actor(db,id)
+   await assert.rejects(manageCatalog(db,'add_category',null,{name:'Forbidden'},expected),/Admin/)
+   assert.equal((await catalogRows(db)).length,id===store?5:0)
+  }
+  await actor(db,'','anon');await assert.rejects(db.query('select * from public.resource_catalog'),/permission/)
+  await actor(db,admin)
+  await assert.rejects(rpc(db,'prepare',null,{...info,brand:''}),/manufacturer/)
+  await assert.rejects(rpc(db,'prepare',null,{...info,brand:'Unknown'}),/foreign key/)
+  await assert.rejects(rpc(db,'prepare',null,{...info,category:'Employee Handbook'}),/does not use/)
+  assert.equal((await db.query('select count(*)::int n from public.resource_documents')).rows[0].n,0)
+ }finally{await db.close()}
+})
+test('catalog references preserve replacement, authenticated Storage reads and exact-path cleanup',async()=>{
+ const {db}=await setup();try{
+  const original=await published(db);await installCatalog(db)
+  const pending=await rpc(db,'prepare',original,{...info,filename:'replacement.pdf'})
+  await actor(db,store)
+  assert.deepEqual((await db.query("select name from storage.objects where bucket_id='resource-pdfs'")).rows,[{name:original.object_path}])
+  await actor(db,admin);await object(db,pending);const replaced=await rpc(db,'publish',pending)
+  await root(db,'delete from storage.objects where name=$1',[original.object_path])
+  const clean=await rpc(db,'finish_cleanup',replaced)
+  await actor(db,store)
+  assert.deepEqual((await db.query("select name from storage.objects where bucket_id='resource-pdfs'")).rows,[{name:replaced.object_path}])
+  await actor(db,admin);const removed=await rpc(db,'remove',clean)
+  await assert.rejects(manageCatalog(db,'delete',(await catalogRows(db)).find(c=>c.brand_key===info.brand)),/Reassign/)
+  await root(db,'delete from storage.objects where name=$1',[replaced.object_path]);await rpc(db,'finish_cleanup',removed)
+  assert.equal((await db.query('select count(*)::int n from public.resource_documents')).rows[0].n,0)
  }finally{await db.close()}
 })
