@@ -19,7 +19,8 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",
     "recharts": "^3.8.1",
-    "saxes": "5.0.1"
+    "saxes": "5.0.1",
+    "tus-js-client": "4.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

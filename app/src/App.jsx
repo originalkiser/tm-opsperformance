@@ -12,6 +12,7 @@ import Insights from './pages/Insights'
 import Reports from './pages/Reports'
 import AmEntry from './pages/AmEntry'
 import ManagerChecklists from './pages/ManagerChecklists'
+import Resources from './pages/Resources'
 import UpdateBanner from './components/UpdateBanner'
 import DailyLogSaveNotice from './components/DailyLogSaveNotice'
 import TargetsBanner from './components/TargetsBanner'
@@ -82,6 +83,7 @@ export default function App() {
             />
             <Route path="/employees" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
             <Route path="/checklists" element={<ProtectedRoute><ManagerChecklists /></ProtectedRoute>} />
+            <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </HashRouter>
