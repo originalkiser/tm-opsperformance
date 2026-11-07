@@ -7,6 +7,7 @@ import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import SettingsModal from './SettingsModal'
 import TargetsBell from './TargetsBell'
 import { useChecklistAccess } from '../hooks/useChecklistAccess'
+import { resourceAccess } from '../utils/resourceLibrary'
 
 function CogIcon() {
   return (
@@ -102,6 +103,7 @@ export default function NavBar() {
           )}
 
           {checklistAccess && <Link to="/checklists" className={navClass('/checklists')} aria-current={currentPage('/checklists')}>Manager Checklists</Link>}
+          {resourceAccess(profile) && <Link to="/resources" className={navClass('/resources')} aria-current={currentPage('/resources')}>Resources</Link>}
 
           {/* AM Entry — admins/area managers only */}
           {isManager && (

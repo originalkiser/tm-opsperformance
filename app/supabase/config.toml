@@ -14,3 +14,7 @@ verify_jwt = false
 # Explicit auth.getUser and caller-JWT RPC authorization precede all evidence removal.
 [functions.discard-checklist-draft]
 verify_jwt = false
+
+# Explicit getUser + caller-JWT active Admin RPC precede exact-path resource cleanup.
+[functions.manage-resource-files]
+verify_jwt = false

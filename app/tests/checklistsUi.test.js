@@ -5,6 +5,7 @@ import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 import { checklistTemplates } from '../src/utils/checklistTemplates.js'
 import { validateChecklist, validateEvidence, checklistTimestamp, checklistPeriod } from '../src/utils/checklistRules.js'
 import { downloadChecklistEvidence, checklistUploadRejection } from '../src/utils/checklistEvidence.js'
+import { resourceAccess } from '../src/utils/resourceLibrary.js'
 const template=checklistTemplates.find(t=>t.key==='midday')
 const actor='00000000-0000-0000-0000-000000000002'
 function form({submitted=false,other=false,fail=false,slow=false,cached=null,cancelNavigation=false,templateData=template,uploadFail=false,attachFail=false,evidenceFiles=[],denied=false,slowEvidence=false,discardFail=false,slowDiscard=false,pending=false,admin=false,slowUpload=false,uploadError=null,saveError=null,attachError=null,liveStatus='draft',statusReadFail=false}={}) {
@@ -97,7 +98,7 @@ test('nonpilot navigation hidden; pilot/Admin visible using access decision',()=
  for(const allowed of [false,true]){
   const h=locationHelpHarness('components/NavBar',{
    useAuth:()=>({profile:{role:'store'},signOut(){}}),useNavigate:()=>()=>{},useLocation:()=>({pathname:'/'}),
-   useDarkModeCtx:()=>[false,()=>{}],useChecklistAccess:()=>allowed,Link:()=>null,tmLogo:'',SettingsModal:()=>null,TargetsBell:()=>null,HelpPanel:()=>null,
+   useDarkModeCtx:()=>[false,()=>{}],useChecklistAccess:()=>allowed,resourceAccess,Link:()=>null,tmLogo:'',SettingsModal:()=>null,TargetsBell:()=>null,HelpPanel:()=>null,
   })
   assert.equal(!!h.find(n=>n.props?.to==='/checklists'),allowed);h.unmount()
  }
