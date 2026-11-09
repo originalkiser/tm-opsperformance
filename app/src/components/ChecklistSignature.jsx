@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 
-export default function ChecklistSignature({ disabled, onSave, onDirty }) {
+export default function ChecklistSignature({ disabled, onSave, onDirty, label = 'Manager handwritten signature' }) {
   const canvas = useRef(null), stroke = useRef(null), distance = useRef(0)
   const [drawn, setDrawn] = useState(false)
   function point(event) {
@@ -26,7 +26,7 @@ export default function ChecklistSignature({ disabled, onSave, onDirty }) {
   }
   return <div className="space-y-2">
     <p>Draw your signature with your finger or stylus, then save it.</p>
-    <canvas ref={canvas} width="900" height="260" aria-label="Manager handwritten signature" className="w-full max-w-2xl bg-white border-2 border-slate-500 rounded touch-none"
+    <canvas ref={canvas} width="900" height="260" aria-label={label} className="w-full max-w-2xl bg-white border-2 border-slate-500 rounded touch-none"
       onPointerDown={start} onPointerMove={move} onPointerUp={() => { stroke.current = null }} onPointerCancel={() => { stroke.current = null }} />
     <button type="button" className="min-h-12 px-4 border rounded mr-3" disabled={disabled} onClick={clear}>Clear drawing</button>
     <button type="button" className="min-h-12 px-4 border rounded" disabled={disabled || !drawn} onClick={() => canvas.current.toBlob(async blob => {

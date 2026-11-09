@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { checklistPeriod, completionStatus, localChecklistDate, checklistTimestamp } from '../utils/checklistRules'
 
-const displayOrder = ['opening', 'midday', 'closing', 'weekly']
+const displayOrder = ['opening', 'midday', 'closing', 'weekly', 'weekly_pm']
 
 export default function ManagerChecklists() {
   const { user, profile, locations } = useAuth()

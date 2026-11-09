@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 import { checklistTemplates } from '../src/utils/checklistTemplates.js'
-import { validateChecklist, validateEvidence, checklistTimestamp, checklistPeriod } from '../src/utils/checklistRules.js'
+import { validateChecklist, validateEvidence, checklistTimestamp, checklistPeriod, isChecklistItemActive } from '../src/utils/checklistRules.js'
 import { downloadChecklistEvidence, checklistUploadRejection } from '../src/utils/checklistEvidence.js'
 import { resourceAccess } from '../src/utils/resourceLibrary.js'
 const template=checklistTemplates.find(t=>t.key==='midday')
@@ -23,7 +23,7 @@ function form({submitted=false,other=false,fail=false,slow=false,cached=null,can
   storage:{from(){return {async upload(path,file,options){calls.push({name:'upload',path,file,options});if(slowUpload)await new Promise(resolve=>{finishUpload=resolve});return uploadError?{error:uploadError}:uploadFail?{error:{message:'Upload interrupted'}}:{data:{path}}},async download(path,options,parameters){calls.push({name:'download',path,options,parameters});if(slowEvidence)await new Promise(resolve=>{resolveEvidence=resolve});return evidenceAllowed?{data:new Blob(['fictional-image'],{type:'image/png'})}:{error:{message:'Access revoked'}}}}}},
  }
  const h=locationHelpHarness('components/ChecklistForm',{
-  supabase:client,validateChecklist,validateEvidence,checklistTimestamp,downloadChecklistEvidence,checklistUploadRejection,URL:{createObjectURL:()=>{const url=`blob:local-${urls.length}`;urls.push(url);return url},revokeObjectURL:url=>revoked.push(url)},AbortController,crypto:{randomUUID:()=> '00000000-0000-0000-0000-000000000100'},ChecklistSignature:()=>null,
+  supabase:client,isChecklistItemActive,validateChecklist,validateEvidence,checklistTimestamp,downloadChecklistEvidence,checklistUploadRejection,URL:{createObjectURL:()=>{const url=`blob:local-${urls.length}`;urls.push(url);return url},revokeObjectURL:url=>revoked.push(url)},AbortController,crypto:{randomUUID:()=> '00000000-0000-0000-0000-000000000100'},ChecklistSignature:()=>null,
   sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
   window:browser,
   document:{addEventListener(){},removeEventListener(){}},
@@ -352,4 +352,73 @@ test('Admin management keeps template editing and makes no pilot/user grant quer
  assert.equal(h.all(n=>n.type==='button').length,4)
  button(h,'Mid-Day Checklist').props.onClick();h.render()
  assert.ok(button(h,'Save template'));h.unmount()
+})
+
+const { weeklyPmTemplate: pm } = await import('../src/utils/weeklyPmTemplate.js')
+const pmClean = () => Object.fromEntries(pm.definition.filter(i=>!i.condition).map(i=>[i.id,{value:i.options.find(v=>!i.failure_values.includes(v))}]))
+const textContent = node => typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(textContent).join('') : node?.props ? textContent(node.props.children) : ''
+test('PM mobile form shows 62 source-numbered main items, three signature controls and no required photos',async()=>{
+ const h=form({templateData:pm});await h.flush()
+ assert.equal(h.all(n=>n.type==='fieldset').length,62)
+ assert.equal(h.all(n=>typeof n.props?.onDirty==='function').length,3)
+ assert.equal(h.all(n=>n.type==='input'&&n.props.type==='file').length,0)
+ assert.equal(h.all(n=>n.type==='h3').length,8)
+ const legends=h.all(n=>n.type==='legend').map(textContent)
+ assert.ok(legends.some(s=>s.startsWith('14. Pit/Trench')))
+ assert.ok(legends.some(s=>s.startsWith('26. Do the blowers')))
+ assert.equal(legends.some(s=>s.startsWith('25.')),false)
+ assert.ok(legends.some(s=>s.includes('Check pump levels! If the level is low add')))
+ assert.ok(h.all(n=>n.type==='p').some(n=>textContent(n).includes('reach out to your AM')))
+ assert.ok(button(h,'Save Draft'));assert.ok(button(h,'Discard Draft'))
+ h.unmount()
+})
+test('PM UI displays each conditional question only for the original trigger; inactive answers survive draft saves',async()=>{
+ const h=form({templateData:pm});await h.flush()
+ for(const follow of pm.definition.filter(i=>i.condition)) {
+  h.find(n=>n.type==='input'&&n.props.name===follow.condition.item_id&&n.props.value===follow.condition.value).props.onChange();h.render()
+  const control=follow.type==='text'?h.find(n=>n.props?.['aria-label']===`Written response ${follow.id}`):h.find(n=>n.type==='input'&&n.props.name===follow.id&&n.props.value==='Completed')
+  assert.ok(control)
+  control.props.onChange(follow.type==='text'?{target:{value:'Fictional follow-up details'}}:undefined)
+  h.find(n=>n.type==='input'&&n.props.name===follow.condition.item_id&&n.props.value!==follow.condition.value).props.onChange();h.render()
+  assert.equal(h.find(n=>n.props?.['aria-label']===`Written response ${follow.id}`),undefined)
+  assert.equal(h.find(n=>n.type==='input'&&n.props.name===follow.id),undefined)
+ }
+ await button(h,'Save Draft').props.onClick();await h.flush()
+ assert.equal(Object.keys(h.saved[0].answers).length,36)
+ h.unmount()
+})
+test('PM signature saves bind the two item IDs and final signature separately; all dirty pads protect Submit',async()=>{
+ const h=form({templateData:pm});await h.flush()
+ let pads=h.all(n=>typeof n.props?.onDirty==='function')
+ pads[0].props.onDirty(true);pads[1].props.onDirty(true);h.render()
+ pads=h.all(n=>typeof n.props?.onDirty==='function');pads[1].props.onDirty(false);h.render()
+ assert.equal(button(h,'Submit').props.disabled,true)
+ pads[0].props.onDirty(false);h.render();assert.equal(button(h,'Submit').props.disabled,false)
+ for(const pad of h.all(n=>typeof n.props?.onDirty==='function')) await pad.props.onSave(new Blob(['fictional-signature'],{type:'image/png'}))
+ await h.flush()
+ assert.deepEqual(h.calls.filter(c=>c.name==='attach_checklist_evidence').map(c=>[c.args.p_kind,c.args.p_item]),[['signature','weekly-pm-tunnel-27'],['signature','weekly-pm-booster-1'],['signature',null]])
+ h.unmount()
+})
+test('PM restored draft can submit with inactive branches unanswered and three signatures; immutable review shows them',async()=>{
+ const files=[{id:'a',kind:'signature',item_id:'weekly-pm-tunnel-27'},{id:'b',kind:'signature',item_id:'weekly-pm-booster-1'},{id:'c',kind:'signature',item_id:null}]
+ const h=form({templateData:pm,cached:{answers:pmClean(),name:'Fictional Manager'},evidenceFiles:files});await h.flush()
+ button(h,'Restore unsaved answers').props.onClick();h.render()
+ await button(h,'Submit').props.onClick();await h.flush()
+ assert.equal(h.calls.find(c=>c.name==='save_checklist').args.p_submit,true)
+ assert.equal(button(h,'Save Draft'),undefined);assert.equal(button(h,'Discard Draft'),undefined)
+ const links=h.all(n=>Array.isArray(n.props?.files)&&n.props.files.some(f=>f.kind==='signature'))
+ assert.deepEqual(links.flatMap(n=>n.props.files.map(f=>f.id)),['a','b','c'])
+ assert.equal(h.all(n=>typeof n.props?.onDirty==='function').length,0)
+ const containsSignatureLink = node => Array.isArray(node) ? node.some(containsSignatureLink) : !!node?.props && (node.props.files?.some(f=>f.kind==='signature') || containsSignatureLink(node.props.children))
+ assert.ok(h.all(n=>n.type==='fieldset').every(n=>!containsSignatureLink(n)))
+ h.unmount()
+})
+test('PM remains fifth after Weekly Manager Administrative regardless of database order',async()=>{
+ const client={from(name){return {select(){return this},gte(){return this},lte(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?[pm,...checklistTemplates.slice().reverse()]:[]}).then(resolve)}}}}
+ const h=locationHelpHarness('pages/ManagerChecklists',{
+  useAuth:()=>({user:{id:actor},profile:{role:'store',is_active:true},locations:[{id:'site',timezone:'America/New_York'}]}),supabase:client,
+  checklistPeriod,completionStatus:()=> 'Available',localChecklistDate:()=> '2026-11-09',checklistTimestamp,
+  NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
+ })
+ await h.flush();assert.deepEqual(h.all(n=>n.type==='h2').map(n=>n.props.children),[...checklistTemplates,pm].map(t=>t.name));h.unmount()
 })
