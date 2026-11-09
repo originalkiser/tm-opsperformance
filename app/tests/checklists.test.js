@@ -43,7 +43,7 @@ test('single-selection and overflow explanations; Admin-configurable conditional
  assert.match(validateChecklist(items,answers,photos(midday),'Test Manager')['midday-1'],/photo/)
  assert.deepEqual(validateChecklist(items,answers,[...photos(midday),{kind:'photo',item_id:'midday-1'}],'Test Manager'),{})
 })
-test('Monday end-of-day in site time zone, DST, year boundary and leap day',()=>{
+test('site-local weekly periods, DST, calendar boundaries and availability without overdue status',()=>{
  const instant=new Date('2026-11-03T07:30:00Z')
  assert.equal(localChecklistDate('America/Los_Angeles',instant),'2026-11-02')
  assert.equal(localChecklistDate('America/New_York',instant),'2026-11-03')
@@ -52,9 +52,11 @@ test('Monday end-of-day in site time zone, DST, year boundary and leap day',()=>
  assert.equal(mondayOf('2028-02-29'),'2028-02-28');assert.equal(mondayOf('2027-01-01'),'2026-12-28')
  assert.throws(()=>mondayOf('2026-02-29'),/Invalid/);assert.throws(()=>localChecklistDate(null),/time zone/)
  assert.equal(checklistPeriod(weekly,'2028-03-01'),'2028-02-28')
- assert.equal(completionStatus(weekly,'2026-11-02',[],'2026-11-02'),'Not submitted')
- assert.equal(completionStatus(weekly,'2026-11-02',[],'2026-11-03'),'Missing')
- assert.equal(completionStatus(weekly,'2026-11-02',[{template_key:'weekly',period_date:'2026-11-02',status:'draft'}],'2026-11-03'),'Draft')
+ assert.equal(completionStatus(weekly,'2026-11-02',[],'2026-11-02'),'Available')
+ assert.equal(completionStatus(weekly,'2026-11-02',[],'2026-11-03'),'Available')
+ for(const [status,label] of [['draft','Draft'],['discarding','Discarding draft'],['submitted','Submitted']]) {
+  assert.equal(completionStatus(weekly,'2026-11-02',[{template_key:'weekly',period_date:'2026-11-02',status}]),label)
+ }
 })
 test('private image format and size limits',()=>{
  for(const type of ['image/jpeg','image/png','image/webp']) assert.doesNotThrow(()=>validateEvidence({type,size:1024}))

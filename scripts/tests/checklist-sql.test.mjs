@@ -399,3 +399,130 @@ test('legacy assigned pilot manager may discard only their own draft',async()=>{
   assert.equal((await root(db,'select count(*)::int n from public.checklist_submissions'))[0].n,0)
  }finally{await db.close()}
 })
+
+const companywideMigration = readFileSync(new URL('../../app/supabase/migrations/20261109172331_checklist_companywide_access.sql', import.meta.url), 'utf8')
+async function enableCompanywide(db) {
+ await db.exec('reset role')
+ await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261105212313_checklist_discard_draft.sql', import.meta.url), 'utf8'))
+ await db.exec(companywideMigration)
+ await actor(db,store)
+}
+test('companywide: all active assigned roles read four templates without grants; Store/legacy writes remain assigned',async()=>{
+ const {db,today}=await setup();try{
+  await enableCompanywide(db)
+  assert.equal((await root(db,"select has_function_privilege('anon','checklist_private.can_read_templates()','EXECUTE') allowed"))[0].allowed,false)
+  await root(db,'delete from public.checklist_pilot_access') // Fixture only: prove enrollment is unnecessary.
+  for(const id of [admin,store,other,outsider,manager]) {
+   await actor(db,id)
+   assert.equal((await db.query('select * from public.checklist_templates')).rows.length,4)
+  }
+  for(const id of [store,manager]) {
+   await actor(db,id)
+   assert.equal((await db.query('select checklist_private.can_access($1) allowed',[site])).rows[0].allowed,true)
+   await assert.rejects(db.query("select public.save_checklist('midday',$1,$2)",[away,today]),/Assigned checklist location/)
+  }
+  await actor(db,outsider)
+  const outside=(await db.query("select public.save_checklist('midday',$1,$2) s",[away,today])).rows[0].s
+  assert.equal(outside.is_pilot,false)
+  await actor(db,store)
+  assert.equal((await save(db,null,{},false,'',today)).is_pilot,false)
+  await actor(db,manager)
+  assert.equal((await save(db,null,{},false,'',today,'opening')).is_pilot,false)
+  await actor(db,admin)
+  assert.equal((await db.query('select * from public.checklist_submissions')).rows.length,3)
+  assert.equal((await db.query('select checklist_private.can_access($1) allowed',[away])).rows[0].allowed,true)
+  assert.equal((await save(db,null,{},false,'',today,'closing')).status,'draft')
+ }finally{await db.close()}
+})
+test('companywide: inactive/deleted/missing/anonymous accounts denied, including retained tokens and evidence',async()=>{
+ const {db,today}=await setup();try{
+  await enableCompanywide(db)
+  const row=await save(db,null,{},false,'',today),file=await evidence(db,row)
+  for(const id of [inactive,deleted,uuid(999),'']) {
+   await actor(db,id)
+   assert.equal((await db.query('select * from public.checklist_templates')).rows.length,0)
+   await assert.rejects(save(db,null,{},false,'',today,'opening'),/Assigned/)
+   assert.equal((await db.query("select * from storage.objects where bucket_id='manager-checklist-evidence'")).rows.length,0)
+  }
+  for(const change of ['is_active=false',"deleted_at=now()"]){
+   await root(db,`update public.user_profiles set ${change} where id in ('${store}','${admin}','${manager}')`)
+   for(const id of [store,admin,manager]) {
+    await actor(db,id)
+    assert.equal((await db.query('select * from public.checklist_templates')).rows.length,0)
+    await assert.rejects(save(db,row),/Assigned/)
+    assert.equal((await db.query('select * from public.checklist_attachments where id=$1',[file.id])).rows.length,0)
+   }
+   await root(db,`update public.user_profiles set is_active=true,deleted_at=null where id in ('${store}','${admin}','${manager}')`)
+  }
+  await root(db,`update public.user_profiles set location_id=null where id='${store}'`)
+  await root(db,`delete from public.manager_locations where manager_id='${manager}'`)
+  for(const id of [store,manager]) {
+   await actor(db,id)
+   assert.equal((await db.query('select * from public.checklist_templates')).rows.length,0)
+   await assert.rejects(save(db,row),/Assigned/)
+  }
+  await actor(db,'','anon');await assert.rejects(save(db,row),/permission denied/)
+ }finally{await db.close()}
+})
+test('companywide: own drafts recover, same-site colleagues cannot edit/read evidence; Admin review preserves immutability',async()=>{
+ const {db,today}=await setup();try{
+  await enableCompanywide(db)
+  let row=await save(db,null,{},false,'',today,'opening')
+  await assert.rejects(save(db,row,answers(row),true),/Photo required/)
+  const photoItem=row.template_snapshot.definition.find(i=>i.photo_required)
+  const photo=await evidence(db,row,photoItem.id,'photo')
+  await assert.rejects(save(db,row,answers(row),true),/Drawn signature/)
+  const signature=await evidence(db,row)
+  const failure={...answers(row),[photoItem.id]:{value:photoItem.failure_values[0]}}
+  await assert.rejects(save(db,row,failure,true),/Explanation required/)
+  for(const id of [other,outsider,manager]) {
+   await actor(db,id)
+   assert.equal((await db.query('select * from public.checklist_submissions')).rows.length,0)
+   assert.equal((await db.query("select * from storage.objects where bucket_id='manager-checklist-evidence'")).rows.length,0)
+   await assert.rejects(save(db,row),/owner|Assigned/)
+   await assert.rejects(evidence(db,row),/row-level security|unavailable for uploads/)
+  }
+  await actor(db,store)
+  row=await save(db,row,answers(row),false)
+  assert.deepEqual((await db.query('select answers from public.checklist_submissions where id=$1',[row.id])).rows[0].answers,answers(row))
+  assert.equal((await db.query('select * from public.checklist_attachments')).rows.length,2)
+  row=await save(db,row,answers(row),true)
+  for(const id of [store,admin]) {
+   await actor(db,id)
+   assert.equal((await db.query('select * from public.checklist_attachments')).rows.length,2)
+   assert.equal((await db.query("select * from storage.objects where name=any($1)",[[photo.object_path,signature.object_path]])).rows.length,2)
+   await assert.rejects(save(db,row),/immutable|owner/)
+   await assert.rejects(db.query('update public.checklist_submissions set is_pilot=true where id=$1',[row.id]),/permission denied/)
+   await assert.rejects(db.query('select public.begin_discard_checklist($1,$2)',[row.id,row.revision]),/cannot be discarded/)
+   await assert.rejects(evidence(db,row),/row-level security|unavailable for uploads/)
+   assert.equal((await db.query("delete from storage.objects where bucket_id='manager-checklist-evidence' returning *")).rows.length,0)
+   assert.equal((await db.query("update storage.objects set metadata='{}' where bucket_id='manager-checklist-evidence' returning *")).rows.length,0)
+  }
+ }finally{await db.close()}
+})
+test('companywide migration preserves historical pilot submissions, evidence, grants and audits; disables grant mutation only',async()=>{
+ const {db,today}=await setup();try{
+  let old=await save(db,null,{},false,'',today)
+  old=await save(db,old,await ready(db,old),true)
+  const snapshot=await root(db,"select row_to_json(s) s from public.checklist_submissions s")
+  const grants=await root(db,'select * from public.checklist_pilot_access'),audits=await root(db,'select * from public.edit_audit_log'),files=await root(db,'select * from public.checklist_attachments')
+  await enableCompanywide(db)
+  assert.deepEqual(await root(db,'select row_to_json(s) s from public.checklist_submissions s'),snapshot)
+  assert.equal(snapshot[0].s.is_pilot,true)
+  assert.deepEqual(await root(db,'select * from public.checklist_pilot_access'),grants)
+  assert.deepEqual(await root(db,'select * from public.edit_audit_log'),audits)
+  assert.deepEqual(await root(db,'select * from public.checklist_attachments'),files)
+  await actor(db,admin)
+  await assert.rejects(db.query("select public.configure_checklist_pilot('access',$1)",[JSON.stringify({...grants[0],is_active:false})]),/disabled/)
+  const template=(await db.query("select * from public.checklist_templates where key='midday'")).rows[0]
+  template.definition[0].text='Fictional updated question'
+  await db.query("select public.configure_checklist_pilot('template',$1)",[JSON.stringify(template)])
+  assert.equal((await db.query("select version from public.checklist_templates where key='midday'")).rows[0].version,2)
+  await actor(db,store)
+  await assert.rejects(db.query("select public.configure_checklist_pilot('template',$1)",[JSON.stringify(template)]),/Admin/)
+  assert.equal((await save(db,null,{},false,'',today,'opening')).is_pilot,false)
+  // Reading availability never creates rows or obligations at other locations/templates.
+  for(let i=0;i<3;i++)await db.query('select * from public.checklist_templates')
+  assert.equal((await root(db,'select count(*)::int n from public.checklist_submissions'))[0].n,2)
+ }finally{await db.close()}
+})

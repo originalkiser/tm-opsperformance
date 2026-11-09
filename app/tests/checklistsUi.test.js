@@ -31,13 +31,13 @@ function form({submitted=false,other=false,fail=false,slow=false,cached=null,can
  return {...h,calls,saved,storage,events,browser,moves,revoked,urls,revoke:()=>{evidenceAllowed=false},finishEvidence:()=>resolveEvidence?.(),finishDiscard:()=>finishDiscard?.(),finishUpload:()=>finishUpload?.(),unblock:()=>unblock?.()}
 }
 const button=(h,label)=>h.find(n=>n.type==='button'&&n.props.children===label)
-test('Admin and pilot managers see explicit checklist order regardless of returned template order',async()=>{
+test('Admin and assigned managers see explicit checklist order regardless of returned template order',async()=>{
  for(const role of ['admin','store']){
   const templates=['closing','weekly','midday','opening'].map(key=>checklistTemplates.find(t=>t.key===key))
   const before=JSON.stringify(templates)
   const client={from(name){return {select(){return this},gte(){return this},lte(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:name==='checklist_pilot_access'?[{location_id:'site',is_active:true,enabled_from:'2026-01-01'}]:[]}).then(resolve)}}}}
   const h=locationHelpHarness('pages/ManagerChecklists',{
-   useAuth:()=>({user:{id:actor},profile:{role},locations:[{id:'site',site_code:'1512',timezone:'America/New_York'}]}),supabase:client,
+   useAuth:()=>({user:{id:actor},profile:{role,is_active:true,deleted_at:null},locations:[{id:'site',site_code:'1512',timezone:'America/New_York'}]}),supabase:client,
    checklistPeriod,completionStatus:()=> 'Not submitted',localChecklistDate:()=> '2026-11-05',checklistTimestamp,
    NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
   })
@@ -94,7 +94,7 @@ test('single native photo picker appears only for required photo evidence',async
  assert.doesNotMatch(source,/capture="environment"/);assert.match(source,/upsert: false/)
  const h=form();await h.flush();assert.equal(h.all(n=>n.type==='input'&&n.props.type==='file').length,0);h.unmount()
 })
-test('nonpilot navigation hidden; pilot/Admin visible using access decision',()=>{
+test('navigation follows the active assigned-account access decision',()=>{
  for(const allowed of [false,true]){
   const h=locationHelpHarness('components/NavBar',{
    useAuth:()=>({profile:{role:'store'},signOut(){}}),useNavigate:()=>()=>{},useLocation:()=>({pathname:'/'}),
@@ -116,25 +116,17 @@ test('signature canvas captures actual pointer strokes; blank signature cannot s
  assert.equal(calls.length,1);assert.deepEqual(dirty,[true,false]);assert.equal(button(h,'Save signature').props.disabled,true);h.unmount()
 })
 
-test('actual navigation access hook checks active profiles, enabled dates, assigned sites, and denied reads',async()=>{
+test('navigation access uses active authenticated roles and existing assignments without pilot reads',()=>{
  const source=readFileSync(new URL('../src/hooks/useChecklistAccess.js',import.meta.url),'utf8').replace(/^import .*\n/gm,'').replace('export function','function')
- async function allowed(profile,data,error=null){
-  let state=[],effectRan=false
-  const hook=new Function('useEffect','useState','supabase','useAuth','localChecklistDate',source+'\nreturn useChecklistAccess')(
-   effect=>{if(!effectRan){effectRan=true;effect()}},()=>[state,value=>{state=value}],
-   {from(){return{select(){return this},eq(){return Promise.resolve({data,error})}}}},
-   ()=>({profile,user:{id:actor},locations:[{id:'site',timezone:'America/Los_Angeles'}]}),()=> '2026-11-05')
-  hook();await Promise.resolve();return hook()
+ function allowed(profile,locations=[{id:'site'}],user={id:actor}) {
+  return new Function('useAuth',source+'\nreturn useChecklistAccess()')(()=>({profile,locations,user}))
  }
  const active={role:'store',is_active:true,deleted_at:null}
- assert.equal(await allowed(active,[{location_id:'site',enabled_from:'2026-11-05'}]),true)
- assert.equal(await allowed(active,[]),false)
- assert.equal(await allowed(active,[{location_id:'other',enabled_from:'2026-11-01'}]),false)
- assert.equal(await allowed(active,[{location_id:'site',enabled_from:'2026-11-06'}]),false)
- assert.equal(await allowed({...active,is_active:false},[{location_id:'site',enabled_from:'2026-11-01'}]),false)
- assert.equal(await allowed({...active,deleted_at:'2026-01-01'},[{location_id:'site',enabled_from:'2026-11-01'}]),false)
- assert.equal(await allowed(active,null,{message:'denied'}),false)
- assert.equal(await allowed({...active,role:'admin'},[]),true)
+ for(const role of ['admin','store','area_manager']) assert.equal(allowed({...active,role}),true)
+ assert.equal(allowed(active,[]),false)
+ assert.equal(allowed({...active,role:'admin'},[]),true)
+ for(const profile of [{...active,is_active:false},{...active,deleted_at:'2026-01-01'},{...active,role:'unknown'},null]) assert.equal(allowed(profile),false)
+ assert.equal(allowed(active,undefined,null),false)
 })
 
 test('canceling browser Back preserves the draft and restores the prior history position',async()=>{
@@ -319,4 +311,45 @@ test('unknown Storage errors, still-editable drafts and failed state reads keep 
   assert.ok(button(h,'Save Draft'));assert.equal(h.calls.filter(c=>c.name==='upload').length,1)
   assert.equal(h.calls.filter(c=>c.name==='attach_checklist_evidence').length,0);h.unmount()
  }
+})
+
+test('companywide page shows availability without auto-created drafts or derived overdue rows; Admin reviews historical records',async()=>{
+ for(const role of ['admin','store','area_manager']) {
+  const calls=[],records=[{id:'historic',location_id:'site',template_key:'midday',period_date:'2026-11-02',status:'submitted',is_pilot:true,manager_name:'Fictional Manager',submitted_at:'2026-11-02T12:00:00Z',template_snapshot:{name:'Mid-Day Checklist',timezone:'America/New_York'}}]
+  const h=locationHelpHarness('pages/ManagerChecklists',{
+   useAuth:()=>({user:{id:actor},profile:{role,is_active:true},locations:[{id:'site',site_code:'Fictional Site',timezone:'America/New_York'}]}),
+   supabase:{from(name){calls.push(name);return {select(){return this},gte(){return this},lte(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:records}).then(resolve)}}},rpc(){throw new Error('Availability must not create drafts')}},
+   checklistPeriod,completionStatus:(t,d,rows)=>rows.some(r=>r.template_key===t.key)?'Submitted':'Available',localChecklistDate:()=> '2026-11-02',checklistTimestamp,
+   NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
+  })
+  await h.flush()
+  assert.equal(h.all(n=>n.type==='section').length,4)
+  assert.equal(calls.includes('checklist_pilot_access'),false)
+  assert.equal(h.all(n=>n.type==='li').length,role==='admin'?1:0)
+  assert.ok(h.find(n=>n.type==='button'&&n.props.children==='View submission'))
+  assert.equal(h.all(n=>n.type==='button'&&String(n.props.children).includes('pilot access')).length,0)
+  if(role==='admin') {
+   const review=h.find(n=>n.type==='button'&&Array.isArray(n.props.children)&&n.props.children[0]==='Review ')
+   await review.props.onClick();h.render()
+   assert.equal(h.find(n=>n.props?.initial?.id==='historic').props.initial.is_pilot,true)
+  }
+  h.unmount()
+ }
+})
+test('direct checklist page denies inactive, deleted, unknown and unauthenticated accounts without querying',async()=>{
+ for(const profile of [{role:'store',is_active:false},{role:'admin',is_active:true,deleted_at:'2026-11-01'},{role:'unknown',is_active:true},null]) {
+  const h=locationHelpHarness('pages/ManagerChecklists',{
+   useAuth:()=>({user:profile?{id:actor}:null,profile,locations:[]}),supabase:{from(){throw new Error('Denied account queried database')}},
+   localChecklistDate:()=>'',NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
+  })
+  await h.flush();assert.equal(h.find(n=>n.props?.role==='alert').props.children,'Active checklist account required.');h.unmount()
+ }
+})
+test('Admin management keeps template editing and makes no pilot/user grant queries',async()=>{
+ const h=locationHelpHarness('components/ChecklistAdmin',{supabase:{from(){throw new Error('Grant query must be removed')}}},{templates:checklistTemplates,reload(){}})
+ await h.flush()
+ assert.equal(h.all(n=>n.type==='select').length,0)
+ assert.equal(h.all(n=>n.type==='button').length,4)
+ button(h,'Mid-Day Checklist').props.onClick();h.render()
+ assert.ok(button(h,'Save template'));h.unmount()
 })

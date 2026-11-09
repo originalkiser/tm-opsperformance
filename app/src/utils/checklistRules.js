@@ -24,10 +24,10 @@ export function validateChecklist(items, answers, evidence = [], name = '') {
   if (!evidence.some(file => file.kind === 'signature')) errors._signature = 'Draw and save your signature.'
   return errors
 }
-export function completionStatus(template, date, submissions, today) {
+export function completionStatus(template, date, submissions) {
   const period = checklistPeriod(template, date)
   const record = submissions.find(row => row.template_key === template.key && row.period_date === period)
-  return record?.status === 'submitted' ? 'Submitted' : record ? 'Draft' : period < today ? 'Missing' : 'Not submitted'
+  return record?.status === 'submitted' ? 'Submitted' : record?.status === 'discarding' ? 'Discarding draft' : record ? 'Draft' : 'Available'
 }
 export function validateEvidence(file) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPEG, PNG or WebP image.')
