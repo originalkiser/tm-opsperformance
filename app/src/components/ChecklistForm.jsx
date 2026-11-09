@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import ChecklistSignature from './ChecklistSignature'
-import { validateChecklist, validateEvidence, checklistTimestamp } from '../utils/checklistRules'
+import { validateChecklist, validateEvidence, checklistTimestamp, isChecklistItemActive } from '../utils/checklistRules'
 import { downloadChecklistEvidence, checklistUploadRejection } from '../utils/checklistEvidence'
 
 export default function ChecklistForm({ initial, user, locationLabel, onClose, onSaved, admin = false }) {
@@ -10,7 +10,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   const recovery = useRef(cached())
   const [row, setRow] = useState(initial), [answers, setAnswers] = useState(initial.answers), [name, setName] = useState(initial.manager_name)
   const [evidence, setEvidence] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
-  const [errors, setErrors] = useState({}), [evidenceUrl, setEvidenceUrl] = useState(''), [signatureDirty, setSignatureDirty] = useState(false)
+  const [errors, setErrors] = useState({}), [evidenceUrl, setEvidenceUrl] = useState(''), [dirtySignatures, setDirtySignatures] = useState({})
   const [actorName, setActorName] = useState(''), [evidenceReady, setEvidenceReady] = useState(false)
   const working = useRef(false), discardRequested = useRef(false), unavailable = useRef(false)
   const preview = useRef(null), evidenceRequest = useRef(null), alive = useRef(true)
@@ -18,6 +18,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   const discarding = row.status === 'discarding' || discardRequested.current
   const readonly = unavailable.current || discarding || row.status === 'submitted' || row.created_by !== user.id
   const canDiscard = !unavailable.current && row.status !== 'submitted' && (row.created_by === user.id || admin)
+  const signatureDirty = Object.values(dirtySignatures).some(Boolean)
   const dirty = !readonly && (JSON.stringify(answers) !== JSON.stringify(row.answers) || name !== row.manager_name || signatureDirty)
   const items = row.template_snapshot.definition
   useEffect(() => {
@@ -150,6 +151,14 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
       </label>}
     </div>
   }
+  function signatureControl(item = null) {
+    const signatureKey = item?.id || '_final'
+    return <div className="space-y-2" aria-label={item ? `Required signature ${item.id}` : 'Final auditor signature'}>
+      <p className="font-semibold">{item ? 'Signature is required' : row.template_key === 'weekly_pm' ? 'Auditor Signature' : 'Manager signature'}</p>
+      <EvidenceLinks files={evidence.filter(file => file.kind === 'signature' && (file.item_id || null) === (item?.id || null)).slice(-1)} onOpen={openEvidence} />
+      {!readonly && <ChecklistSignature label={item ? `${item.section} Question ${item.number} handwritten signature` : row.template_key === 'weekly_pm' ? 'Auditor handwritten signature' : 'Manager handwritten signature'} disabled={busy} onDirty={value => setDirtySignatures(previous => ({ ...previous, [signatureKey]: value }))} onSave={blob => upload(blob, item?.id || null, 'signature')} />}
+    </div>
+  }
   function change(id, field, value) { setAnswers(previous => ({ ...previous, [id]: { ...previous[id], [field]: value } })); setErrors({}) }
   function close() {
     if (busy) return
@@ -166,7 +175,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
     {error && <p role="alert" className="text-red-600 dark:text-red-300">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {Object.keys(errors).length > 0 && <p role="alert">Complete the highlighted responses and evidence before submitting.</p>}
-    {items.map((item, index) => <div key={item.id}>
+    {items.map((item, index) => isChecklistItemActive(item, answers) && <div key={item.id}>
       {(index === 0 || items[index - 1].section !== item.section) && <div className="mt-4 border-b pb-2 space-y-2">
         <h3 className="text-lg font-bold">{item.section}</h3>
         {sectionPhoto?.section === item.section && <>
@@ -175,22 +184,24 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
         </>}
       </div>}
       <fieldset disabled={readonly || busy} className={`py-2 space-y-2 ${errors[item.id] ? 'border-2 border-red-500 p-3 rounded' : 'border-b'}`}>
-        <legend className="pt-2 font-semibold text-sm sm:text-base leading-snug">{index - items.findIndex(previous => previous.section === item.section) + 1}. {item.text} {item.critical && <span className="text-red-600 dark:text-red-300"> · Critical question</span>}</legend>
+        <legend className="pt-2 font-semibold text-sm sm:text-base leading-snug">{item.number ?? index - items.findIndex(previous => previous.section === item.section) + 1}. {item.text} {item.critical && <span className="text-red-600 dark:text-red-300"> · Critical question</span>}</legend>
         {item.instruction && item !== sectionPhoto && <p className="text-xs sm:text-sm">{item.instruction}</p>}
-        <div className="flex flex-wrap gap-2">{[...item.options, ...(item.na_allowed ? ['N/A'] : [])].map(option => <label key={option} className="min-h-11 flex items-center gap-2 border rounded px-3 text-sm cursor-pointer">
-          <input type="radio" name={item.id} value={option} checked={answers[item.id]?.value === option} onChange={() => change(item.id, 'value', option)} className="w-5 h-5 shrink-0" />{option}</label>)}</div>
+        {item.condition && <p className="text-xs sm:text-sm">Follow-up to Question {items.find(parent => parent.id === item.condition.item_id)?.number} when answered {item.condition.value}.</p>}
+        {item.type === 'text' ? <label className="block">Written response
+          <textarea aria-label={`Written response ${item.id}`} className="block w-full border rounded p-3 bg-transparent" maxLength={4000} value={answers[item.id]?.value || ''} onChange={event => change(item.id, 'value', event.target.value)} />
+        </label> : <div className="flex flex-wrap gap-2">{[...item.options, ...(item.na_allowed ? ['N/A'] : [])].map(option => <label key={option} className="min-h-11 flex items-center gap-2 border rounded px-3 text-sm cursor-pointer">
+          <input type="radio" name={item.id} value={option} checked={answers[item.id]?.value === option} onChange={() => change(item.id, 'value', option)} className="w-5 h-5 shrink-0" />{option}</label>)}</div>}
         {(item.explanation_required || item.failure_values.includes(answers[item.id]?.value) || answers[item.id]?.value === 'N/A' || answers[item.id]?.explanation) && <label className="block">Explanation / N/A reason
           <textarea className="block w-full border rounded p-3 bg-transparent" maxLength={4000} value={answers[item.id]?.explanation || ''} onChange={event => change(item.id, 'explanation', event.target.value)} /></label>}
         {(item !== sectionPhoto && (item.photo_required || (item.photo_on_failure && item.failure_values.includes(answers[item.id]?.value)))) && photoControl(item)}
         {errors[item.id] && <p role="alert" className="text-red-600 dark:text-red-300">{errors[item.id]}</p>}
       </fieldset>
-      {item !== sectionPhoto && <EvidenceLinks files={evidence.filter(file => file.item_id === item.id)} onOpen={openEvidence} />}
+      {item.signature_required && signatureControl(item)}
+      {item !== sectionPhoto && <EvidenceLinks files={evidence.filter(file => file.item_id === item.id && file.kind === 'photo')} onOpen={openEvidence} />}
     </div>)}
     <label className="block font-semibold">Manager full name<input aria-label="Manager full name" disabled={readonly || busy} value={name} maxLength={200} onChange={event => setName(event.target.value)} className="block w-full border rounded p-3 bg-transparent" /></label>
     {errors._name && <p role="alert">{errors._name}</p>}
-    <h3 className="font-bold">Manager signature</h3>
-    <EvidenceLinks files={evidence.filter(file => file.kind === 'signature').slice(-1)} onOpen={openEvidence} />
-    {!readonly && <ChecklistSignature disabled={busy} onDirty={setSignatureDirty} onSave={blob => upload(blob, null, 'signature')} />}
+    {signatureControl()}
     {errors._signature && <p role="alert">{errors._signature}</p>}
     {evidenceUrl && <figure aria-label="Private checklist evidence" className="border rounded p-3 space-y-2">
       <img src={evidenceUrl} alt="Saved checklist photo or manager signature" className="max-h-[70vh] max-w-full object-contain bg-white" />

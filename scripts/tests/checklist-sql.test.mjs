@@ -526,3 +526,146 @@ test('companywide migration preserves historical pilot submissions, evidence, gr
   assert.equal((await root(db,'select count(*)::int n from public.checklist_submissions'))[0].n,2)
  }finally{await db.close()}
 })
+
+// Weekly PM runs only against the fictional in-memory database above.
+const pmMigration=readFileSync(new URL('../../app/supabase/migrations/20261109193454_weekly_pm_checklist.sql',import.meta.url),'utf8')
+const { weeklyPmTemplate } = await import('../../app/src/utils/weeklyPmTemplate.js')
+async function enablePM(db) { await db.exec('reset role'); await db.exec(pmMigration); await actor(db,store) }
+async function pmSetup() { const fixture=await setup();await enableCompanywide(fixture.db);await enablePM(fixture.db);return fixture }
+async function pmDraft(db,today) {
+ const date=(await db.query("select date_trunc('week',$1::date)::date::text d",[today])).rows[0].d
+ return save(db,null,{},false,'',date,'weekly_pm')
+}
+function pmAnswers(row) {
+ return Object.fromEntries(row.template_snapshot.definition.filter(i=>!i.condition).map(i=>[i.id,{value:i.options.find(v=>!i.failure_values.includes(v))}]))
+}
+async function pmSignatures(db,row) {
+ for(const item of row.template_snapshot.definition.filter(i=>i.signature_required)) await evidence(db,row,item.id,'signature')
+ await evidence(db,row)
+}
+
+test('PM migration seeds the fifth template exactly; all earlier templates, historical records, evidence and audits are unchanged',async()=>{
+ const {db,today}=await setup();try{
+  let old=await save(db,null,{},false,'',today)
+  old=await save(db,old,await ready(db,old),true)
+  await enableCompanywide(db)
+  const pending=await save(db,null,{},false,'',today,'opening');await evidence(db,pending)
+  const snapshot=async()=>JSON.stringify(await root(db,`select jsonb_build_object(
+   'templates',(select jsonb_agg(t order by key) from public.checklist_templates t where key<>'weekly_pm'),
+   'submissions',(select jsonb_agg(s order by id) from public.checklist_submissions s),
+   'attachments',(select jsonb_agg(a order by id) from public.checklist_attachments a),
+   'objects',(select jsonb_agg(o order by id) from storage.objects o),
+   'audit',(select jsonb_agg(a order by id) from public.edit_audit_log a),
+   'grants',(select jsonb_agg(g order by id) from public.checklist_pilot_access g)
+  ) state`))
+  const before=await snapshot();await enablePM(db);assert.equal(await snapshot(),before)
+  const rows=await root(db,'select key,name,cadence,definition from public.checklist_templates order by key')
+  assert.equal(rows.length,5);assert.deepEqual(rows.find(t=>t.key==='weekly_pm'),weeklyPmTemplate)
+  assert.equal((await save(db,pending,{},false,'Fictional Saved Draft')).status,'draft')
+  for(const id of [store,admin]) { await actor(db,id);await assert.rejects(save(db,old),/immutable|owner/);await assert.rejects(freeze(db,old),/cannot be discarded/) }
+  assert.ok((await root(db,"select p.proname,has_function_privilege('anon',p.oid,'EXECUTE') anon,p.proconfig from pg_proc p where p.proname in ('save_checklist','attach_checklist_evidence')")).every(f=>!f.anon&&f.proconfig.includes('search_path=""')))
+ }finally{await db.close()}
+})
+test('PM Store and legacy assignments, active/deleted/anonymous denial, private evidence and Admin review',async()=>{
+ const {db,today}=await pmSetup();try{
+  await root(db,'delete from public.checklist_pilot_access')
+  for(const id of [store,other,manager]) {
+   await actor(db,id);assert.equal((await db.query('select * from public.checklist_templates')).rows.length,5)
+   await assert.rejects(db.query("select public.save_checklist('weekly_pm',$1,date_trunc('week',$2::date)::date)",[away,today]),/Assigned/)
+  }
+  await actor(db,store);let row=await pmDraft(db,today);await pmSignatures(db,row)
+  row=await save(db,row,pmAnswers(row),true,'Fictional Manager')
+  for(const id of [other,manager,outsider,inactive,deleted,'']) {
+   await actor(db,id);assert.equal((await db.query('select * from public.checklist_submissions')).rows.length,0)
+   assert.equal((await db.query('select * from public.checklist_attachments')).rows.length,0)
+   assert.equal((await db.query("select * from storage.objects where bucket_id='manager-checklist-evidence'")).rows.length,0)
+   await assert.rejects(save(db,row),/owner|Assigned/)
+  }
+  for(const id of [inactive,deleted,'']) { await actor(db,id);await assert.rejects(pmDraft(db,today),/Assigned/) }
+  await actor(db,'','anon');await assert.rejects(pmDraft(db,today),/permission denied/)
+  await actor(db,admin)
+  assert.equal((await db.query('select * from public.checklist_submissions')).rows.length,1)
+  assert.equal((await db.query('select * from public.checklist_attachments')).rows.length,3)
+  await assert.rejects(save(db,row),/owner/)
+  await assert.rejects(freeze(db,row),/cannot be discarded/)
+ }finally{await db.close()}
+})
+test('PM requires all three signatures with correct item IDs; no photos; weekly uniqueness and documented failure submission',async()=>{
+ const {db,today}=await pmSetup();try{
+  let row=await pmDraft(db,today),all=pmAnswers(row)
+  await assert.rejects(pmDraft(db,today),/unique/)
+  await assert.rejects(save(db,row,all,true),/Item signature/)
+  await evidence(db,row,'weekly-pm-tunnel-27','signature')
+  await assert.rejects(save(db,row,all,true),/Item signature/)
+  await evidence(db,row,'weekly-pm-booster-1','signature')
+  await assert.rejects(save(db,row,all,true),/Drawn signature/)
+  await evidence(db,row)
+  await assert.rejects(evidence(db,row,'weekly-pm-controls-1','signature'),/Invalid evidence item/)
+  await assert.rejects(evidence(db,row,'not-a-question','signature'),/Invalid evidence item/)
+  all['weekly-pm-conveyer-7']={value:'Failed'}
+  await assert.rejects(save(db,row,all,true),/Explanation required/)
+  all['weekly-pm-conveyer-7'].explanation='Fictional repair logged.'
+  await assert.rejects(save(db,row,all,true,''),/full name/)
+  assert.equal((await db.query("select * from public.checklist_attachments where kind='photo'")).rows.length,0)
+  row=await save(db,row,all,true,'Fictional Manager');assert.equal(row.status,'submitted')
+  await assert.rejects(pmDraft(db,today),/unique/)
+ }finally{await db.close()}
+})
+test('PM all 18 conditional branches enforce their actual trigger and allow inactive stale answers',async()=>{
+ const {db,today}=await pmSetup();try{
+  const row=await pmDraft(db,today),clean=pmAnswers(row)
+  await pmSignatures(db,row)
+  let current=row
+  for(const follow of row.template_snapshot.definition.filter(i=>i.condition)) {
+   const all={...clean,[follow.condition.item_id]:{value:follow.condition.value,explanation:'Fictional inspection issue.'}}
+   await assert.rejects(save(db,current,all,true),/Required response/)
+   if(follow.type==='text') {
+    for(const value of ['   ',42,'x'.repeat(4001)]) await assert.rejects(save(db,current,{...all,[follow.id]:{value}},true),/Required response|Invalid answer/)
+   }
+   all[follow.id]={value:follow.type==='text'?'Fictional issue details.':'Not Completed',explanation:'Fictional deferred repair.'}
+   current=await save(db,current,all,false)
+   assert.deepEqual(current.answers,all)
+   // Prove successful finalization then roll it back in this disposable DB only.
+   await db.exec('begin')
+   assert.equal((await save(db,current,all,true)).status,'submitted')
+   await db.exec('rollback')
+   const inactive={...clean,[follow.id]:{value:'Stale hidden answer'}}
+   await db.exec('begin');assert.equal((await save(db,current,inactive,true)).status,'submitted');await db.exec('rollback')
+  }
+ }finally{await db.close()}
+})
+test('PM draft recovery/discard uses existing freeze and cleanup; legacy PM owner and Admin retain draft controls',async()=>{
+ const {db,today}=await pmSetup();try{
+  await actor(db,manager);let row=await pmDraft(db,today)
+  row=await save(db,row,{'weekly-pm-prep-6':{value:'Not Completed'}},false,'')
+  await pmSignatures(db,row)
+  assert.deepEqual((await db.query('select answers from public.checklist_submissions where id=$1',[row.id])).rows[0].answers,row.answers)
+  await actor(db,other);await assert.rejects(freeze(db,row),/Authorized/)
+  await actor(db,manager);await freeze(db,row)
+  await assert.rejects(save(db,row),/immutable/)
+  await assert.rejects(evidence(db,row,'weekly-pm-tunnel-27','signature'),/row-level security|unavailable/)
+  await assert.rejects(finishDiscard(db,row),/cleanup/)
+  await root(db,"delete from storage.objects where bucket_id='manager-checklist-evidence' and starts_with(name,$1)",[row.id+'/'])
+  await actor(db,admin);await finishDiscard(db,row)
+  assert.equal((await root(db,'select count(*)::int n from public.checklist_attachments'))[0].n,0)
+  await actor(db,manager);assert.equal((await pmDraft(db,today)).status,'draft')
+ }finally{await db.close()}
+})
+test('PM Admin template editor preserves triggers, numbering and signatures; changed wording affects new snapshots only',async()=>{
+ const {db,today}=await pmSetup();try{
+  const row=await pmDraft(db,today)
+  await actor(db,admin)
+  const t=(await db.query("select * from public.checklist_templates where key='weekly_pm'")).rows[0]
+  for(const field of ['number','condition','signature_required','critical']) {
+   const changed=structuredClone(t);changed.definition.find(i=>i.condition)[field]=field==='condition'?{item_id:'weekly-pm-controls-1',value:'Yes'}:field==='critical'?true:false
+   await assert.rejects(db.query("select public.configure_checklist_pilot('template',$1)",[JSON.stringify(changed)]),/Invalid template/)
+  }
+  t.definition.find(i=>i.id==='weekly-pm-prep-6').text='Fictional clarified task'
+  await db.query("select public.configure_checklist_pilot('template',$1)",[JSON.stringify(t)])
+  assert.equal((await db.query('select template_snapshot from public.checklist_submissions where id=$1',[row.id])).rows[0].template_snapshot.definition.find(i=>i.id==='weekly-pm-prep-6').text,'Check pump levels! If the level is low add')
+  await actor(db,store);const previous=(await db.query('select ($1::date-7)::text d',[row.period_date])).rows[0].d
+  const fresh=await save(db,null,{},false,'',previous,'weekly_pm')
+  assert.equal(fresh.template_snapshot.version,2)
+  assert.equal(fresh.template_snapshot.definition.find(i=>i.id==='weekly-pm-prep-6').text,'Fictional clarified task')
+ }finally{await db.close()}
+})
