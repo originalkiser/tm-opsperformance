@@ -5,6 +5,7 @@ import ChecklistAdmin from '../components/ChecklistAdmin'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { checklistPeriod, completionStatus, localChecklistDate, checklistTimestamp } from '../utils/checklistRules'
+import '../styles/boldPages.css'
 
 const displayOrder = ['opening', 'midday', 'closing', 'weekly', 'weekly_pm']
 
@@ -54,14 +55,14 @@ export default function ManagerChecklists() {
     } catch (error) { setError(`${error.message} No automatic retry. Another manager may already have started this occurrence; ask Admin to review.`) } finally { setBusy(false) }
   }
   if (!authorized) return <div><NavBar /><p role="alert">Active checklist account required.</p></div>
-  return <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg text-slate-900 dark:text-tm-dark-text">
+  return <div className="tm-bold-page tm-checklists-page min-h-screen bg-tm-cream dark:bg-tm-dark-bg text-slate-900 dark:text-tm-dark-text">
     <NavBar />
     <main className="max-w-5xl mx-auto p-4 space-y-5">
-      <h1 className="text-2xl font-bold">Manager Checklists</h1>
-      <p className="border border-amber-500 rounded p-3">MonitorQA remains the official checklist system. Checklists are available, not mandatory. No automatic assignments or reminders. Online connection required.</p>
+      <header className="tm-checklists-title"><h1 className="text-2xl font-bold">Manager Checklists</h1></header>
+      <p className="tm-checklists-notice rounded p-3">MonitorQA remains the official checklist system. Checklists are available, not mandatory. No automatic assignments or reminders. Online connection required.</p>
       {error && <p role="alert" className="text-red-600 dark:text-red-300">{error}</p>}
       {form ? <ChecklistForm key={form.id} initial={form} user={user} admin={admin} locationLabel={locations.find(location => location.id === form.location_id)?.site_code} onSaved={saved => setRows(previous => [...previous.filter(row => row.id !== saved.id), saved])} onClose={() => { setForm(null); load() }} /> : <>
-        <div className="flex flex-wrap gap-4">
+        <div className="tm-checklists-filters flex flex-wrap gap-4">
           <label>Location<select aria-label="Checklist location" disabled={busy} value={site} onChange={e => setSite(e.target.value)} className="block p-3 border rounded bg-white dark:bg-tm-dark-surface">
             {!scope.length && <option value="">No assigned locations</option>}{scope.map(location => <option key={location.id} value={location.id}>{location.site_code}</option>)}</select></label>
           <label>Site-local checklist date<input aria-label="Checklist date" type="date" disabled={busy} value={date} max={today} onChange={e => setDate(e.target.value)} className="block p-3 border rounded bg-transparent" /></label>
@@ -69,17 +70,19 @@ export default function ManagerChecklists() {
         </div>
         {!today && <p role="alert">A valid site time zone is required before starting a checklist.</p>}
         {scope.length === 0 && !admin && <p>No assigned checklist locations are available.</p>}
-        {today && date && templates.map(template => {
+        {today && date && ['daily', 'weekly'].map(cadence => <div role="group" key={cadence} className="tm-checklist-group" data-cadence={cadence} aria-label={cadence === 'daily' ? 'Daily checklists' : 'Weekly checklists'}>
+          <div className="tm-checklist-group-heading font-brand font-bold">{cadence === 'daily' ? 'Daily checklists' : 'Weekly checklists'}</div>
+          <div className="tm-checklist-group-body">{templates.filter(template => template.cadence === cadence).map(template => {
           const period = checklistPeriod(template, date)
           const records = rows.filter(row => row.location_id === site)
           const record = records.find(row => row.template_key === template.key && row.period_date === period)
-          return scope.some(location => location.id === site) && <section key={template.key} className="border rounded p-4 bg-white dark:bg-tm-dark-surface flex flex-wrap gap-4 justify-between items-center">
-            <div><h2 className="font-bold">{template.name}</h2><p>{completionStatus(template, date, records)} · {period}{record?.is_pilot ? ' · Historical pilot' : ''}</p></div>
-            <button disabled={busy || date > today} className="min-h-12 px-5 rounded border" onClick={() => open(template, record)}>{record?.status === 'submitted' ? 'View submission' : record?.status === 'discarding' ? 'Finish discarding draft' : record ? 'Resume draft' : 'Start checklist'}</button>
+          return scope.some(location => location.id === site) && <section key={template.key} className="tm-checklist-card p-4 flex flex-wrap gap-4 justify-between items-center" data-status={record?.status || 'available'}>
+            <div className="tm-checklist-card-copy"><h2 className="font-bold">{template.name}</h2><p className="tm-checklist-card-meta"><span className="tm-checklist-status">{completionStatus(template, date, records)}</span> · {period}{record?.is_pilot ? ' · Historical pilot' : ''}</p></div>
+            <button disabled={busy || date > today} className="tm-checklist-action min-h-12 px-5 rounded border" onClick={() => open(template, record)}>{record?.status === 'submitted' ? 'View submission' : record?.status === 'discarding' ? 'Finish discarding draft' : record ? 'Resume draft' : 'Start checklist'}</button>
           </section>
-        })}
+        })}</div></div>)}
         {admin && <>
-          <h2 className="font-bold text-lg">Checklist submission review</h2>
+          <h2 className="tm-checklist-review-heading font-bold text-lg">Checklist submission review</h2>
           <p>Existing records from Monday through the selected site-local date. No missing or overdue obligations are generated.</p>
           <ul>{rows.map(record => <li key={record.id} className="border-b py-3">
             {locations.find(location => location.id === record.location_id)?.site_code} · {record.template_snapshot.name} · {record.period_date} · {record.status}{record.is_pilot ? ' · Historical pilot' : ''}

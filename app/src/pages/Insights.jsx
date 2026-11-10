@@ -14,6 +14,7 @@ import DailyTrendsSection from '../components/DailyTrendsSection'
 import DayOfWeekSection from '../components/DayOfWeekSection'
 import DowntimeSection from '../components/DowntimeSection'
 import AreaManagerOverview from '../components/AreaManagerOverview'
+import '../styles/boldPages.css'
 
 // ── Layout persistence ────────────────────────────────────────────────────────
 
@@ -75,21 +76,21 @@ function Section({ id, badge, badgeCls, subtitle, children, defaultOpen = true }
   }
 
   return (
-    <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border overflow-hidden">
+    <div data-section={id} className="tm-dashboard-section bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border overflow-hidden">
       <button
         onClick={toggle}
-        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-tm-dark-card transition-colors"
+        className="tm-dashboard-section-heading w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-tm-dark-card transition-colors"
       >
         <div className="flex flex-wrap items-center gap-3 text-left">
-          <span className={`text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest ${badgeCls}`}>{badge}</span>
-          <span className="text-sm text-gray-500 dark:text-tm-dark-muted">{subtitle}</span>
+          <span className={`tm-dashboard-section-badge text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest ${badgeCls}`}>{badge}</span>
+          <span className="tm-dashboard-section-subtitle text-sm text-gray-500 dark:text-tm-dark-muted">{subtitle}</span>
         </div>
-        <span className="text-gray-400 dark:text-tm-dark-muted">
+        <span className="tm-dashboard-section-chevron text-gray-400 dark:text-tm-dark-muted">
           <ChevronIcon open={open} />
         </span>
       </button>
       {open && (
-        <div className="px-5 pb-5 pt-1 border-t border-gray-100 dark:border-tm-dark-border">
+        <div className="tm-dashboard-section-body px-5 pb-5 pt-1 border-t border-gray-100 dark:border-tm-dark-border">
           {children}
         </div>
       )}
@@ -432,16 +433,16 @@ export default function Insights() {
   }
 
   return (
-    <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
+    <div className="tm-bold-page tm-dashboard-page min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
 
-      <div className="sticky top-0 z-30 bg-tm-cream dark:bg-tm-dark-bg border-b border-gray-200 dark:border-tm-dark-border shadow-sm">
+      <div className="tm-dashboard-toolbar sticky top-0 z-30 bg-tm-cream dark:bg-tm-dark-bg border-b border-gray-200 dark:border-tm-dark-border shadow-sm">
         <div className="max-w-screen-2xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3 text-left">
             <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Dashboard</h1>
             <button
               onClick={() => setShowCustomize(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-brand font-semibold rounded-lg border border-gray-200 dark:border-tm-dark-border bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue hover:border-tm-teal dark:hover:text-white shadow-sm transition-colors"
+              className="tm-dashboard-customize flex items-center gap-1.5 px-3 py-1.5 text-xs font-brand font-semibold rounded-lg border border-gray-200 dark:border-tm-dark-border bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue hover:border-tm-teal dark:hover:text-white shadow-sm transition-colors"
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                 <path d="M9.5 13a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm0-5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm0-5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/>
@@ -463,7 +464,7 @@ export default function Insights() {
             {reportingMarketLocations.length > 1 && (
               <ShopMultiSelect locations={reportingMarketLocations} selected={selectedShops} onChange={setSelectedShops} />
             )}
-            <div><DateSelector dateRange={dateRange} onChange={handleDateRangeChange} /><p className="text-[10px] text-gray-500 dark:text-tm-dark-muted mt-1">Date filter: other sections. Performance tables show today / current MTD.</p></div>
+            <div><DateSelector dateRange={dateRange} onChange={handleDateRangeChange} /><p className="tm-dashboard-filter-help text-[10px] text-gray-500 dark:text-tm-dark-muted mt-1">Date filter: other sections. Performance tables show today / current MTD.</p></div>
           </div>
         </div>
       </div>
