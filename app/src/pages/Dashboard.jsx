@@ -1,3 +1,4 @@
+import '../styles/siteEntryColors.css'
 import LocationRepair from '../components/LocationRepair'
 import { entryLocationOptions, resolveEntryLocation } from '../utils/locationAccess'
 import { useState, useEffect } from 'react'
@@ -163,13 +164,14 @@ export default function Dashboard() {
       })
 
   return (
-    <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
+    <div data-entry-tab={activeTab} className="tm-site-entry-page min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
 
       <div className="max-w-screen-2xl mx-auto px-4 py-4">
         {(locationRepairMessage || repairingLocation || (profile?.role === 'store' && !locations.length)) && <LocationRepair />}
+        <header className="tm-entry-title"><h1 className="text-2xl font-brand font-bold">Site Entry</h1></header>
         {/* Controls */}
-        <div className="flex flex-wrap gap-3 items-center mb-4">
+        <div className="tm-entry-controls flex flex-wrap gap-3 items-center mb-4">
           {isManager && markets.length > 0 && (
             <select
               value={selectedMarket}
@@ -217,10 +219,10 @@ export default function Dashboard() {
             {filteredLocations.length > 1 && <p className="text-sm mt-1">Use the dropdown above to choose your site</p>}
           </div>
         ) : (
-          <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md overflow-hidden dark:border dark:border-tm-dark-border">
+          <div className="tm-entry-workspace bg-white dark:bg-tm-dark-surface rounded-xl shadow-md overflow-hidden dark:border dark:border-tm-dark-border">
             {/* Location header */}
-            <div className="bg-tm-navy dark:bg-tm-dark-nav text-white px-4 py-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            <div className="tm-entry-location-heading bg-tm-navy dark:bg-tm-dark-nav text-white px-4 py-2.5 flex items-center justify-between">
+              <div className="tm-entry-location-label flex items-center gap-3">
                 <span className="font-brand font-bold text-sm tracking-wide">
                   {location?.name}
                   {latestHour && activeTab !== 'monthly' && (
@@ -238,13 +240,13 @@ export default function Dashboard() {
                   </span>
                 )}
               </div>
-              <span className="text-tm-teal text-xs font-brand">
+              <span className="tm-entry-date text-tm-teal text-xs font-brand">
                 {headerDateLabel}
               </span>
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-gray-200 dark:border-tm-dark-border bg-gray-50 dark:bg-tm-dark-bg">
+            <div aria-label="Site entry views" className="tm-entry-tabs flex border-b border-gray-200 dark:border-tm-dark-border bg-gray-50 dark:bg-tm-dark-bg">
               {[
                 { key: 'daily',     label: 'Daily Log'       },
                 { key: 'snapshot',  label: 'Snapshot'        },
@@ -254,6 +256,8 @@ export default function Dashboard() {
               ].map(({ key, label, status }) => (
                 <button
                   key={key}
+                  data-entry-view={key}
+                  aria-pressed={activeTab === key}
                   onClick={() => setActiveTab(key)}
                   title={status === 'overdue' ? 'Overdue — by 10am local' : status === 'pending' ? 'Pending — by 10am local' : undefined}
                   className={`px-6 py-3 text-sm font-brand font-semibold transition-colors border-b-2 flex items-center gap-1.5 ${
@@ -271,7 +275,7 @@ export default function Dashboard() {
             </div>
 
             {/* Preserve tabs within a site; discard drafts and pending views on site changes. */}
-            <div key={selectedLocationId} className="p-4">
+            <div key={selectedLocationId} data-entry-content="true" className="p-4">
               <div className={activeTab === 'daily' ? 'block' : 'hidden'}>
                 <DailyLogTable
                   key={`${selectedLocationId}:${selectedDate}`}
@@ -286,7 +290,7 @@ export default function Dashboard() {
                   metricThresholds={location?.metric_thresholds}
                   downtimeEnabled={!!location?.downtime_tracking_enabled}
                 />
-                <div className="mt-8 pt-4 border-t border-gray-100 dark:border-tm-dark-border">
+                <div className="tm-entry-summary mt-8 pt-4 border-t border-gray-100 dark:border-tm-dark-border">
                   <EmployeeSummary
                     rows={liveRows}
                     opportunitiesFormula={opportunitiesFormula}
