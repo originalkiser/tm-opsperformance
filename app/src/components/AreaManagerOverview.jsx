@@ -164,16 +164,16 @@ export default function AreaManagerOverview({ locations }) {
   const flaggedCount = rows.filter(r => r.flagged).length
 
   return (
-    <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border overflow-hidden">
+    <div className="tm-site-health-card bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border overflow-hidden">
       <button
         onClick={toggle}
-        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-tm-dark-card transition-colors"
+        className="tm-site-health-heading w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-tm-dark-card transition-colors"
       >
         <div className="flex items-center gap-3">
-          <span className="text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest bg-red-600">SITE HEALTH</span>
-          <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Budget entries, ownership posts, and hourly updates that need attention</span>
+          <span className="tm-dashboard-section-badge text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest bg-red-600">SITE HEALTH</span>
+          <span className="tm-dashboard-section-subtitle text-sm text-gray-500 dark:text-tm-dark-muted">Budget entries, ownership posts, and hourly updates that need attention</span>
         </div>
-        <span className="text-gray-400 dark:text-tm-dark-muted"><ChevronIcon open={open} /></span>
+        <span className="tm-dashboard-section-chevron text-gray-400 dark:text-tm-dark-muted"><ChevronIcon open={open} /></span>
       </button>
 
       {/* Always visible, whether collapsed or not */}
