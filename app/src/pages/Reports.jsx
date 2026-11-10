@@ -1,3 +1,4 @@
+import '../styles/reportsColors.css'
 import { fetchEmployeeLogs } from '../utils/employeePerformance.js'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
@@ -351,32 +352,37 @@ export default function Reports() {
   const rangeLabel = fmtDateRange(dateRange.start, dateRange.end)
 
   return (
-    <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors flex flex-col">
+    <div data-report={report.id} className="tm-reports-page min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors flex flex-col">
       <NavBar />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="tm-reports-layout flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside
-          className={`flex-shrink-0 transition-all duration-200 bg-white dark:bg-tm-dark-surface border-r border-gray-200 dark:border-tm-dark-border flex flex-col ${
+          className={`tm-reports-sidebar flex-shrink-0 transition-all duration-200 bg-white dark:bg-tm-dark-surface border-r border-gray-200 dark:border-tm-dark-border flex flex-col ${
             sidebarOpen ? 'w-52' : 'w-14'
           }`}
         >
           {/* Sidebar toggle */}
           <button
+            aria-label={sidebarOpen ? 'Collapse report navigation' : 'Expand report navigation'}
+            aria-expanded={sidebarOpen}
             onClick={() => setSidebarOpen(o => !o)}
-            className="flex items-center justify-end px-3 py-3 text-gray-400 dark:text-tm-dark-muted hover:text-tm-blue dark:hover:text-tm-teal transition-colors border-b border-gray-100 dark:border-tm-dark-border"
+            className="tm-reports-sidebar-toggle flex items-center justify-between px-3 py-3 text-gray-400 dark:text-tm-dark-muted hover:text-tm-blue dark:hover:text-tm-teal transition-colors border-b border-gray-100 dark:border-tm-dark-border"
           >
+            <span className={sidebarOpen ? 'font-brand font-bold' : 'sr-only'}>Reports</span>
             <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform ${sidebarOpen ? '' : 'rotate-180'}`}>
               <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd"/>
             </svg>
           </button>
 
-          <nav className="flex-1 py-2 overflow-y-auto">
+          <nav aria-label="Reports" className="tm-reports-navigation flex-1 py-2 overflow-y-auto">
             {visibleReports.map(r => (
               <button
                 key={r.id}
+                data-report-id={r.id}
+                aria-pressed={activeReport === r.id}
                 onClick={() => handleReportChange(r.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors font-brand text-sm group ${
+                className={`tm-reports-nav-item w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors font-brand text-sm group ${
                   activeReport === r.id
                     ? 'bg-tm-sky/20 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-teal border-r-2 border-tm-teal'
                     : 'text-gray-600 dark:text-tm-dark-muted hover:bg-gray-50 dark:hover:bg-tm-dark-card hover:text-tm-blue dark:hover:text-tm-teal'
@@ -393,12 +399,12 @@ export default function Reports() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="tm-reports-main flex-1 overflow-y-auto">
           {/* Sticky filter bar */}
-          <div className="sticky top-0 z-20 bg-tm-cream dark:bg-tm-dark-bg border-b border-gray-200 dark:border-tm-dark-border shadow-sm">
+          <div className="tm-reports-toolbar sticky top-0 z-20 bg-tm-cream dark:bg-tm-dark-bg border-b border-gray-200 dark:border-tm-dark-border shadow-sm">
             <div className="px-5 py-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className={`text-white text-xs font-brand font-bold px-2.5 py-1 rounded tracking-widest ${report.badge.cls}`}>
+              <div className="tm-reports-heading flex items-center gap-3">
+                <span className={`tm-reports-badge text-white text-xs font-brand font-bold px-2.5 py-1 rounded tracking-widest ${report.badge.cls}`}>
                   {report.badge.text}
                 </span>
                 <h2 className="font-brand font-bold text-tm-blue dark:text-tm-teal text-base tracking-wide">
@@ -444,7 +450,7 @@ export default function Reports() {
           </div>
 
           {/* Report content */}
-          <div className="px-5 py-6">
+          <div className="tm-reports-content px-5 py-6">
             {/* Network Day View */}
             {activeReport === 'network' && (
               <NetworkDayView locations={visibleLocations} date={dateRange.end} />
@@ -453,7 +459,7 @@ export default function Reports() {
             {/* Site Performance */}
             {activeReport === 'sites' && (
               loading ? <div className="flex justify-center py-12"><TmLoader /></div> : (
-                <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
+                <div className="tm-report-card bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
                   <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-4 font-brand">{rangeLabel}</p>
                   <SitePerformanceReport data={filterLogs(logs)} locations={visibleLocations} scoringLocations={budgetLocations} dateRange={dateRange} />
                 </div>
@@ -463,7 +469,7 @@ export default function Reports() {
             {/* Team Sales */}
             {activeReport === 'team' && (
               loading ? <div className="flex justify-center py-12"><TmLoader /></div> : (
-                <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
+                <div className="tm-report-card bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
                   <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-4 font-brand">{rangeLabel}</p>
                   <TeamSalesTable data={filterLogs(teamLogState?.scope === teamScope ? teamLogState.rows : [])} dataComplete={teamLogState?.scope === teamScope && teamLogState.complete} locations={visibleLocations} dateRange={dateRange} />
                 </div>
@@ -473,7 +479,7 @@ export default function Reports() {
             {/* Daily Trends */}
             {activeReport === 'daily' && (
               loading ? <div className="flex justify-center py-12"><TmLoader /></div> : (
-                <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
+                <div className="tm-report-card bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
                   <DailyTrendsSection
                     logs={trendLogs}
                     dark={dark}
@@ -489,7 +495,7 @@ export default function Reports() {
             {/* Day of Week */}
             {activeReport === 'dow' && (
               loading ? <div className="flex justify-center py-12"><TmLoader /></div> : (
-                <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
+                <div className="tm-report-card bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
                   <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-4 font-brand">{rangeLabel}</p>
                   <DayOfWeekSection
                     logs={filterLogs(logs)}
@@ -506,7 +512,7 @@ export default function Reports() {
               snapshotLoading ? <div className="flex justify-center py-12"><TmLoader /></div> : !snapshotLocId ? (
                 <p className="text-gray-400 dark:text-tm-dark-muted text-sm py-6">Select a site above to view the snapshot.</p>
               ) : (
-                <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
+                <div className="tm-report-card bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
                   <DailySnapshot
                     rows={snapshotRows}
                     date={snapshotDate}
@@ -523,7 +529,7 @@ export default function Reports() {
               !monthlyLocId ? (
                 <p className="text-gray-400 dark:text-tm-dark-muted text-sm py-6">Select a site above to view the monthly rollup.</p>
               ) : (
-                <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
+                <div className="tm-report-card bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
                   <MonthlyRollup
                     locationId={monthlyLocId}
                     dateStart={dateRange.start}
@@ -539,7 +545,7 @@ export default function Reports() {
             {/* Downtime */}
             {activeReport === 'downtime' && (
               loading ? <div className="flex justify-center py-12"><TmLoader /></div> : (
-                <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
+                <div className="tm-report-card bg-white dark:bg-tm-dark-surface rounded-xl shadow-sm border border-gray-100 dark:border-tm-dark-border p-5">
                   <p className="text-xs text-gray-400 dark:text-tm-dark-muted mb-2 font-brand">{rangeLabel}</p>
                   <DowntimeSection
                     logs={downtimeLogs.filter(r => visibleLocations.some(l => l.id === r.location_id))}
