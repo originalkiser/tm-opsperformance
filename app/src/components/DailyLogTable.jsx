@@ -1096,7 +1096,7 @@ export default function DailyLogTable({
       )}
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div className="tm-entry-log-toolbar flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={toggleViewMode}
@@ -1166,7 +1166,7 @@ export default function DailyLogTable({
       {viewMode === 'card' && (
         <div className={`max-w-md mx-auto transition-opacity ${activeDowntime && (!activeDowntime.scope || activeDowntime.scope === 'Site') ? 'opacity-60' : ''}`}>
           {/* Time + Employee header */}
-          <div className="bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl px-3 pt-3 pb-3 mb-4">
+          <div className="tm-entry-hour-card bg-gray-50 dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl px-3 pt-3 pb-3 mb-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[10px] font-brand font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">
@@ -1221,7 +1221,8 @@ export default function DailyLogTable({
               return (
                 <div
                   key={field}
-                  className={`border border-gray-100 dark:border-tm-dark-border rounded-xl p-3 shadow-sm ${field === 'net_members' ? netMembersCls(displayNet(cardRow)) : 'bg-white dark:bg-tm-dark-surface'}`}
+                  data-entry-metric={field}
+                  className={`tm-entry-metric-card border border-gray-100 dark:border-tm-dark-border rounded-xl p-3 shadow-sm ${field === 'net_members' ? netMembersCls(displayNet(cardRow)) : 'bg-white dark:bg-tm-dark-surface'}`}
                 >
                   <label className="block text-[10px] font-brand font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1 whitespace-pre-line leading-tight">
                     {def?.label ?? field}

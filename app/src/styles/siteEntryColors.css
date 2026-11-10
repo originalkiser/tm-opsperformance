@@ -1,0 +1,114 @@
+/* Site Entry only. Preserve data, save behavior, warnings and metric colors. */
+.tm-site-entry-page[data-entry-tab] {
+  --entry-bg: #edf3fa;
+  --entry-panel: #fff;
+  --entry-wash: #cfe5fc;
+  --entry-content: #f7fbff;
+  --entry-line: #b9cfe3;
+  --entry-text: #10233f;
+  --entry-accent: #246eb8;
+  background: var(--entry-bg);
+}
+.tm-site-entry-page[data-entry-tab="budget"],
+.tm-site-entry-page[data-entry-tab="ownership"] {
+  --entry-accent: #087f78;
+  --entry-content: #effcf7;
+}
+.dark .tm-site-entry-page[data-entry-tab] {
+  --entry-bg: #0d1b30;
+  --entry-panel: #152943;
+  --entry-wash: #173a5b;
+  --entry-content: #1c3451;
+  --entry-line: #41617e;
+  --entry-text: #edf6ff;
+}
+.dark .tm-site-entry-page[data-entry-tab="budget"],
+.dark .tm-site-entry-page[data-entry-tab="ownership"] { --entry-content: #20423f; }
+.tm-site-entry-page[data-entry-tab] .tm-entry-title {
+  background: #10233f;
+  color: #fff;
+  border-bottom: 5px solid #27b9ae;
+  border-radius: 14px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+.tm-site-entry-page[data-entry-tab] .tm-entry-controls {
+  background: var(--entry-panel);
+  border: 1px solid var(--entry-line);
+  border-radius: 12px;
+  padding: 16px;
+}
+.tm-site-entry-page[data-entry-tab] .tm-entry-controls select,
+.tm-site-entry-page[data-entry-tab] .tm-entry-controls input { max-width: 100%; min-height: 40px; }
+.tm-site-entry-page[data-entry-tab] .tm-entry-controls > div { min-width: 0; max-width: 100%; }
+.tm-site-entry-page[data-entry-tab] .tm-entry-workspace {
+  background: var(--entry-panel);
+  border: 1px solid var(--entry-line);
+  box-shadow: 0 5px 14px #10233f12;
+}
+.tm-site-entry-page[data-entry-tab] .tm-entry-location-heading {
+  background: var(--entry-accent);
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px;
+}
+.tm-site-entry-page[data-entry-tab] .tm-entry-location-label { flex-wrap: wrap; min-width: 0; }
+.tm-site-entry-page[data-entry-tab] .tm-entry-date { color: #fff; }
+.tm-site-entry-page[data-entry-tab] .tm-entry-tabs {
+  background: var(--entry-wash);
+  border-color: var(--entry-line);
+  padding: 10px;
+  gap: 8px;
+  overflow-x: auto;
+}
+.tm-site-entry-page[data-entry-tab] .tm-entry-tabs > button {
+  flex-shrink: 0;
+  min-height: 48px;
+  background: var(--entry-panel);
+  border: 1px solid var(--entry-line);
+  border-radius: 8px;
+  color: var(--entry-text);
+  padding: 12px 18px;
+}
+.tm-site-entry-page[data-entry-tab] .tm-entry-tabs > button[aria-pressed="true"] {
+  background: var(--entry-accent);
+  border-color: var(--entry-accent);
+  color: #fff;
+  box-shadow: 0 2px 5px #10233f26;
+}
+.tm-site-entry-page[data-entry-tab] .tm-entry-tabs > button:not([aria-pressed="true"]):hover { border-color: #246eb8; }
+.tm-site-entry-page[data-entry-tab] [data-entry-content] { background: var(--entry-content); }
+.tm-site-entry-page[data-entry-tab] .tm-entry-log-toolbar {
+  background: var(--entry-wash);
+  border-left: 5px solid #246eb8;
+  border-radius: 10px;
+  padding: 12px;
+}
+.tm-site-entry-page[data-entry-tab] .tm-entry-hour-card {
+  background: var(--entry-wash);
+  border-color: var(--entry-line);
+  border-top: 4px solid #246eb8;
+}
+.tm-site-entry-page[data-entry-tab] .tm-entry-metric-card:not([data-entry-metric="net_members"]) {
+  border-color: var(--entry-line);
+  border-top: 4px solid #246eb8;
+}
+.tm-site-entry-page[data-entry-tab] .tm-entry-summary {
+  background: var(--entry-panel);
+  border: 1px solid var(--entry-line);
+  border-top: 5px solid #087f78;
+  border-radius: 12px;
+  padding: 16px;
+}
+.tm-site-entry-page[data-entry-tab] .tm-entry-summary h3 { color: var(--entry-text); }
+.tm-site-entry-page[data-entry-tab] .tm-entry-controls button:focus-visible,
+.tm-site-entry-page[data-entry-tab] .tm-entry-workspace button:focus-visible { outline: 3px solid #38bdf8; outline-offset: 2px; }
+@media (max-width: 480px) {
+  .tm-site-entry-page[data-entry-tab] .tm-entry-title { padding: 18px; }
+  .tm-site-entry-page[data-entry-tab] .tm-entry-controls { padding: 12px; }
+  .tm-site-entry-page[data-entry-tab] [data-entry-content] { padding: 12px; }
+  .tm-site-entry-page[data-entry-tab] .tm-entry-tabs > button { padding: 10px 14px; }
+}
+.dark .tm-site-entry-page .tm-entry-tabs { color-scheme: dark; }
+.dark .tm-site-entry-page .tm-entry-controls input { color-scheme: dark; }
+.dark .tm-site-entry-page .tm-entry-controls select { background: var(--entry-panel); color: var(--entry-text); }
