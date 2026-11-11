@@ -1,3 +1,4 @@
+import '../styles/operationsColors.css'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -14,17 +15,17 @@ export default function Employees() {
   const allowed = ['admin', 'area_manager', 'store'].includes(profile?.role)
     && profile?.is_active === true && !profile?.deleted_at
   const locationId = locations.some(row => row.id === selected) ? selected : locations[0]?.id || ''
-  return <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg text-gray-800 dark:text-tm-dark-text">
+  return <div className="tm-bold-page tm-operations-page tm-employees-page min-h-screen bg-tm-cream dark:bg-tm-dark-bg text-gray-800 dark:text-tm-dark-text">
     <NavBar />
     <main className="max-w-5xl mx-auto p-4 space-y-4">
-      <h1 className="text-2xl font-brand font-bold">Employees</h1>
+      <header className="tm-operations-title"><h1 className="text-2xl font-brand font-bold">Employees</h1></header>
       {!allowed ? <p role="alert">Your active account must be authorized to maintain a location.</p> : <>
-        <label className="block">Location <select className={control} value={locationId} onChange={e => setSelected(e.target.value)}>
+        <label className="tm-employee-location block">Location <select className={control} value={locationId} onChange={e => setSelected(e.target.value)}>
           {!locations.length && <option value="">No assigned locations</option>}
           {locations.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
         </select></label>
         {locationId ? <div key={`${user.id}:${locationId}`} className="space-y-6">
-            {['admin', 'store'].includes(profile.role) && <nav aria-label="Employee sections" className="flex gap-2">
+            {['admin', 'store'].includes(profile.role) && <nav aria-label="Employee sections" className="tm-employee-tabs flex flex-wrap gap-2">
               <button className={control} aria-pressed={view === 'roster'} onClick={() => setView('roster')}>Roster</button>
               <button className={control} aria-pressed={view === 'history'} onClick={() => setView('history')}>Historical name mapping</button>
             </nav>}
@@ -69,13 +70,14 @@ export function Roster({ locationId, isAdmin }) {
   }
   const disabled = busy || loading || !verified
   const reviewRows = rows.filter(row => selected.includes(row.id))
-  return <section className="space-y-4" aria-label="Employee roster">
+  return <section className="tm-employee-roster space-y-4" aria-label="Employee roster">
+    <h2 className="tm-operations-heading font-brand font-bold">Employee roster</h2>
     <p className="text-sm">Your existing roster is ready to review. Deactivation keeps employee records and historical sales. Names are reserved across active and inactive employees at this location.</p>
-    <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); save(() => addRosterEmployee(supabase, locationId, name), 'Employee added.') }}>
+    <form className="tm-employee-add flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); save(() => addRosterEmployee(supabase, locationId, name), 'Employee added.') }}>
       <label>Employee name <input className={control} value={name} onChange={e => setName(e.target.value)} disabled={disabled || review} required /></label>
       <button className={control} disabled={disabled || review || !name.trim()}>Add Employee</button>
     </form>
-    <div className="flex flex-wrap gap-2 items-center">
+    <div className="tm-employee-filters flex flex-wrap gap-2 items-center">
       <label>Status <select className={control} value={filter} disabled={disabled || review} onChange={e => { setFilter(e.target.value); setSelected([]) }}>
         <option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option>
       </select></label>
@@ -85,7 +87,7 @@ export function Roster({ locationId, isAdmin }) {
     {error && <p role="alert" className="text-red-700 dark:text-red-400">{error}</p>}
     {message && <p role="status">{message}</p>}
     {loading ? <p role="status">Loading roster…</p> : <ul className="space-y-2">
-      {filterRoster(rows, filter).map(row => <li key={row.id} className="border border-gray-200 dark:border-tm-dark-border rounded p-3 flex flex-wrap gap-3 items-center">
+      {filterRoster(rows, filter).map(row => <li key={row.id} data-active={row.is_active === true} className="tm-employee-row border border-gray-200 dark:border-tm-dark-border rounded p-3 flex flex-wrap gap-3 items-center">
         <input type="checkbox" aria-label={`Select ${row.name} (${row.id})`} checked={selected.includes(row.id)} disabled={disabled || review}
           onChange={e => setSelected(ids => e.target.checked ? [...ids, row.id] : ids.filter(id => id !== row.id))} />
         <div className="flex-1 min-w-0"><strong className="break-words">{row.name}</strong><span className="ml-2 text-sm">{row.is_active === true ? 'Active' : 'Inactive'}</span>

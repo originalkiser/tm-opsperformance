@@ -1,3 +1,4 @@
+import '../styles/operationsColors.css'
 import { useEffect, useRef, useState } from 'react'
 import NavBar from '../components/NavBar'
 import ResourceViewer from '../components/ResourceViewer'
@@ -93,16 +94,16 @@ export default function Resources() {
   const home = () => { setQuery(''); setCategory(''); setBrand('') }
   const back = () => { if (searching) setQuery(''); else if (brand) setBrand(''); else setCategory('') }
   const manufacturer = catalogManufacturers(catalog, category).find(c => c.brand_key === brand)
-  return <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg text-slate-900 dark:text-tm-dark-text">
+  return <div className="tm-bold-page tm-operations-page tm-resources-page min-h-screen bg-tm-cream dark:bg-tm-dark-bg text-slate-900 dark:text-tm-dark-text">
     <NavBar />
     <main className="resource-center max-w-6xl mx-auto p-4 sm:p-6 space-y-5">
-      <header className="rounded-2xl bg-tm-navy text-white p-6 sm:p-8 border border-tm-blue shadow-md">
+      <header className="tm-operations-title rounded-2xl bg-tm-navy text-white p-6 sm:p-8 border border-tm-blue shadow-md">
         <p className="font-brand text-xs font-semibold uppercase tracking-widest text-tm-teal">TM Operations · Resources</p>
         <h1 className="font-brand text-3xl sm:text-4xl font-bold mt-2">Resource Center</h1>
         <p className="mt-2 text-sm text-slate-300 max-w-xl">Your library of manuals, guides, and reference documents. Browse a folder or search to find what you need.</p>
       </header>
       {error && <p role="alert" className="text-red-700 dark:text-red-300">{error} Refresh before retrying if the document changed.</p>}
-      <label className="resource-panel grid gap-2 font-brand text-sm font-semibold">Search all documents<input type="search" className={control} placeholder="Title, category or manufacturer" value={query} onChange={e => setQuery(e.target.value)} /></label>
+      <label className="tm-resource-search resource-panel grid gap-2 font-brand text-sm font-semibold">Search all documents<input type="search" className={control} placeholder="Title, category or manufacturer" value={query} onChange={e => setQuery(e.target.value)} /></label>
       <nav aria-label="Resource folders" className="flex flex-wrap items-center gap-2 text-sm">
         <button className={control} onClick={home}>Resources</button>
         {searching ? <span aria-current="page">/ Search results</span> : <>
@@ -112,7 +113,7 @@ export default function Resources() {
         {(category || searching) && <button className={control} onClick={back}>Back</button>}
       </nav>
       <button className={control} disabled={busy} onClick={() => run(async () => {})}>Refresh resources</button>
-      {admin && <details className="resource-panel">
+      {admin && <details className="tm-resource-upload resource-panel">
         <summary className="font-brand font-semibold py-2 cursor-pointer text-tm-blue dark:text-tm-teal">Upload PDFs</summary>
         <fieldset disabled={busy} className="grid sm:grid-cols-2 gap-3 mt-3">
           <MetadataFields value={metadata} change={setMetadata} catalog={catalog} optionalTitle />

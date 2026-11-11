@@ -1,3 +1,4 @@
+import '../styles/operationsColors.css'
 import { useState, useMemo } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
@@ -25,14 +26,14 @@ export default function AmEntry() {
   const bumpAudit = () => setAuditRefreshKey(k => k + 1)
 
   return (
-    <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
+    <div className="tm-bold-page tm-operations-page tm-am-entry-page min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
 
       <div className="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
-        <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">AM Entry</h1>
+        <header className="tm-operations-title"><h1 className="text-2xl font-brand font-bold tracking-wide">AM Entry</h1></header>
 
-        <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border p-5">
-          <div className="flex items-center gap-3 mb-4">
+        <section data-section="scorecard" className="tm-am-section bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border p-5">
+          <div className="tm-am-heading flex flex-wrap items-center gap-3 mb-4">
             <span className="text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest bg-purple-700">SCORECARD</span>
             <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Ownership Scorecard — score your sites' managers</span>
           </div>
@@ -42,10 +43,10 @@ export default function AmEntry() {
             profile={profile}
             onSaved={bumpAudit}
           />
-        </div>
+        </section>
 
-        <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border p-5">
-          <div className="flex items-center gap-3 mb-4">
+        <section data-section="targets" className="tm-am-section bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border p-5">
+          <div className="tm-am-heading flex flex-wrap items-center gap-3 mb-4">
             <span className="text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest bg-emerald-600">TARGETS</span>
             <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Budget Targets — every site in one table</span>
           </div>
@@ -54,15 +55,15 @@ export default function AmEntry() {
             profile={profile}
             onSaved={bumpAudit}
           />
-        </div>
+        </section>
 
-        <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border p-5">
-          <div className="flex items-center gap-3 mb-4">
+        <section data-section="history" className="tm-am-section bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border p-5">
+          <div className="tm-am-heading flex flex-wrap items-center gap-3 mb-4">
             <span className="text-white text-xs font-brand font-bold px-2 py-1 rounded tracking-widest bg-gray-500">HISTORY</span>
             <span className="text-sm text-gray-500 dark:text-tm-dark-muted">Recent edits — who changed what, and when</span>
           </div>
           <EditAuditLog locations={auditLocations} refreshKey={auditRefreshKey} />
-        </div>
+        </section>
       </div>
     </div>
   )

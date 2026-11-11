@@ -6,7 +6,7 @@ export default function ResourceCatalogEditor({ client, catalog, busy, run }) {
   const categories = catalogCategories(catalog), parent = categories.find(c => c.id === parentId)
   const siblings = parent ? catalogManufacturers(catalog, parent.category_key) : categories
   const act = (action, folder, data) => run(() => catalogAction(client, action, catalog, folder, data))
-  return <details className="resource-panel">
+  return <details className="tm-resource-catalog resource-panel">
     <summary className="font-brand font-semibold py-2 cursor-pointer text-tm-blue dark:text-tm-teal">Manage folders</summary>
     <fieldset disabled={busy} className="space-y-3 mt-2">
       <label className="grid gap-1">Manage<select className={control} value={parentId} onChange={e => { setParentId(e.target.value); setEditing(null) }}><option value="">Categories</option>{categories.filter(c => c.uses_manufacturers).map(c => <option key={c.id} value={c.id}>{c.name} manufacturers</option>)}</select></label>
