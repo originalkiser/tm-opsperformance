@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 import ChecklistForm from '../components/ChecklistForm'
 import ChecklistAdmin from '../components/ChecklistAdmin'
@@ -58,7 +59,7 @@ export default function ManagerChecklists() {
   return <div className="tm-bold-page tm-checklists-page min-h-screen bg-tm-cream dark:bg-tm-dark-bg text-slate-900 dark:text-tm-dark-text">
     <NavBar />
     <main className="max-w-5xl mx-auto p-4 space-y-5">
-      <header className="tm-checklists-title"><h1 className="text-2xl font-bold">Manager Checklists</h1></header>
+      <header className="tm-checklists-title flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-bold">Manager Checklists</h1><Link to="/checklist-compliance" className="min-h-12 rounded border px-4 py-3 text-sm font-semibold">View Checklist Compliance</Link></header>
       <p className="tm-checklists-notice rounded p-3">MonitorQA remains the official checklist system. Checklists are available, not mandatory. No automatic assignments or reminders. Online connection required.</p>
       {error && <p role="alert" className="text-red-600 dark:text-red-300">{error}</p>}
       {form ? <ChecklistForm key={form.id} initial={form} user={user} admin={admin} locationLabel={locations.find(location => location.id === form.location_id)?.site_code} onSaved={saved => setRows(previous => [...previous.filter(row => row.id !== saved.id), saved])} onClose={() => { setForm(null); load() }} /> : <>
