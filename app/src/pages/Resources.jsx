@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase, supabasePublicKey } from '../lib/supabase'
 import { resourceAccess, validateResourceMetadata, validatePdf, filterResources, resourceAction, cleanupResource, uploadResource } from '../utils/resourceLibrary'
 
-const control = 'min-h-11 min-w-0 max-w-full p-2 border rounded bg-white dark:bg-tm-dark-surface'
+const control = 'resource-control'
 function MetadataFields({ value, change, catalog, optionalTitle = false }) {
   const folder = categoryFolder(catalog, value.category)
   return <>
@@ -95,10 +95,14 @@ export default function Resources() {
   const manufacturer = catalogManufacturers(catalog, category).find(c => c.brand_key === brand)
   return <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg text-slate-900 dark:text-tm-dark-text">
     <NavBar />
-    <main className="max-w-5xl mx-auto p-4 space-y-4">
-      <h1 className="text-2xl font-bold">Resource Center</h1>
+    <main className="resource-center max-w-6xl mx-auto p-4 sm:p-6 space-y-5">
+      <header className="rounded-2xl bg-tm-navy text-white p-6 sm:p-8 border border-tm-blue shadow-md">
+        <p className="font-brand text-xs font-semibold uppercase tracking-widest text-tm-teal">TM Operations · Resources</p>
+        <h1 className="font-brand text-3xl sm:text-4xl font-bold mt-2">Resource Center</h1>
+        <p className="mt-2 text-sm text-slate-300 max-w-xl">Your library of manuals, guides, and reference documents. Browse a folder or search to find what you need.</p>
+      </header>
       {error && <p role="alert" className="text-red-700 dark:text-red-300">{error} Refresh before retrying if the document changed.</p>}
-      <label className="grid gap-1">Search all documents<input type="search" className={control} placeholder="Title, category or manufacturer" value={query} onChange={e => setQuery(e.target.value)} /></label>
+      <label className="resource-panel grid gap-2 font-brand text-sm font-semibold">Search all documents<input type="search" className={control} placeholder="Title, category or manufacturer" value={query} onChange={e => setQuery(e.target.value)} /></label>
       <nav aria-label="Resource folders" className="flex flex-wrap items-center gap-2 text-sm">
         <button className={control} onClick={home}>Resources</button>
         {searching ? <span aria-current="page">/ Search results</span> : <>
@@ -108,8 +112,8 @@ export default function Resources() {
         {(category || searching) && <button className={control} onClick={back}>Back</button>}
       </nav>
       <button className={control} disabled={busy} onClick={() => run(async () => {})}>Refresh resources</button>
-      {admin && <details className="border rounded p-3">
-        <summary className="font-bold py-2">Upload PDFs</summary>
+      {admin && <details className="resource-panel">
+        <summary className="font-brand font-semibold py-2 cursor-pointer text-tm-blue dark:text-tm-teal">Upload PDFs</summary>
         <fieldset disabled={busy} className="grid sm:grid-cols-2 gap-3 mt-3">
           <MetadataFields value={metadata} change={setMetadata} catalog={catalog} optionalTitle />
           <label className="grid gap-1 min-w-0">Select one or multiple PDFs<input className={`${control} w-full text-sm`} type="file" accept="application/pdf,.pdf" multiple onChange={selectFiles} /></label>
@@ -118,12 +122,12 @@ export default function Resources() {
       </details>}
       {admin && <ResourceCatalogEditor client={supabase} catalog={catalog} busy={busy} run={run} />}
       {progress && <div role="status" className="flex flex-wrap items-center gap-3"><span>{progress}</span><button className={control} onClick={() => uploadController.current?.abort()}>Pause upload</button></div>}
-      {browsingFolders && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">{folders.map(c => <button key={c.id} className={`${control} text-left font-semibold`} onClick={() => { if (category) setBrand(c.brand_key); else { setCategory(c.category_key); setBrand('') } }}>{c.name} →</button>)}{!folders.length && <p>No folders yet.</p>}</div>}
+      {browsingFolders && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{folders.map(c => <button key={c.id} className="resource-folder group" onClick={() => { if (category) setBrand(c.brand_key); else { setCategory(c.category_key); setBrand('') } }}><span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-tm-teal/20 text-tm-blue dark:text-tm-teal"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" /></svg></span><span className="min-w-0 flex-1 break-words">{c.name}</span><span aria-hidden="true" className="text-tm-blue dark:text-tm-teal group-hover:translate-x-1 transition-transform"> →</span></button>)}{!folders.length && <p>No folders yet.</p>}</div>}
       {!browsingFolders && !visible.length && <p>No matching documents.</p>}
       {visible.map(row => <div key={row.id} className="space-y-2">
-        <article className="min-w-0 break-words border rounded p-3 bg-white dark:bg-tm-dark-surface space-y-3">
-          <div><h3 className="font-semibold">{row.title}</h3>{searching && <p className="text-sm">{resourceLabels(row, catalog).category}{row.brand ? ` / ${resourceLabels(row, catalog).brand}` : ''}</p>}{row.file_size && <p className="text-sm">{(row.file_size / 1024 / 1024).toFixed(1)} MB · PDF</p>}</div>
-          {row.object_path && !row.removed && <button className={control} onClick={() => setViewer(row)}>Open / Download PDF</button>}
+        <article className="resource-panel min-w-0 break-words space-y-4">
+          <div><h3 className="font-brand text-lg font-semibold text-tm-blue dark:text-tm-teal">{row.title}</h3>{searching && <p className="text-sm">{resourceLabels(row, catalog).category}{row.brand ? ` / ${resourceLabels(row, catalog).brand}` : ''}</p>}{row.file_size && <p className="text-sm">{(row.file_size / 1024 / 1024).toFixed(1)} MB · PDF</p>}</div>
+          {row.object_path && !row.removed && <button className="resource-primary" onClick={() => setViewer(row)}>Open / Download PDF</button>}
           {admin && <div className="flex flex-wrap gap-3 items-center">
             {row.cleanup_path ? <><p>File cleanup pending{row.removed ? ' — removed from the library' : ''}.</p><button className={control} disabled={busy} onClick={() => run(() => cleanupResource(supabase, row))}>Retry file cleanup</button></> : row.pending_upload ? <>
               <label className="grid gap-1 min-w-0 max-w-full">Resume upload: {row.pending_upload.filename}<input className={`${control} w-full text-sm`} disabled={busy} type="file" accept="application/pdf,.pdf" onChange={event => selectFiles(event, row)} /></label>
@@ -137,7 +141,7 @@ export default function Resources() {
           </div>}
         </article>
       </div>)}
-      {editing && <div role="dialog" aria-modal="true" aria-label="Edit resource metadata" className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-3"><form className="max-w-xl w-full max-h-[95dvh] overflow-auto p-4 rounded bg-tm-cream dark:bg-tm-dark-bg grid gap-3" onSubmit={event => { event.preventDefault(); run(async () => { validateResourceMetadata(editing, catalog); await resourceAction(supabase, 'edit', editing, editing); setEditing(null) }) }}>
+      {editing && <div role="dialog" aria-modal="true" aria-label="Edit resource metadata" className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-3"><form className="resource-panel max-w-xl w-full max-h-[95dvh] overflow-auto grid gap-4" onSubmit={event => { event.preventDefault(); run(async () => { validateResourceMetadata(editing, catalog); await resourceAction(supabase, 'edit', editing, editing); setEditing(null) }) }}>
         <h2 className="font-bold">Edit document metadata</h2><fieldset disabled={busy} className="grid gap-3"><MetadataFields value={editing} change={setEditing} catalog={catalog} /></fieldset>
         <div className="flex gap-3"><button className={control} disabled={busy}>Save metadata</button><button type="button" className={control} disabled={busy} onClick={() => setEditing(null)}>Cancel</button></div>
         {error && <p role="alert">{error}</p>}
