@@ -34,18 +34,29 @@ There is no location `is_active` column in the repository schema. Existing repor
 
 The local UI harness covers loading/errors/retry, invalid ranges, repeated refresh, out-of-order responses, account changes, access guards, all-or-nothing scoring, filters and export. SQL tests execute the actual migrations against fictional in-memory PostgreSQL, including raw-answer/private-evidence denial, assigned-scope revocation, inactive/deleted/missing accounts, date bounds, draft/discarding/pilot statuses, zero-record sites and read-only invariance. These are not hosted Auth/PostgREST/Storage acceptance tests.
 
-### Browser acceptance: BLOCKED, not passed
+### Browser acceptance: isolated component passed on 2026-11-12
 
-`scripts/tests/checklist-compliance-browser.mjs` builds the actual page with fictional services and a local-only network route, then checks desktop/390px layout, daily/weekly filters, CSV download, Back/Forward, errors/retry and dark-mode screenshots. The fixture bundle compiled, but Chromium could not launch in this environment (`socket() failed: Operation not permitted`), including the reviewed elevated attempt. The connected cloud browser also could not reach the local server (`ERR_CONNECTION_REFUSED`). No screenshots or browser interaction passes are claimed.
+Manual browser acceptance passed in Microsoft Edge on macOS using the actual report component and built app CSS with fictional Auth/RPC services. The transferred archive was checked against its SHA-256 and all 365 manifest entries from PR head `4633cf488d4a8c7ea359fb9ef48727ccde38cabb` (tree `1a4d7b6c18f72e2a17b4cff48cbdb19cc5777ebf`). It was served only on loopback with external connections blocked; no hosted or production endpoint was used.
 
-Run the prepared script on an executor with local Chromium support, after building the app. Set `PLAYWRIGHT_MODULE` to that executor's installed Playwright `index.mjs` and `CHROMIUM_EXECUTABLE` to its Chromium executable. Visually review generated desktop/mobile/dark screenshots before release. Real tablet/device and authenticated endpoint smoke checks remain outstanding.
+Verified:
+- Daily and weekly all-or-nothing scores, missing/draft/pilot labels and the Monday–Sunday week.
+- Date, market, location and status filtering; zero-record days included; summary denominator unchanged by status filtering.
+- CSV downloaded and inspected: only the visible Fictional South row, no hidden Fictional North row.
+- Empty-filter result disables export. A failed read removes scores and disables export; Refresh recovers after responses return.
+- Invalid date range removes scores and disables Refresh/export. Back/Forward returns to the correct screen.
+- Desktop and 390px iframe layouts visually inspected in light/dark mode; no page-level horizontal overflow; the table scrolls horizontally to completion/attention columns.
+- Runtime error capture remained empty after the test-harness startup correction.
+
+The first attempt exposed a harness-only defect: raw esbuild used classic JSX while Vite uses automatic JSX. The prepared browser script now sets `jsx: 'automatic'`. The manual Mac run used an equivalent QA-only React binding in the previously generated fixture; application source was not changed. The 18 affected utility/UI tests and production build passed again. The corrected full Playwright runner itself has not been run end-to-end: cloud Chromium remains socket-restricted. Screenshots were inspected during testing, not saved as deliverables.
+
+This is isolated component acceptance, not full authenticated-application, real-device, Auth/PostgREST or Storage acceptance. Hosted permission tests remain required. The only connected nonproduction project, `tm-ops-dev`, was verified INACTIVE with no development branches on 2026-11-12; it was not restored or changed.
 
 ## Deployment boundary and remaining gates
 
 **No production inspection, migration, data mutation, merge or deployment was performed. Keep the PR draft.** Review commits carry `[CF-Pages-Skip]` to suppress Cloudflare branch previews. Never merge a skip-marked commit as a substitute for a separately authorized release.
 
 1. Confirm active reporting-site definition and review current production schema, time zones and checklist prerequisites. See [backend release plan](checklist-compliance-backend.md).
-2. Complete browser acceptance and hosted/nonproduction Auth/PostgREST tests for Admin/Store/AM, missing/inactive accounts and no broadened raw-answer/evidence access.
+2. Complete hosted/nonproduction Auth/PostgREST tests for Admin/Store/AM, missing/inactive accounts and no broadened raw-answer/evidence access; check the full authenticated app and target devices.
 3. Obtain separate database and application release authorization. Install/verify the additive RPC before releasing the client. Do not use a blind database push or assume a migration ledger.
 4. Recovery: hide/revert only this reporting client; the unused read-only RPC can remain. Do not delete checklist data or roll back existing authorization/evidence migrations.
 
