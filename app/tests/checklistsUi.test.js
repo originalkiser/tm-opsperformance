@@ -39,7 +39,7 @@ test('Admin and assigned managers see explicit checklist order regardless of ret
   const h=locationHelpHarness('pages/ManagerChecklists',{
    useAuth:()=>({user:{id:actor},profile:{role,is_active:true,deleted_at:null},locations:[{id:'site',site_code:'1512',timezone:'America/New_York'}]}),supabase:client,
    checklistPeriod,completionStatus:()=> 'Not submitted',localChecklistDate:()=> '2026-11-05',checklistTimestamp,
-   NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
+   Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
   })
   await h.flush()
   assert.deepEqual(h.all(n=>n.type==='h2').slice(0,4).map(n=>n.props.children),['Opening Checklist','Mid-Day Checklist','Closing Checklist','Weekly Manager Administrative Checklist'])
@@ -320,7 +320,7 @@ test('companywide page shows availability without auto-created drafts or derived
    useAuth:()=>({user:{id:actor},profile:{role,is_active:true},locations:[{id:'site',site_code:'Fictional Site',timezone:'America/New_York'}]}),
    supabase:{from(name){calls.push(name);return {select(){return this},gte(){return this},lte(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:records}).then(resolve)}}},rpc(){throw new Error('Availability must not create drafts')}},
    checklistPeriod,completionStatus:(t,d,rows)=>rows.some(r=>r.template_key===t.key)?'Submitted':'Available',localChecklistDate:()=> '2026-11-02',checklistTimestamp,
-   NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
+   Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
   })
   await h.flush()
   assert.equal(h.all(n=>n.type==='section').length,4)
@@ -340,7 +340,7 @@ test('direct checklist page denies inactive, deleted, unknown and unauthenticate
  for(const profile of [{role:'store',is_active:false},{role:'admin',is_active:true,deleted_at:'2026-11-01'},{role:'unknown',is_active:true},null]) {
   const h=locationHelpHarness('pages/ManagerChecklists',{
    useAuth:()=>({user:profile?{id:actor}:null,profile,locations:[]}),supabase:{from(){throw new Error('Denied account queried database')}},
-   localChecklistDate:()=>'',NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
+   localChecklistDate:()=>'',Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
   })
   await h.flush();assert.equal(h.find(n=>n.props?.role==='alert').props.children,'Active checklist account required.');h.unmount()
  }
@@ -418,7 +418,7 @@ test('PM remains fifth after Weekly Manager Administrative regardless of databas
  const h=locationHelpHarness('pages/ManagerChecklists',{
   useAuth:()=>({user:{id:actor},profile:{role:'store',is_active:true},locations:[{id:'site',timezone:'America/New_York'}]}),supabase:client,
   checklistPeriod,completionStatus:()=> 'Available',localChecklistDate:()=> '2026-11-09',checklistTimestamp,
-  NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
+  Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
  })
  await h.flush();assert.deepEqual(h.all(n=>n.type==='h2').map(n=>n.props.children),[...checklistTemplates,pm].map(t=>t.name));h.unmount()
 })

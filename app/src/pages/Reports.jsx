@@ -1,7 +1,7 @@
 import '../styles/reportsColors.css'
 import { fetchEmployeeLogs } from '../utils/employeePerformance.js'
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
@@ -395,6 +395,9 @@ export default function Reports() {
                 )}
               </button>
             ))}
+            <Link to="/checklist-compliance" title="Checklist Compliance" className="tm-reports-nav-item flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-tm-blue hover:bg-gray-50 dark:text-tm-teal dark:hover:bg-tm-dark-card">
+              <span aria-hidden="true">✓</span>{sidebarOpen && <span className="text-xs">Checklist Compliance</span>}
+            </Link>
           </nav>
         </aside>
 
