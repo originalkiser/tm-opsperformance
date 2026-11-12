@@ -9,7 +9,7 @@ const uuid = n => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`
 const admin=uuid(1),store=uuid(2),other=uuid(3),outsider=uuid(4),inactive=uuid(5),deleted=uuid(6),manager=uuid(7),site=uuid(10),away=uuid(11)
 async function actor(db,id=admin,role='authenticated') { await db.exec(`reset role;set role ${role}`); await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id || '']) }
 async function root(db,sql,args=[]) { await db.exec('reset role');const result=await db.query(sql,args);await db.exec('set role authenticated');return result.rows }
-async function setup() {
+async function setup({deadlines=true}={}) {
  const db=new PGlite()
  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema storage;
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
@@ -40,6 +40,7 @@ async function setup() {
  await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261109193454_weekly_pm_checklist.sql',import.meta.url),'utf8'))
  await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112022829_checklist_qr_same_day.sql',import.meta.url),'utf8'))
  await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112143325_checklist_conflict_http_409.sql',import.meta.url),'utf8'))
+ if(deadlines) await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112184148_checklist_occurrence_deadlines.sql',import.meta.url),'utf8'))
  await db.exec('set role service_role')
  return {db,today}
 }
@@ -130,14 +131,14 @@ test('midnight closes working copies, preserves official view and blocks late up
  let working=(await guest(db,'begin_edit',{id:row.id,revision:row.revision})).submission
  working=(await saveNew(db,working,false,null,hash,{})).submission
  const intent=await guest(db,'upload_begin',{id:row.id,working_copy_id:working.working_copy_id,kind:'signature',extension:'png'})
- await db.exec('reset role');await db.query("update public.checklist_submissions set edit_deadline_at=clock_timestamp()-interval '1 second' where id=$1",[row.id])
+ await db.exec('reset role');await db.query("update public.checklist_submissions set period_date=period_date-1,edit_deadline_at=clock_timestamp()+interval '1 year' where id=$1",[row.id])
  const view=await guest(db,'read',{id:row.id});assert.deepEqual(view.submission.answers,original);assert.equal(view.submission.working_copy_id,undefined);assert.equal(view.capabilities.can_correct,false)
  await assert.rejects(saveNew(db,working,false,null,hash),/no longer editable/)
  await db.exec('reset role');await assert.rejects(db.query("insert into storage.objects(bucket_id,name) values('manager-checklist-evidence',$1)",[intent.object_path]),/no longer editable/)
  assert.equal((await db.query('select count(*)::int n from checklist_private.working_copies')).rows[0].n,1)
  }finally{await db.close()}
 })
-test('drafts from older weeks remain visible/resumable and weekly first-submission deadline is submission day, not occurrence Monday',async()=>{
+test('older weekly drafts remain resumable; late submission cannot reopen the assigned week',async()=>{
  const {db,today}=await setup();try{
  await configure(db)
  const old=(await root(db,"select (date_trunc('week',$1::date)-interval '14 days')::date::text d",[today]))[0].d
@@ -147,9 +148,10 @@ test('drafts from older weeks remain visible/resumable and weekly first-submissi
  await ready(db,row,null,hash);row=(await saveNew(db,row,true,null,hash)).submission
  assert.equal(row.period_date,old)
  await db.exec('reset role')
- const deadline=(await db.query("select (($1::timestamptz at time zone 'America/Los_Angeles')::date+1)::timestamp at time zone 'America/Los_Angeles' as d",[row.submitted_at])).rows[0].d
+ const deadline=(await db.query("select ($1::date+7)::timestamp at time zone 'America/Los_Angeles' as d",[old])).rows[0].d
  assert.equal(new Date(row.edit_deadline_at).getTime(),new Date(deadline).getTime())
- assert.equal((await guest(db,'read',{id:row.id})).capabilities.can_correct,true)
+ assert.equal((await guest(db,'read',{id:row.id})).capabilities.can_correct,false)
+ await assert.rejects(guest(db,'begin_edit',{id:row.id,revision:row.revision}),/window is closed/)
  }finally{await db.close()}
 })
 test('revocation and rotation stop reads, saves, evidence, final upload insertion and registration; stale admin updates fail',async()=>{
@@ -206,9 +208,9 @@ test('audit failure rolls back final answers, version and submission; unrelated 
 test('server midnight uses immutable IANA snapshot across DST and rejects oversized/unknown answers',async()=>{
  const {db}=await setup();try{
  const row=(await start(db)).submission
- for(const [submitted,expected] of [['2026-03-08T09:30:00Z','2026-03-09T07:00:00Z'],['2026-11-01T08:30:00Z','2026-11-02T08:00:00Z']]) {
+ for(const [date,expected] of [['2026-03-08','2026-03-09T07:00:00Z'],['2026-11-01','2026-11-02T08:00:00Z']]) {
   await db.exec('reset role')
-  const d=(await db.query("select checklist_private.deadline(jsonb_populate_record(null::public.checklist_submissions,$1::jsonb)) d",[JSON.stringify({...row,submitted_at:submitted,edit_deadline_at:null})])).rows[0].d
+  const d=(await db.query("select checklist_private.deadline(jsonb_populate_record(null::public.checklist_submissions,$1::jsonb)) d",[JSON.stringify({...row,period_date:date,submitted_at:'2026-11-12T12:00:00Z',edit_deadline_at:'2099-01-01T00:00:00Z'})])).rows[0].d
   assert.equal(new Date(d).toISOString(),new Date(expected).toISOString())
  }
  await assert.rejects(saveNew(db,row,false,store,null,{unknown:{value:'Yes'}}),/Unknown answer/)
@@ -232,7 +234,7 @@ test('PM corrections require fresh item and final signatures while originals rem
  assert.ok(history[0].evidence_ids.every(id=>!first.evidence_ids.includes(id)))
  }finally{await db.close()}
 })
-test('older-period same-day correction is discoverable in context and legacy named draft starts retain revision one',async()=>{
+test('late daily submission stays outside its occurrence correction window; legacy named starts retain revision one',async()=>{
  const {db,today}=await setup();try{
  await configure(db)
  const old=(await root(db,"select ($1::date-30)::text d",[today]))[0].d
@@ -240,9 +242,9 @@ test('older-period same-day correction is discoverable in context and legacy nam
  let row=(await db.query("select public.save_checklist('midday',$1,$2,null,null,'{}','Fictional Initial Name',false) s",[site,old])).rows[0].s
  assert.equal(row.revision,1);assert.equal(row.manager_name,'Fictional Initial Name')
  await ready(db,row);row=(await saveNew(db,row,true)).submission
- const w=(await guest(db,'begin_edit',{id:row.id,revision:row.revision})).submission
- const context=await guest(db,'context');const listed=context.submissions.find(s=>s.id===row.id)
- assert.equal(listed.working_copy_id,w.working_copy_id);assert.deepEqual(listed.answers,row.answers)
+ assert.equal((await guest(db,'read',{id:row.id})).capabilities.can_begin_edit,false)
+ await assert.rejects(guest(db,'begin_edit',{id:row.id,revision:row.revision}),/window is closed/)
+ const context=await guest(db,'context');assert.equal(context.submissions.some(s=>s.id===row.id),false)
  }finally{await db.close()}
 })
 test('bounded context pagination, per-link request and upload caps fail closed without changing drafts',async()=>{
@@ -305,5 +307,70 @@ test('business revision/generation conflicts use non-retryable PT409 and leave s
   before=await state()
   await assert.rejects(saveNew(db,{...working,revision:0},false,null,hash),{code:'PT409'})
   assert.deepEqual(await state(),before)
+ }finally{await db.close()}
+})
+
+test('weekly corrections survive a legacy early deadline; timestamps, attribution, versions and evidence remain intact',async()=>{
+ const {db}=await setup();try{
+ await configure(db);let row=(await start(db,'weekly')).submission
+ await ready(db,row);row=(await saveNew(db,row,true)).submission
+ const original=structuredClone(row)
+ await root(db,"update public.checklist_submissions set edit_deadline_at=clock_timestamp()-interval '1 day' where id=$1",[row.id])
+ const view=await guest(db,'read',{id:row.id})
+ assert.equal(view.capabilities.can_begin_edit,true)
+ const expected=(await root(db,"select ($1::date+7)::timestamp at time zone 'America/Los_Angeles' d",[row.period_date]))[0].d
+ assert.equal(new Date(view.capabilities.edit_deadline_at).getTime(),new Date(expected).getTime())
+ let work=(await guest(db,'begin_edit',{id:row.id,revision:row.revision})).submission
+ work=(await saveNew(db,work,false,null,hash)).submission
+ await ready(db,work,null,hash)
+ const corrected=(await saveNew(db,work,true,null,hash)).submission
+ assert.equal(corrected.submitted_at,original.submitted_at);assert.equal(corrected.created_by,original.created_by)
+ assert.equal(corrected.period_date,original.period_date);assert.deepEqual(corrected.template_snapshot,original.template_snapshot)
+ const history=(await guest(db,'history',{id:row.id})).versions
+ assert.equal(history.length,2);assert.equal(history[1].actor_kind,'account');assert.equal(history[0].actor_kind,'guest')
+ assert.deepEqual(history[1].answers,original.answers)
+ for(const evidence of history[1].evidence) assert.equal((await guest(db,'download',{id:row.id,attachment_id:evidence.id})).attachment_id,evidence.id)
+ }finally{await db.close()}
+})
+test('daily and weekly occurrence cutoffs respect DST, year/leap boundaries and ignore all stored deadlines',async()=>{
+ const {db}=await setup();try{
+ const row=(await start(db)).submission
+ for(const [cadence,date,expected] of [
+  ['daily','2026-03-08','2026-03-09T07:00:00Z'],['daily','2026-11-01','2026-11-02T08:00:00Z'],
+  ['weekly','2026-03-02','2026-03-09T07:00:00Z'],['weekly','2026-10-26','2026-11-02T08:00:00Z'],
+  ['weekly','2026-12-28','2027-01-04T08:00:00Z'],['daily','2028-02-29','2028-03-01T08:00:00Z'],
+ ]) {
+  for(const stored of [null,'2000-01-01T00:00:00Z','2099-01-01T00:00:00Z']) {
+   const fixture={...row,period_date:date,submitted_at:'2026-11-12T12:00:00Z',edit_deadline_at:stored,template_snapshot:{...row.template_snapshot,cadence}}
+   const [result]=await root(db,"select checklist_private.deadline(jsonb_populate_record(null::public.checklist_submissions,$1::jsonb)) d",[JSON.stringify(fixture)])
+   assert.equal(new Date(result.d).toISOString(),new Date(expected).toISOString())
+   const [bounds]=await root(db,"select $1::timestamptz-interval '1 microsecond'<$2::timestamptz as before, $1::timestamptz<$2::timestamptz as at",[expected,result.d])
+   assert.equal(bounds.before,true);assert.equal(bounds.at,false)
+   fixture.submitted_at=null;fixture.status='draft'
+   assert.equal((await root(db,"select checklist_private.deadline(jsonb_populate_record(null::public.checklist_submissions,$1::jsonb)) d",[JSON.stringify(fixture)]))[0].d,null)
+  }
+ }
+ // Calendar arithmetic, rather than fixed 24h/168h intervals, handles both DST transitions.
+ for(const [date,cadence,hours] of [['2026-03-08','daily',23],['2026-11-01','daily',25],['2026-03-02','weekly',167],['2026-10-26','weekly',169]]) {
+  const fixture={...row,period_date:date,submitted_at:'2026-11-12T12:00:00Z',template_snapshot:{...row.template_snapshot,cadence}}
+  const [r]=await root(db,"select extract(epoch from (checklist_private.deadline(jsonb_populate_record(null::public.checklist_submissions,$1::jsonb))-($2::date::timestamp at time zone 'America/Los_Angeles')))/3600 h",[JSON.stringify(fixture),date])
+  assert.equal(Number(r.h),hours)
+ }
+ }finally{await db.close()}
+})
+test('deadline follow-on migration preserves existing rows/evidence/audit and function grants',async()=>{
+ const {db}=await setup({deadlines:false});try{
+ await configure(db);let row=(await start(db)).submission;await ready(db,row);row=(await saveNew(db,row,true)).submission
+ const snapshot=async()=>{await db.exec('reset role');return (await db.query(`select jsonb_build_object(
+ 'rows',(select jsonb_agg(to_jsonb(x)) from public.checklist_submissions x),
+ 'versions',(select jsonb_agg(to_jsonb(x)) from checklist_private.versions x),
+ 'working',(select jsonb_agg(to_jsonb(x)) from checklist_private.working_copies x),
+ 'attachments',(select jsonb_agg(to_jsonb(x)) from public.checklist_attachments x),
+ 'objects',(select jsonb_agg(to_jsonb(x)) from storage.objects x),
+ 'audit',(select jsonb_agg(to_jsonb(x)) from public.edit_audit_log x),
+ 'grants',(select jsonb_agg(jsonb_build_array(oid,proacl,prosecdef,proconfig) order by oid) from pg_proc where oid in ('checklist_private.deadline(public.checklist_submissions)'::regprocedure,'checklist_private.access_action(uuid,text,text,jsonb)'::regprocedure))) s`)).rows[0].s}
+ const before=await snapshot()
+ await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112184148_checklist_occurrence_deadlines.sql',import.meta.url),'utf8'))
+ assert.deepEqual(await snapshot(),before)
  }finally{await db.close()}
 })

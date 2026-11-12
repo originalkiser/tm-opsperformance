@@ -22,7 +22,7 @@ export default function ChecklistOpenWork({ locationId, onOpen, disabled = false
   }
   return <section className="space-y-2" aria-label="Unfinished checklists">
     <h2 className="font-bold text-lg">Unfinished checklists</h2>
-    <p>Saved drafts keep their original date or week and remain available on later days. Unsubmitted corrections do not extend their same-day deadline.</p>
+    <p>Saved drafts keep their original date or week and remain available on later days. Daily corrections close at the end of the assigned site-local day; weekly corrections close at midnight Monday after the assigned week. Unsubmitted corrections do not extend these deadlines.</p>
     {error && <p role="alert" className="text-red-600 dark:text-red-300">{error}</p>}
     <ul>{rows.map(record => <li key={record.id} className="border-b py-3 flex flex-wrap justify-between items-center gap-2"><span>{record.template_snapshot.name} · {record.period_date}{record.working_copy_id ? ' · Correction' : ''}</span><button disabled={busy || disabled} className="min-h-12 px-4 underline" onClick={() => onOpen(record)}>Continue saved work</button></li>)}</ul>
     {!busy && !rows.length && !error && <p>No unfinished checklists.</p>}

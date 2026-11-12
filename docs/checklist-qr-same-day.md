@@ -1,4 +1,4 @@
-# Location QR access and same-day checklist corrections
+# Location QR access and checklist period corrections
 
 Current release status: hosted functional and conflict acceptance passed in `tm-ops-dev`, including the correction for a retry-loop defect found during the first pass. Keep this PR draft: precise in-transfer Storage timing, real browser/device acceptance and separate production authorization remain release gates. See the dated acceptance record below.
 
@@ -10,8 +10,8 @@ No production database, Storage, account, QR grant, merge, or deployment is auth
 - A location QR holder can continue or correct any checklist at that location, including a checklist begun by a signed-in manager. Possession of a copied QR gives the same access; it does not prove identity or physical presence.
 - The five existing templates and their snapshots, required answers, evidence, and signatures remain authoritative.
 - An initial draft can remain unfinished across days or weeks. Its original daily date or Monday-based weekly occurrence is preserved.
-- A submitted checklist can be corrected only on its first submission's site-local calendar day. A weekly checklist submitted Wednesday is editable Wednesday, not for the remainder of the week.
-- The first submission timestamp and deadline never reset. Corrections keep the original submitted result official until a complete replacement version is finalized.
+- Daily corrections close at midnight after the immutable site-local occurrence date. Weekly corrections close at midnight Monday after the assigned Monday–Sunday week, even when first submitted earlier in that week. A late submission does not reopen an expired period.
+- The first submission timestamp never resets. The authoritative server deadline derives from the immutable occurrence and timezone snapshot, ignoring legacy stored deadlines. Corrections keep the original submitted result official until a complete replacement version is finalized.
 - Existing finalized answers, photos, and signatures remain preserved. A correction is a new version, not a destructive replacement.
 - Each correction requires freshly drawn signatures for every applicable signature requirement, including the two item signatures and final auditor signature on Weekly PM. Old signatures remain available in the earlier version rather than attesting changed answers.
 - QR access does not include reports, account administration, template editing, or permanent draft deletion.
@@ -49,7 +49,7 @@ Required local coverage:
 
 1. Valid and invalid QR capabilities; rotation/revocation; direct anonymous table, RPC, and Storage denial; cross-location IDs; tampered paths; authenticated NULL-ownership behavior.
 2. Guest continuation of an authenticated creator's draft, all five templates, old daily/weekly draft discovery, and unique occurrence protection.
-3. Submitted same-day corrections, previous-day rejection, midnight while waiting for a row lock, DST boundaries, timezone snapshots, and preservation of the first submission timestamp.
+3. Daily occurrence-day and weekly Monday–Sunday corrections, expired-period rejection, midnight while waiting for a row lock, DST boundaries, timezone snapshots, and preservation of the first submission timestamp.
 4. Concurrent correction sessions and stale revisions; original official result remains intact while a correction is incomplete.
 5. Evidence requirements and fresh signatures; immutable original versions; revoked/expired or completed upload intents; uploads racing finalization and revocation; no deletion of original evidence.
 6. Atomic version/audit updates and network ambiguity handling without blind retries.
@@ -142,3 +142,18 @@ The reviewed correction was installed only in `tm-ops-dev`, recorded as `2026111
 Compatibility with latest draft PR #60 (`c5e59f5`) was rechecked: clean automatic merge and **510 combined application tests passed**. Corrected endpoint handler SHA-256: `9100b35864a07e5b87399fc127496e8c66552bea5c03c3187692d72379566012`.
 
 Precise in-transfer upload/download revocation, the final Storage metadata insertion as distinct from its initial permission probe, and real browser/device acceptance remain unverified. Successful normal private uploads and post-revocation denial do not establish those timing guarantees.
+
+
+## Local-only occurrence deadline correction: 2026-11-12
+
+The owner clarified the required correction periods after the hosted acceptance recorded above. Those earlier results tested first-submission-day deadlines and do not certify the new rule.
+
+New follow-on migration `20261112184148_checklist_occurrence_deadlines.sql` must follow both prior QR migrations. It replaces only the deadline helper and dispatcher: daily cutoffs use `period_date + 1`; weekly cutoffs use `period_date + 7` (the occurrence is already a Monday). Both convert midnight using the immutable template timezone snapshot. Unsigned initial drafts have no correction deadline, preserving multi-day/week draft saves and evidence uploads. All read capabilities, correction saves, evidence insertion and upload finalization use the authoritative helper; previously stored deadlines cannot override it. New submissions also store the corrected deadline. Existing stored rows are not backfilled.
+
+The three `PT409` sites and existing function grants are preserved. No templates, attribution, initial submission timestamps, versions, attachments, Storage objects, or audit rows are migrated. UI copy describes the assigned day/week rather than a same-submission-day correction. Historical audit descriptions in the dated evidence above remain unchanged.
+
+Local regression coverage includes late daily/weekly submissions, old weekly draft uploads and continuation, weekly corrections despite legacy early cutoffs, expired corrections despite legacy future cutoffs, unchanged original history/evidence/attribution, exact cutoff boundaries, spring/fall DST (23/25-hour days and 167/169-hour weeks), year/leap boundaries, and migration invariance for existing rows and function privileges.
+
+This follow-up is local only, not pushed, installed in hosted development or production, or deployed. Hosted deadline checks and device acceptance must use this corrected revision after separate authorization. The hosted transfer-race and independent evidence-backup verification gates remain open.
+
+Validation for this local follow-up: 493 application tests and 80 isolated PostgreSQL tests passed; both default-base and root-base production builds passed; `git diff --check` passed. The original two QR migrations and package manifests/lockfile are unchanged. No hosted validation is claimed for this follow-up.

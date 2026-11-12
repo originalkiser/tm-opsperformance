@@ -18,7 +18,7 @@ export default function ChecklistQrAdmin({ location }) {
   }, [location?.id])
   async function change(action) {
     if (working.current || busy || !location?.id) return
-    const confirm = action === 'qr_revoke' ? 'Disable this store’s QR access now? Existing scans will stop working. Saved checklists and evidence stay intact.' : 'Create a new QR for this store? Anyone with it can read, continue and make same-day corrections to this store’s checklists, including work started by signed-in managers. Any previous QR will stop working.'
+    const confirm = action === 'qr_revoke' ? 'Disable this store’s QR access now? Existing scans will stop working. Saved checklists and evidence stay intact.' : 'Create a new QR for this store? Anyone with it can read, continue and make corrections within the assigned day or week to this store’s checklists, including work started by signed-in managers. Any previous QR will stop working.'
     if (!window.confirm(confirm)) return
     working.current = true; setBusy(true); setError(''); setNotice(''); setSecret(null)
     const current = generation.current

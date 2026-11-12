@@ -4,7 +4,7 @@ import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 import { checklistTemplates } from '../src/utils/checklistTemplates.js'
 import { validateChecklist, validateEvidence, checklistTimestamp, isChecklistItemActive } from '../src/utils/checklistRules.js'
 const template=checklistTemplates.find(t=>t.key==='midday')
-const base={id:'submission',created_by:'account',location_id:'site',template_key:'midday',period_date:'2026-11-09',status:'submitted',revision:7,answers:{'midday-1':{value:'No',explanation:'Original'}},manager_name:'Original Manager',submitted_at:'2026-11-12T12:00:00Z',updated_at:'2026-11-12T12:00:00Z',template_snapshot:{...template,timezone:'America/New_York'}}
+const base={id:'submission',created_by:'account',location_id:'site',template_key:'midday',period_date:'2026-11-12',status:'submitted',revision:7,answers:{'midday-1':{value:'No',explanation:'Original'}},manager_name:'Original Manager',submitted_at:'2026-11-12T12:00:00Z',updated_at:'2026-11-12T12:00:00Z',template_snapshot:{...template,timezone:'America/New_York'}}
 const caps={can_edit:false,can_begin_edit:true,can_upload:false,can_discard:false,edit_deadline_at:'2026-11-13T05:00:00Z',server_now:'2026-11-12T12:00:00Z'}
 const text=node=>typeof node==='string'||typeof node==='number'?String(node):Array.isArray(node)?node.map(text).join(''):node?.props?text(node.props.children):''
 const button=(h,label)=>h.find(n=>n.type==='button'&&text(n)===label)
@@ -29,8 +29,8 @@ function form({row=base,capabilities=caps,confirm=true}={}) {
  return {...h,calls,saved,timers,events,cache,deny:()=>{deny=true},state:v=>{state=v},pause:()=>{paused=true},finishSave:()=>saveResolve?.(),pauseRead:()=>{readPaused=true},finishRead:()=>{readPaused=false;readResolve?.()}}
 }
 test('guest can begin correction on account record without fake user; preserves submitted status and disables discard',async()=>{
- const h=form();await h.flush();assert.ok(button(h,'Make same-day correction'));assert.equal(button(h,'Save Draft'),undefined)
- await button(h,'Make same-day correction').props.onClick();await h.flush()
+ const h=form();await h.flush();assert.ok(button(h,'Make correction'));assert.equal(button(h,'Save Draft'),undefined)
+ await button(h,'Make correction').props.onClick();await h.flush()
  assert.ok(button(h,'Save Draft'));assert.equal(button(h,'Discard Draft'),undefined)
  assert.ok(h.find(n=>n.props?.role==='status'&&text(n).includes('last submitted version remains official')))
  h.find(n=>n.type==='textarea').props.onChange({target:{value:'Corrected explanation'}});await h.flush()
@@ -39,11 +39,11 @@ test('guest can begin correction on account record without fake user; preserves 
  const save=h.calls.find(c=>Array.isArray(c)&&c[0]==='save');assert.equal(save[1].status,'submitted');assert.equal(save[1].working_copy_id,'work');assert.equal(save[1].revision,1)
  assert.equal(save[2].submit,false);h.unmount()
 })
-test('server deadline locks form on midnight refresh; no week-long edit extension',async()=>{
- const h=form();await h.flush();await button(h,'Make same-day correction').props.onClick();await h.flush()
+test('server deadline locks form when the assigned correction period ends',async()=>{
+ const h=form();await h.flush();await button(h,'Make correction').props.onClick();await h.flush()
  h.state({row:base,capabilities:{...caps,can_begin_edit:false},evidence:[]})
  h.timers.at(-1)();await h.flush()
- assert.equal(button(h,'Save Draft'),undefined);assert.equal(button(h,'Make same-day correction'),undefined)
+ assert.equal(button(h,'Save Draft'),undefined);assert.equal(button(h,'Make correction'),undefined)
  assert.ok(h.all(n=>n.type==='fieldset').every(n=>n.props.disabled));h.unmount()
 })
 test('refresh of dirty answers requires confirmation and revocation on focus locks all controls',async()=>{
@@ -70,7 +70,7 @@ test('leaving while a save completes does not update another store form or start
 })
 
 test('a delayed focus read cannot overwrite typing or a newer save; dirty changes do not restart deadline',async()=>{
- const h=form();await h.flush();await button(h,'Make same-day correction').props.onClick();await h.flush()
+ const h=form();await h.flush();await button(h,'Make correction').props.onClick();await h.flush()
  const timers=h.timers.length
  h.pauseRead();const reading=h.events.get('focus')();await h.flush()
  h.find(n=>n.type==='textarea').props.onChange({target:{value:'New local answer'}});await h.flush()
@@ -83,7 +83,7 @@ test('a delayed focus read cannot overwrite typing or a newer save; dirty change
  h.unmount()
 })
 test('dirty correction at midnight is replaced by official submission while preserving recovery',async()=>{
- const h=form();await h.flush();await button(h,'Make same-day correction').props.onClick();await h.flush()
+ const h=form();await h.flush();await button(h,'Make correction').props.onClick();await h.flush()
  h.find(n=>n.type==='textarea').props.onChange({target:{value:'Not submitted'}});await h.flush()
  assert.ok([...h.cache.values()].some(value=>value.includes('Not submitted')))
  h.state({row:base,capabilities:{...caps,can_begin_edit:false},evidence:[]})
@@ -92,4 +92,14 @@ test('dirty correction at midnight is replaced by official submission while pres
  assert.ok(h.find(n=>n.props?.role==='status'&&text(n).includes('unfinished corrections were not submitted')))
  assert.ok([...h.cache.values()].some(value=>value.includes('Not submitted')))
  h.unmount()
+})
+
+test('weekly correction displays authoritative period deadline instead of legacy stored deadline',async()=>{
+ const weekly=checklistTemplates.find(t=>t.key==='weekly')
+ const row={...base,template_key:'weekly',period_date:'2026-11-09',edit_deadline_at:'2026-11-13T05:00:00Z',template_snapshot:{...weekly,timezone:'America/New_York'}}
+ const h=form({row,capabilities:{...caps,edit_deadline_at:'2026-11-16T05:00:00Z'}});await h.flush()
+ const copy=text(h.find(n=>n.type==='p'&&text(n).includes('Corrections close:')))
+ assert.ok(copy.includes(checklistTimestamp('2026-11-16T05:00:00Z','America/New_York')))
+ assert.ok(copy.includes('assigned date or week'));assert.equal(copy.includes('first submission'),false)
+ assert.ok(button(h,'Make correction'));h.unmount()
 })
