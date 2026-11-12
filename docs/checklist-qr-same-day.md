@@ -1,5 +1,7 @@
 # Location QR access and same-day checklist corrections
 
+Current release status: hosted functional and conflict acceptance passed in `tm-ops-dev`, including the correction for a retry-loop defect found during the first pass. Keep this PR draft: precise in-transfer Storage timing, real browser/device acceptance and separate production authorization remain release gates. See the dated acceptance record below.
+
 Development only. This work is isolated from Checklist Compliance PR #60.
 No production database, Storage, account, QR grant, merge, or deployment is authorized by this document.
 
@@ -93,3 +95,50 @@ Reviewed backend SHA-256 values:
 - Migration `20261112022829_checklist_qr_same_day.sql`: `0016191dc294056eba7b3f622d6e4471bab5107c6d8d19e35a488a798649fcf4`.
 - `checklist-access/index.ts`: `04e71b2436495b9583e47b0961b4d4fd888169fde2e129efb4705195fa245f1f`.
 - `checklist-access/handler.js`: `73b4a532a53ba9d6c63e361eef817bf0179eaa3f68d51d8d71ed1151e390a3f9`.
+
+## Hosted development acceptance and corrective work: 2026-11-12
+
+With explicit owner approval, the exact published tree `d826c24f90920adadca297856701b34dd01f5915` was installed only in the existing `tm-ops-dev` project. The original QR migration was recorded as `20261112141416_pr61_qa_checklist_qr_same_day`; `checklist-access` version 1 and its shared key helper matched the repository bytes. No production project, merge or production release was used. The earlier local review and test results above predate this hosted finding.
+
+Four new, auto-confirmed fictional Auth accounts and three labelled fictional sites were used. Requests used genuine user JWTs or location QR capabilities, not forged JWTs or an extracted service key. The test covered:
+
+- All five complete initial submissions, continued by a QR guest from account-created drafts, with real private photos/signatures.
+- Complete same-day corrections for all five templates, fresh applicable signatures, preserved original timestamps/deadlines and earlier history/evidence.
+- An older weekly draft for Monday 2026-10-26 discovered and continued by a QR guest without changing its occurrence.
+- Cross-site and direct privileged-RPC denial, creator/account boundaries, image validation, no-cache evidence delivery and bounded request rejection.
+- A real save started 1.995 seconds before a controlled fictional deadline, waited for a database row lock, and returned HTTP 403 after the deadline. Official, history and working-copy hashes were unchanged. This was a deliberately shortened deadline on a new fixture, not a change to an existing site's time zone. An earlier attempt hit the database statement timeout and was not counted as a pass.
+- Both test QR grants were revoked. Old tokens were denied for context, read, save, download and upload. All four accounts were globally signed out, then made inactive, unassigned Store profiles. Database verification found zero active test grants/profiles and zero test sessions.
+
+All pre-existing development profiles, locations, submissions, attachments, templates, Storage metadata and audit records matched their before-test counts and hashes. Newly added schema columns were excluded from comparisons of pre-existing record values. Labelled fixtures remain: three sites, nine submissions, eleven preserved versions and twenty-one registered private images. The existing development schema and endpoint remain installed; no data was deleted.
+
+### Conflict defect found and corrected
+
+Stale revision/generation conditions deliberately raised SQLSTATE `40001`, which denotes a retryable transaction serialization failure. Hosted PostgREST 14 repeatedly retried those business conflicts: a simultaneous pair committed only one update, but the losing request and a standalone stale request timed out instead of returning HTTP 409. Hosted logs recorded 377 `40001` errors during the pass. This is an application error-code defect, not a passed concurrency check or a confirmed client transport issue.
+
+[Supabase's documented failure and remediation](https://supabase.com/kb/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b) recommends `PT409` for these conflicts. After access cleanup, no active checklist RPC session remained and a bounded log check found no further `40001` errors. No database restart or backend termination was needed.
+
+The minimal correction is:
+
+1. Apply new migration `20261112143325_checklist_conflict_http_409.sql` after the original QR migration. It preserves the dispatcher and permissions while changing only the three deliberate conflict codes: stale QR generation, stale begin-edit and stale save. The original migration is unchanged.
+2. Update the endpoint's safe conflict mapping from `40001` to `PT409`.
+3. Add regression coverage for the installed SQLSTATE, unchanged state after rejected conflicts, and one safe HTTP 409 response for edit/save/QR actions.
+
+The owner separately authorized corrective development deployment, conflict retesting and this draft PR update. The two checklist migrations must remain ordered; do not reapply the original migration to a project where it is already installed. Production migration, function deployment, merge and application release still require separate authorization.
+
+Local correction verification: **492 application tests**, **77 isolated PostgreSQL tests**, both production base-path builds and whitespace checks passed. Independent review confirmed the dispatcher differs only in the three conflict codes and `CREATE OR REPLACE`, with preserved permissions; it independently passed all eight endpoint tests and fifteen QR SQL groups. The original migration and published acceptance evidence remain unchanged. New corrective-migration SHA-256: `51ae2449993036b7440d61b13dbb3c2b36189eca983708062c4af7915dc2d88d`.
+
+### Corrective hosted retest: passed on 2026-11-12
+
+The reviewed correction was installed only in `tm-ops-dev`, recorded as `20261112144239_pr61_qa_checklist_conflict_http_409`, with `checklist-access` version 2. Retrieved function bytes matched the reviewed files. The dispatcher contains exactly three `PT409` conflict sites and no deliberate `40001` raises, with unchanged permissions. Deployment itself changed no submission, history, image or template values.
+
+- Sequential stale save returned HTTP 409 in 0.172 seconds.
+- Simultaneous account saves returned one HTTP 200 and one HTTP 409 in 0.206/0.226 seconds. The draft advanced exactly one revision; account draft audit behavior remained unchanged.
+- Simultaneous guest saves returned one HTTP 200 and one HTTP 409 in 0.169/0.171 seconds. The draft advanced exactly one revision and wrote exactly one guest-save audit entry.
+- Stale begin-edit returned HTTP 409 in 0.214 seconds. Stale QR rotate/revoke requests for both fictional sites returned HTTP 409 in 0.215–0.303 seconds without changing their grants.
+- Hosted logs recorded exactly eight `PT409` errors and eight HTTP 409 responses for these eight rejected requests, with no `40001` errors in the retest window. No repeated-error storm or active checklist RPC session remained.
+- All finalized versions, attachment metadata and Storage metadata matched their pre-retest hashes. All profiles and locations returned to their exact pre-retest state. Pre-existing submissions and unrelated audit records remained unchanged.
+- Both new QR grants were revoked and all four accounts were globally signed out and made inactive/unassigned again. Database verification found zero active grants/profiles and zero QA sessions. No accounts or evidence were deleted.
+
+Compatibility with latest draft PR #60 (`c5e59f5`) was rechecked: clean automatic merge and **510 combined application tests passed**. Corrected endpoint handler SHA-256: `9100b35864a07e5b87399fc127496e8c66552bea5c03c3187692d72379566012`.
+
+Precise in-transfer upload/download revocation, the final Storage metadata insertion as distinct from its initial permission probe, and real browser/device acceptance remain unverified. Successful normal private uploads and post-revocation denial do not establish those timing guarantees.

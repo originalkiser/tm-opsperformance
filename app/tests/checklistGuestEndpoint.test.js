@@ -67,6 +67,15 @@ test('bounded request parsing rejects oversized JSON before RPC and unrecognized
 test('unknown database errors never leak details, token material, or stack traces; conflicts remain actionable',async()=>{
  let c=clients({rpc:async()=>({data:null,error:{code:'XX000',message:'private token '+token}})})
  let r=await checklistAccess(request({action:'read',id,token}),c.user,c.server,webcrypto);assert.equal((await r.text()).includes(token),false)
- c=clients({rpc:async()=>({data:null,error:{code:'40001',message:'arbitrary conflict detail'}})})
+ c=clients({rpc:async()=>({data:null,error:{code:'PT409',message:'arbitrary conflict detail'}})})
  r=await checklistAccess(request({action:'save',id,token}),c.user,c.server,webcrypto);assert.equal(r.status,409);assert.match((await r.json()).error,/changed elsewhere/)
+})
+test('non-retryable application conflicts return one safe HTTP409 for edit, save and QR generation changes',async()=>{
+ for(const action of ['begin_edit','save','qr_rotate','qr_revoke']) {
+  const c=clients({rpc:async()=>({data:null,error:{code:'PT409',message:'private conflict '+token}})})
+  const r=await checklistAccess(request({action,id,location_id:id,revision:1,expected_generation:0}),c.user,c.server,webcrypto)
+  assert.equal(r.status,409)
+  assert.deepEqual(await r.json(),{error:'Checklist changed elsewhere. Reload before saving.'})
+  assert.equal(c.calls.length,1)
+ }
 })

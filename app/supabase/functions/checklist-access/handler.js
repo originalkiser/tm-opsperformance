@@ -66,9 +66,10 @@ export async function checklistAccess(req, userClient, serverClient, cryptoImpl 
       const { data, error } = await serverClient.rpc('checklist_access_server', { p_actor: actor, p_token_hash: tokenHash, p_action: action, p_body: value })
       if (error) {
         // Do not reflect raw DB errors or request contents containing capability material.
-        const status = error.code === '42501' ? 403 : error.code === '54000' ? 429 : error.code === '23505' || error.code === '40001' ? 409 : 400
+        // Business conflicts must not use 40001: PostgREST may retry it as a serialization failure.
+        const status = error.code === '42501' ? 403 : error.code === '54000' ? 429 : error.code === '23505' || error.code === 'PT409' ? 409 : 400
         const message = error.code === '23505' ? 'This checklist already exists. Refresh to resume it.' :
-          error.code === '40001' ? 'Checklist changed elsewhere. Reload before saving.' :
+          error.code === 'PT409' ? 'Checklist changed elsewhere. Reload before saving.' :
           error.code === '42501' ? 'This checklist is not available for this action. Its access or correction window may have ended.' :
           error.code === '54000' ? 'Request limit reached. Wait before trying again.' :
           /^P000[12]$/.test(error.code || '') ? String(error.message || 'Checklist request rejected').slice(0,400) : 'Checklist request rejected. Refresh before trying again.'

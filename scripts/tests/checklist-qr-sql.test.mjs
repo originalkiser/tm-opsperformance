@@ -39,6 +39,7 @@ async function setup() {
  await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261109172331_checklist_companywide_access.sql',import.meta.url),'utf8'))
  await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261109193454_weekly_pm_checklist.sql',import.meta.url),'utf8'))
  await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112022829_checklist_qr_same_day.sql',import.meta.url),'utf8'))
+ await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112143325_checklist_conflict_http_409.sql',import.meta.url),'utf8'))
  await db.exec('set role service_role')
  return {db,today}
 }
@@ -271,4 +272,38 @@ test('QR generation serialization uses NO KEY UPDATE to remain compatible with a
  const sql=readFileSync(new URL('../../app/supabase/migrations/20261112022829_checklist_qr_same_day.sql',import.meta.url),'utf8')
  assert.match(sql,/perform 1 from public\.locations where id=loc for no key update/)
  assert.doesNotMatch(sql,/perform 1 from public\.locations where id=loc for update/)
+})
+
+test('business revision/generation conflicts use non-retryable PT409 and leave state unchanged',async()=>{
+ const {db}=await setup();try{
+  await configure(db)
+  await db.exec('reset role')
+  const body=(await db.query("select prosrc from pg_proc where oid='checklist_private.access_action(uuid,text,text,jsonb)'::regprocedure")).rows[0].prosrc
+  assert.equal((body.match(/errcode='PT409'/g)||[]).length,3)
+  assert.doesNotMatch(body,/errcode\s*=\s*'40001'/)
+  const state=async()=>{
+   await db.exec('reset role')
+   return (await db.query(`select jsonb_build_object(
+    'grants',(select jsonb_agg(to_jsonb(g) order by g.id) from checklist_private.qr_grants g),
+    'submissions',(select jsonb_agg(to_jsonb(s) order by s.id) from public.checklist_submissions s),
+    'working',(select jsonb_agg(to_jsonb(w) order by w.id) from checklist_private.working_copies w),
+    'versions',(select jsonb_agg(to_jsonb(v) order by v.submission_id,v.revision) from checklist_private.versions v),
+    'audit',(select jsonb_agg(to_jsonb(a) order by a.id) from public.edit_audit_log a)
+   ) as result`)).rows[0].result
+  }
+  let row=(await start(db)).submission
+  let before=await state()
+  await assert.rejects(api(db,'qr_rotate',{location_id:site,token_hash:newHash,expected_generation:0},admin),{code:'PT409'})
+  await assert.rejects(api(db,'qr_revoke',{location_id:site,expected_generation:0},admin),{code:'PT409'})
+  await assert.rejects(saveNew(db,{...row,revision:0},false),{code:'PT409'})
+  assert.deepEqual(await state(),before)
+  await ready(db,row);row=(await saveNew(db,row,true)).submission
+  before=await state()
+  await assert.rejects(guest(db,'begin_edit',{id:row.id,revision:row.revision-1}),{code:'PT409'})
+  assert.deepEqual(await state(),before)
+  const working=(await guest(db,'begin_edit',{id:row.id,revision:row.revision})).submission
+  before=await state()
+  await assert.rejects(saveNew(db,{...working,revision:0},false,null,hash),{code:'PT409'})
+  assert.deepEqual(await state(),before)
+ }finally{await db.close()}
 })
