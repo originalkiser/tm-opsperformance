@@ -13,6 +13,7 @@ import Reports from './pages/Reports'
 import AmEntry from './pages/AmEntry'
 import ManagerChecklists from './pages/ManagerChecklists'
 import Resources from './pages/Resources'
+import GuestChecklists from './pages/GuestChecklists'
 import UpdateBanner from './components/UpdateBanner'
 import DailyLogSaveNotice from './components/DailyLogSaveNotice'
 import TargetsBanner from './components/TargetsBanner'
@@ -52,14 +53,11 @@ function VersionWatcher() {
   return updateAvailable ? <UpdateBanner /> : null
 }
 
-export default function App() {
-  const [dark, setDark] = useDarkMode()
-
+function AccountApp() {
   return (
-    <DarkModeContext.Provider value={[dark, setDark]}>
       <AuthProvider>
         <VersionWatcher />
-        <HashRouter>
+
           <TargetsBanner />
           <DailyLogSaveNotice />
           <Routes>
@@ -86,8 +84,18 @@ export default function App() {
             <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </HashRouter>
+
       </AuthProvider>
-    </DarkModeContext.Provider>
+
   )
+}
+
+export default function App() {
+  const [dark, setDark] = useDarkMode()
+  return <DarkModeContext.Provider value={[dark, setDark]}>
+    <HashRouter><Routes>
+      <Route path="/guest-checklists" element={<GuestChecklists />} />
+      <Route path="/*" element={<AccountApp />} />
+    </Routes></HashRouter>
+  </DarkModeContext.Provider>
 }

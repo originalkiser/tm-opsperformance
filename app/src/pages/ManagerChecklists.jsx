@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import NavBar from '../components/NavBar'
-import ChecklistForm from '../components/ChecklistForm'
+import ChecklistAccessForm from '../components/ChecklistAccessForm'
+import ChecklistQrAdmin from '../components/ChecklistQrAdmin'
+import ChecklistOpenWork from '../components/ChecklistOpenWork'
 import ChecklistAdmin from '../components/ChecklistAdmin'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -39,6 +41,7 @@ export default function ManagerChecklists() {
         (displayOrder.indexOf(a.key) < 0 ? displayOrder.length : displayOrder.indexOf(a.key)) -
         (displayOrder.indexOf(b.key) < 0 ? displayOrder.length : displayOrder.indexOf(b.key))))
       setRows(results[1].data || [])
+
     } catch (error) { if (current === request.current) setError(error.message) } finally { if (current === request.current) setBusy(false) }
   }
   useEffect(() => { load(); return () => { request.current++ } }, [date, user?.id, authorized])
@@ -61,7 +64,7 @@ export default function ManagerChecklists() {
       <header className="tm-checklists-title"><h1 className="text-2xl font-bold">Manager Checklists</h1></header>
       <p className="tm-checklists-notice rounded p-3">MonitorQA remains the official checklist system. Checklists are available, not mandatory. No automatic assignments or reminders. Online connection required.</p>
       {error && <p role="alert" className="text-red-600 dark:text-red-300">{error}</p>}
-      {form ? <ChecklistForm key={form.id} initial={form} user={user} admin={admin} locationLabel={locations.find(location => location.id === form.location_id)?.site_code} onSaved={saved => setRows(previous => [...previous.filter(row => row.id !== saved.id), saved])} onClose={() => { setForm(null); load() }} /> : <>
+      {form ? <ChecklistAccessForm key={form.id} initial={form} user={user} admin={admin} locationLabel={locations.find(location => location.id === form.location_id)?.site_code} onSaved={saved => setRows(previous => [...previous.filter(row => row.id !== saved.id), saved])} onClose={() => { setForm(null); load() }} /> : <>
         <div className="tm-checklists-filters flex flex-wrap gap-4">
           <label>Location<select aria-label="Checklist location" disabled={busy} value={site} onChange={e => setSite(e.target.value)} className="block p-3 border rounded bg-white dark:bg-tm-dark-surface">
             {!scope.length && <option value="">No assigned locations</option>}{scope.map(location => <option key={location.id} value={location.id}>{location.site_code}</option>)}</select></label>
@@ -81,6 +84,7 @@ export default function ManagerChecklists() {
             <button disabled={busy || date > today} className="tm-checklist-action min-h-12 px-5 rounded border" onClick={() => open(template, record)}>{record?.status === 'submitted' ? 'View submission' : record?.status === 'discarding' ? 'Finish discarding draft' : record ? 'Resume draft' : 'Start checklist'}</button>
           </section>
         })}</div></div>)}
+        {site && <ChecklistOpenWork key={site} locationId={site} onOpen={record => open(null, record)} disabled={busy} />}
         {admin && <>
           <h2 className="tm-checklist-review-heading font-bold text-lg">Checklist submission review</h2>
           <p>Existing records from Monday through the selected site-local date. No missing or overdue obligations are generated.</p>
@@ -89,7 +93,7 @@ export default function ManagerChecklists() {
             <button disabled={busy} className="min-h-12 px-4 underline" onClick={() => open(null, record)}>Review {record.status} · {record.manager_name || 'Unnamed draft'} · {checklistTimestamp(record.submitted_at || record.updated_at, record.template_snapshot.timezone)}</button>
           </li>)}</ul>
           <button className="min-h-12 px-4 border rounded" onClick={() => setShowAdmin(previous => !previous)}>{showAdmin ? 'Hide' : 'Manage'} checklist templates</button>
-          {showAdmin && <ChecklistAdmin templates={templates} reload={load} />}
+          {showAdmin && <><ChecklistQrAdmin location={selected} /><ChecklistAdmin templates={templates} reload={load} /></>}
         </>}
       </>}
     </main>

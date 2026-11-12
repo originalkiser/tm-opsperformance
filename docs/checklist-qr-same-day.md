@@ -1,0 +1,95 @@
+# Location QR access and same-day checklist corrections
+
+Development only. This work is isolated from Checklist Compliance PR #60.
+No production database, Storage, account, QR grant, merge, or deployment is authorized by this document.
+
+## Approved behavior
+
+- A location QR holder can continue or correct any checklist at that location, including a checklist begun by a signed-in manager. Possession of a copied QR gives the same access; it does not prove identity or physical presence.
+- The five existing templates and their snapshots, required answers, evidence, and signatures remain authoritative.
+- An initial draft can remain unfinished across days or weeks. Its original daily date or Monday-based weekly occurrence is preserved.
+- A submitted checklist can be corrected only on its first submission's site-local calendar day. A weekly checklist submitted Wednesday is editable Wednesday, not for the remainder of the week.
+- The first submission timestamp and deadline never reset. Corrections keep the original submitted result official until a complete replacement version is finalized.
+- Existing finalized answers, photos, and signatures remain preserved. A correction is a new version, not a destructive replacement.
+- Each correction requires freshly drawn signatures for every applicable signature requirement, including the two item signatures and final auditor signature on Weekly PM. Old signatures remain available in the earlier version rather than attesting changed answers.
+- QR access does not include reports, account administration, template editing, or permanent draft deletion.
+- MonitorQA remains the official checklist system. No new mandatory assignments, reminders, or background cleanup are introduced.
+
+## Access and evidence boundaries
+
+Guest access uses a dedicated server endpoint and a revocable, random location capability. Anonymous direct table/Storage access stays denied. No shared manager password, fake authenticated user, public bucket, or reusable signed evidence URL is introduced.
+
+`checklist-access` uses a 256-bit generated QR token, hashed with SHA-256 before the server-only RPC. The raw token is returned only when an Admin generates/replaces the code. Guest browsers remove it from the hash-router URL and retain it in tab session storage for reloads. Every request presents it again; no synthetic Supabase account or separate permanent guest session is created. A copied or photographed QR remains an access credential until revoked or replaced.
+
+The server derives the permitted location from the token. Client-provided IDs are not authorization. Token rotation and revocation are checked on every protected operation, including fresh evidence access. Guest audit attribution identifies the access grant and the self-reported name; it does not claim a verified account identity.
+
+The original creator remains attributed on account-created records. Nullable guest actor fields must be accompanied by null-safe authenticated authorization. In particular, SQL `created_by <> auth.uid()` is not a safe ownership rejection when `created_by` can be NULL.
+
+Correction uploads must be bound to a particular working copy. The final Storage metadata guard and attachment finalization recheck lifecycle/authorization. Never use the original whole-submission discard cleanup on a submitted checklist or its correction: it removes the entire submission prefix and could destroy historical evidence.
+
+## Implementation boundaries
+
+- `checklist_private` contains QR grants, rate counters, correction working copies, immutable finalized versions, and upload intents. Browser roles cannot read or write these tables. The service-role-only wrapper is not callable by anonymous or authenticated browser clients.
+- Existing submissions/attachments gain explicit guest creator references. Original authenticated creator IDs remain unchanged when someone uses the QR to continue their work.
+- The authenticated legacy draft RPC routes through the shared validator with null-safe ownership checks. It does not gain a direct submitted-record overwrite path.
+- The dedicated endpoint accepts either a QR capability or an account validated with `auth.getUser()`. It ignores supplied actor, token-hash, grant, and Storage-path fields. Account requests preserve existing creator editing and Admin review boundaries.
+- The official submission remains `submitted` throughout a correction. A complete, valid correction updates it and appends the preserved version/audit entry in one database transaction. Original `submitted_at`, occurrence, and deadline are retained.
+- New upload intents have a five-minute maximum lifetime, with correction uploads also capped at the correction deadline. The server generates paths; clients do not select paths. Limits bound request bytes, image size, upload count/rate, and context pagination.
+- Guest downloads are proxied privately, rechecking authorization after Storage transfer. The browser checks access once more after receiving the bytes before creating a temporary Blob URL.
+- QR management requires an active Admin and an expected generation. A stale Admin page cannot silently replace or revoke a newer QR. The UI generates the image locally and reveals a new link only for immediate copy/download/print.
+- Guest navigation is outside the authenticated app shell. The location is fixed by the QR; there are no report, site-switcher, profile, or template-management controls. Account pages gain a separately paginated unfinished-work list.
+
+The capability intentionally grants every holder access to the site's checklist answers and private checklist evidence, including account-created records. It does not give the holder an independently verified personal identity. Existing record copies already delivered to a browser cannot be remotely erased.
+
+## Local verification and release gates
+
+Required local coverage:
+
+1. Valid and invalid QR capabilities; rotation/revocation; direct anonymous table, RPC, and Storage denial; cross-location IDs; tampered paths; authenticated NULL-ownership behavior.
+2. Guest continuation of an authenticated creator's draft, all five templates, old daily/weekly draft discovery, and unique occurrence protection.
+3. Submitted same-day corrections, previous-day rejection, midnight while waiting for a row lock, DST boundaries, timezone snapshots, and preservation of the first submission timestamp.
+4. Concurrent correction sessions and stale revisions; original official result remains intact while a correction is incomplete.
+5. Evidence requirements and fresh signatures; immutable original versions; revoked/expired or completed upload intents; uploads racing finalization and revocation; no deletion of original evidence.
+6. Atomic version/audit updates and network ambiguity handling without blind retries.
+7. Mobile, dark mode, navigation/recovery, QR rendering without third-party QR services, token removal from the browser address, and revocation/expiry messages.
+8. Existing application/SQL regression suites and both production base-path builds.
+
+Local fixtures cannot certify live Supabase Storage ordering, blob cleanup, hosted Auth/PostgREST, phone QR scanning, camera permissions, or stylus behavior. Those require a separately authorized isolated integration/acceptance session. The local Chromium launcher currently fails with an OS socket permission error; browser acceptance must be recorded as blocked unless completed through a supported browser-capable executor.
+
+Before any release: review exact migration/function bytes and production metadata/timezones, confirm recovery and separately preserved evidence, authorize the backend change, verify it, then authorize the normal application release. Generate real location QR codes only after backend and client acceptance. Never push to main or trigger a Cloudflare deployment as part of development testing.
+
+Recovery is application-first and non-destructive. Retain schema, original and corrected versions, audit history, and evidence. Revoking QR grants is a separate authorized access change. Database backup alone does not restore photo/signature objects.
+
+## Development record
+
+- Initial main: `3a478acd1f72028e6c2b88552668eb4d6e9f808a`.
+- Separately inspected PR #60: draft and unmerged at `4633cf488d4a8c7ea359fb9ef48727ccde38cabb`.
+- Baseline application suite before implementation: 461 tests passed.
+- QR renderer: pinned `qrcode@1.5.4`, rendered locally. No QR token is sent to an image service.
+- Final combined application suite: **491 passed**, no failures/skips.
+- Final combined isolated PostgreSQL suite: **76 passed**, no failures/skips. Includes checklist, QR/correction, monthly-budget, November, and resource regression suites.
+- Both production builds passed: default GitHub Pages base and `--base=/`. Existing large-bundle warnings remain.
+- Whitespace check passed. No source input, environment file, real QR credential, user data, or screenshot was added.
+- Independent review found no remaining actionable issues after fixes for discard compatibility, expired correction display, history evidence, fresh PM signatures, stale UI reads, QR-generation conflicts, and QR/location lock ordering. Browser, hosted integration, and genuine concurrent streaming-upload acceptance remain release gates.
+- Compatibility with unmerged PR #60 was tested in a separate local integration worktree: automatic merge succeeded without conflicts, all **509 combined application tests** passed, and the root-base build passed. With both SQL migrations installed in the fictional fixture, **five reporting/integration groups** passed, including an unfinished guest correction retaining one official `submitted` occurrence and anonymous report access remaining denied. Neither feature branch was merged or pushed remotely.
+
+Reproduce from repository root:
+
+```sh
+npm --prefix app test
+PGLITE_MODULE=/path/to/@electric-sql/pglite/dist/index.js node --test \
+  scripts/tests/checklist-sql.test.mjs scripts/tests/checklist-qr-sql.test.mjs \
+  scripts/tests/monthly-budget-sql.test.mjs scripts/tests/november-sql.test.mjs \
+  scripts/tests/november-goal-access.test.mjs scripts/tests/resource-sql.test.mjs
+npm --prefix app run build
+npm --prefix app run build -- --base=/
+git diff --check
+```
+
+The SQL harness used `@electric-sql/pglite@0.5.15` outside the application dependencies. Ordered race tests and lock-order review do not replace real multi-connection Storage/database acceptance.
+
+Reviewed backend SHA-256 values:
+
+- Migration `20261112022829_checklist_qr_same_day.sql`: `0016191dc294056eba7b3f622d6e4471bab5107c6d8d19e35a488a798649fcf4`.
+- `checklist-access/index.ts`: `04e71b2436495b9583e47b0961b4d4fd888169fde2e129efb4705195fa245f1f`.
+- `checklist-access/handler.js`: `73b4a532a53ba9d6c63e361eef817bf0179eaa3f68d51d8d71ed1151e390a3f9`.
