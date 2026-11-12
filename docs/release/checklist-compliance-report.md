@@ -49,14 +49,38 @@ Verified:
 
 The first attempt exposed a harness-only defect: raw esbuild used classic JSX while Vite uses automatic JSX. The prepared browser script now sets `jsx: 'automatic'`. The manual Mac run used an equivalent QA-only React binding in the previously generated fixture; application source was not changed. The 18 affected utility/UI tests and production build passed again. The corrected full Playwright runner itself has not been run end-to-end: cloud Chromium remains socket-restricted. Screenshots were inspected during testing, not saved as deliverables.
 
-This is isolated component acceptance, not full authenticated-application, real-device, Auth/PostgREST or Storage acceptance. Hosted permission tests remain required. The only connected nonproduction project, `tm-ops-dev`, was verified INACTIVE with no development branches on 2026-11-12; it was not restored or changed.
+This is isolated component acceptance, not a full authenticated-application or real-device run. Separate hosted API/security acceptance was completed below.
+
+### Hosted Auth/PostgREST/Storage acceptance: passed for supported dev roles on 2026-11-12
+
+With explicit owner authorization, `tm-ops-dev` was resumed on its existing Free plan. Read-only preflight found prior fictional development fixtures, no Edge Functions, outbound database integrations or production linkage. Its original six profiles and six locations were preserved and verified by before/after hashes. The actual pilot, discard, companywide, weekly-PM and reporting migrations were applied only to this development project; no production project was accessed.
+
+Four uniquely named fictional Auth accounts were created and auto-confirmed without invitation emails. Testing used genuine GoTrue password sign-in, the project's publishable key and ordinary user JWTs, never a service-role key or forged JWT. Five clearly prefixed fictional locations and boundary-case submissions were seeded separately from existing records. A draft, tiny fictional PNG upload and attachment were also created through the real RPC/Storage APIs. Deliberately seeded status/date fixtures test the reporting boundary, not the complete checklist submission workflow.
+
+Verified over hosted HTTP:
+- Anonymous report requests denied; all four signed-in inactive accounts denied with `42501`.
+- Admin received all ten eligible development locations, including zero-record locations, and not the excluded site. Owner and same-site peer received only their assigned site; the outside Store user received only its other site.
+- The same-site peer could see completion statuses but no raw answer rows, attachment metadata or private image. Owner upload/attach/download succeeded and returned the exact PNG bytes; peer/outside downloads were denied.
+- Strict response-field allowlists and private-answer/name sentinels confirmed that summaries expose no answer, submitter, submission-ID or evidence fields. Direct public-helper and private-schema API attempts were denied.
+- Daily/weekly submitted, draft, discarding and historical-pilot fixtures matched expectations. Monday keys before the selected daily range were included; non-Monday weekly rows were omitted. The empty location remained visible.
+- Site-local dates differed correctly across New York and Kiritimati. Future New York rows were suppressed while a same-date Kiritimati row was included. Inclusive 92-day ranges passed; 93-day, reversed, null and infinite ranges were rejected.
+- A single already-issued peer JWT immediately reflected deleted/inactive profile denial, removal of site assignment, and assignment to an excluded site, without login or token refresh. Restoring the profile restored access.
+- An invalid timezone at the assigned test site rejected peer/Admin reporting with `22023`, while the outside site's report remained usable. Restoring the zone restored the original response.
+- After restoration, hashes for submissions, templates, attachment metadata, Storage objects, locations and profiles matched the pre-revocation snapshot; audit count remained zero.
+
+Cleanup: all four QA accounts were globally signed out (HTTP 204), then made inactive, unassigned Store profiles. Database verification found zero QA sessions and zero active QA profiles. No accounts or data were deleted. Five labelled QA sites, fifteen status fixtures, one attachment and one tiny private PNG remain for reproducibility. The original six profiles/locations still match their pretest hashes. The project remains healthy on Free; no upgrade or paid option was selected.
+
+Coverage limits: the development baseline's existing role constraint permits only Admin/Store, so hosted legacy Area Manager coverage was not fabricated by changing its role model. Missing-profile/unsupported-role cases remain covered by isolated SQL tests, not hosted Auth tests. This pass tests real endpoints and permissions, not the full authenticated application UI, a physical mobile device, the complete evidence-required submission workflow or the automated Playwright runner.
+
+The development security advisor retained its baseline warnings (including the anonymous-executable `rls_auto_enable` trigger helper and disabled leaked-password protection) and flagged the existing authenticated checklist write RPCs as security-definer functions. The new public reporting wrapper is security-invoker, with a private scoped helper. No unrelated security settings were changed. Advisor references: [function-execution review](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable) and [password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
+
 
 ## Deployment boundary and remaining gates
 
 **No production inspection, migration, data mutation, merge or deployment was performed. Keep the PR draft.** Review commits carry `[CF-Pages-Skip]` to suppress Cloudflare branch previews. Never merge a skip-marked commit as a substitute for a separately authorized release.
 
 1. Confirm active reporting-site definition and review current production schema, time zones and checklist prerequisites. See [backend release plan](checklist-compliance-backend.md).
-2. Complete hosted/nonproduction Auth/PostgREST tests for Admin/Store/AM, missing/inactive accounts and no broadened raw-answer/evidence access; check the full authenticated app and target devices.
+2. Complete full authenticated-application and target-device acceptance. Hosted Admin/Store endpoint/security checks passed; legacy Area Manager and missing-profile cases remain isolated-SQL coverage only. Check CI for the exact review head; no status checks or PR workflow runs were configured/reported at this acceptance checkpoint.
 3. Obtain separate database and application release authorization. Install/verify the additive RPC before releasing the client. Do not use a blind database push or assume a migration ledger.
 4. Recovery: hide/revert only this reporting client; the unused read-only RPC can remain. Do not delete checklist data or roll back existing authorization/evidence migrations.
 
