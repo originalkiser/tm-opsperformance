@@ -18,3 +18,9 @@ verify_jwt = false
 # Explicit getUser + caller-JWT active Admin RPC precede exact-path resource cleanup.
 [functions.manage-resource-files]
 verify_jwt = false
+
+# Dedicated checklist-only capability endpoint. Account requests require auth.getUser;
+# guest requests require a hashed, current, revocable site token on every operation.
+# Existing account-only endpoints keep their authentication checks unchanged.
+[functions.checklist-access]
+verify_jwt = false

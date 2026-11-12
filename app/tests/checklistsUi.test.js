@@ -35,8 +35,9 @@ test('Admin and assigned managers see explicit checklist order regardless of ret
  for(const role of ['admin','store']){
   const templates=['closing','weekly','midday','opening'].map(key=>checklistTemplates.find(t=>t.key===key))
   const before=JSON.stringify(templates)
-  const client={from(name){return {select(){return this},gte(){return this},lte(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:name==='checklist_pilot_access'?[{location_id:'site',is_active:true,enabled_from:'2026-01-01'}]:[]}).then(resolve)}}}}
+  const client={from(name){return {select(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:name==='checklist_pilot_access'?[{location_id:'site',is_active:true,enabled_from:'2026-01-01'}]:[]}).then(resolve)}}}}
   const h=locationHelpHarness('pages/ManagerChecklists',{
+   ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,
    useAuth:()=>({user:{id:actor},profile:{role,is_active:true,deleted_at:null},locations:[{id:'site',site_code:'1512',timezone:'America/New_York'}]}),supabase:client,
    checklistPeriod,completionStatus:()=> 'Not submitted',localChecklistDate:()=> '2026-11-05',checklistTimestamp,
    Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
@@ -317,8 +318,9 @@ test('companywide page shows availability without auto-created drafts or derived
  for(const role of ['admin','store','area_manager']) {
   const calls=[],records=[{id:'historic',location_id:'site',template_key:'midday',period_date:'2026-11-02',status:'submitted',is_pilot:true,manager_name:'Fictional Manager',submitted_at:'2026-11-02T12:00:00Z',template_snapshot:{name:'Mid-Day Checklist',timezone:'America/New_York'}}]
   const h=locationHelpHarness('pages/ManagerChecklists',{
+   ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,
    useAuth:()=>({user:{id:actor},profile:{role,is_active:true},locations:[{id:'site',site_code:'Fictional Site',timezone:'America/New_York'}]}),
-   supabase:{from(name){calls.push(name);return {select(){return this},gte(){return this},lte(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:records}).then(resolve)}}},rpc(){throw new Error('Availability must not create drafts')}},
+   supabase:{from(name){calls.push(name);return {select(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:records}).then(resolve)}}},rpc(){throw new Error('Availability must not create drafts')}},
    checklistPeriod,completionStatus:(t,d,rows)=>rows.some(r=>r.template_key===t.key)?'Submitted':'Available',localChecklistDate:()=> '2026-11-02',checklistTimestamp,
    Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
   })
@@ -339,6 +341,7 @@ test('companywide page shows availability without auto-created drafts or derived
 test('direct checklist page denies inactive, deleted, unknown and unauthenticated accounts without querying',async()=>{
  for(const profile of [{role:'store',is_active:false},{role:'admin',is_active:true,deleted_at:'2026-11-01'},{role:'unknown',is_active:true},null]) {
   const h=locationHelpHarness('pages/ManagerChecklists',{
+   ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,
    useAuth:()=>({user:profile?{id:actor}:null,profile,locations:[]}),supabase:{from(){throw new Error('Denied account queried database')}},
    localChecklistDate:()=>'',Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
   })
@@ -414,8 +417,9 @@ test('PM restored draft can submit with inactive branches unanswered and three s
  h.unmount()
 })
 test('PM remains fifth after Weekly Manager Administrative regardless of database order',async()=>{
- const client={from(name){return {select(){return this},gte(){return this},lte(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?[pm,...checklistTemplates.slice().reverse()]:[]}).then(resolve)}}}}
+ const client={from(name){return {select(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?[pm,...checklistTemplates.slice().reverse()]:[]}).then(resolve)}}}}
  const h=locationHelpHarness('pages/ManagerChecklists',{
+   ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,
   useAuth:()=>({user:{id:actor},profile:{role:'store',is_active:true},locations:[{id:'site',timezone:'America/New_York'}]}),supabase:client,
   checklistPeriod,completionStatus:()=> 'Available',localChecklistDate:()=> '2026-11-09',checklistTimestamp,
   Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
