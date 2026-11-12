@@ -14,7 +14,7 @@ async function setup({deadlines=true}={}) {
  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema storage;
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
  create table public.user_profiles(id uuid primary key,role text,location_id uuid,is_active boolean,deleted_at timestamptz,name text);
- create table public.locations(id uuid primary key,site_code text,timezone text);
+ create table public.locations(id uuid primary key,site_code text,timezone text,exclude_from_reporting boolean default false);
  create table public.manager_locations(manager_id uuid,location_id uuid);
  create table public.edit_audit_log(id uuid default gen_random_uuid(),table_name text,location_id uuid not null,period date,changed_by uuid,changed_by_name text,summary text,old_values jsonb,new_values jsonb);
  create table public.actuals(id integer primary key,value numeric);insert into public.actuals values(1,123.456);
@@ -27,7 +27,7 @@ async function setup({deadlines=true}={}) {
  create policy preexisting_permissive on storage.objects for all to anon,authenticated using(true) with check(true);
  insert into storage.buckets values('unrelated','unrelated',false,null,null);
  insert into storage.objects(bucket_id,name) values('unrelated','untouched.png');
- insert into public.locations values('${site}','1000-Fictional','America/Los_Angeles'),('${away}','1001-Fictional','America/New_York');
+ insert into public.locations(id,site_code,timezone) values('${site}','1000-Fictional','America/Los_Angeles'),('${away}','1001-Fictional','America/New_York');
  insert into public.user_profiles values('${admin}','admin',null,true,null,'Test Admin'),('${store}','store','${site}',true,null,'Test Store'),('${other}','store','${site}',true,null,'Other Store'),('${outsider}','store','${away}',true,null,'Outside Store'),('${inactive}','store','${site}',false,null,'Inactive'),('${deleted}','store','${site}',true,now(),'Deleted'),('${manager}','area_manager',null,true,null,'Legacy Manager');
  insert into public.manager_locations values('${manager}','${site}');
  `)
@@ -41,6 +41,7 @@ async function setup({deadlines=true}={}) {
  await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112022829_checklist_qr_same_day.sql',import.meta.url),'utf8'))
  await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112143325_checklist_conflict_http_409.sql',import.meta.url),'utf8'))
  if(deadlines) await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112184148_checklist_occurrence_deadlines.sql',import.meta.url),'utf8'))
+ if(deadlines) await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112222936_management_audits.sql',import.meta.url),'utf8'))
  await db.exec('set role service_role')
  return {db,today}
 }

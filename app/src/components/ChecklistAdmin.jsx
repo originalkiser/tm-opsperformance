@@ -27,7 +27,7 @@ export default function ChecklistAdmin({ templates, reload }) {
       {template.definition.map((item, index) => <fieldset disabled={busy} key={item.id} className="p-3 border rounded space-y-2">
         <legend>{item.section} · {item.id}{item.critical ? ' · Critical' : ''}</legend>
         <label className="block">Question<textarea aria-label={`Question ${item.id}`} className="w-full block border rounded p-3 bg-transparent" maxLength={2000} value={item.text} onChange={e => editItem(index, 'text', e.target.value)} /></label>
-        <p>Responses: {item.options.join(' / ')}{item.na_allowed ? ' / N/A (reason required)' : ''}. Failed/incomplete answers always require explanations.</p>
+        <p>Responses: {item.options.join(' / ')}{item.na_allowed ? ' / N/A (reason required)' : ''}. {['monthly_site_assessment', 'quarterly_safety_audit'].includes(template.key) ? 'Required follow-ups and evidence follow the approved audit rules.' : 'Failed/incomplete answers always require explanations.'}</p>
         <label className="block">Evidence instruction<input className="block border rounded p-3 w-full bg-transparent" maxLength={2000} value={item.instruction || ''} onChange={e => editItem(index, 'instruction', e.target.value)} /></label>
         <label className="block min-h-12"><input type="checkbox" checked={item.photo_required} onChange={e => editItem(index, 'photo_required', e.target.checked)} /> Photo always required (including N/A)</label>
         <label className="block min-h-12"><input type="checkbox" checked={!!item.photo_on_failure} onChange={e => editItem(index, 'photo_on_failure', e.target.checked)} /> Photo required for a failed/incomplete response</label>

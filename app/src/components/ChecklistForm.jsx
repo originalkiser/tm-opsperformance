@@ -26,6 +26,8 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   const signatureDirty = Object.values(dirtySignatures).some(Boolean)
   const dirty = !readonly && (JSON.stringify(answers) !== JSON.stringify(row.answers) || name !== row.manager_name || signatureDirty)
   latestDirty.current = dirty
+  const managementAudit = ['monthly_site_assessment', 'quarterly_safety_audit'].includes(row.template_key)
+  const auditorSignature = managementAudit || row.template_key === 'weekly_pm'
   const items = row.template_snapshot.definition
   useEffect(() => {
     alive.current = true
@@ -218,9 +220,9 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   function signatureControl(item = null) {
     const signatureKey = item?.id || '_final'
     return <div className="space-y-2" aria-label={item ? `Required signature ${item.id}` : 'Final auditor signature'}>
-      <p className="font-semibold">{item ? 'Signature is required' : row.template_key === 'weekly_pm' ? 'Auditor Signature' : 'Manager signature'}</p>
+      <p className="font-semibold">{item ? 'Signature is required' : auditorSignature ? 'Auditor Signature' : 'Manager signature'}</p>
       <EvidenceLinks files={evidence.filter(file => file.kind === 'signature' && (file.item_id || null) === (item?.id || null)).slice(-1)} onOpen={openEvidence} />
-      {!readonly && (!transport || capabilities?.can_upload) && <ChecklistSignature key={`${signatureKey}:${signatureReset}`} label={item ? `${item.section} Question ${item.number} handwritten signature` : row.template_key === 'weekly_pm' ? 'Auditor handwritten signature' : 'Manager handwritten signature'} disabled={busy} onDirty={value => { activity.current++; setDirtySignatures(previous => ({ ...previous, [signatureKey]: value })) }} onSave={blob => upload(blob, item?.id || null, 'signature')} />}
+      {!readonly && (!transport || capabilities?.can_upload) && <ChecklistSignature key={`${signatureKey}:${signatureReset}`} label={item ? `${item.section} Question ${item.number} handwritten signature` : auditorSignature ? 'Auditor handwritten signature' : 'Manager handwritten signature'} disabled={busy} onDirty={value => { activity.current++; setDirtySignatures(previous => ({ ...previous, [signatureKey]: value })) }} onSave={blob => upload(blob, item?.id || null, 'signature')} />}
     </div>
   }
   function change(id, field, value) { activity.current++; setAnswers(previous => ({ ...previous, [id]: { ...previous[id], [field]: value } })); setErrors({}) }
@@ -253,7 +255,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
         </>}
       </div>}
       <fieldset disabled={readonly || busy} className={`py-2 space-y-2 ${errors[item.id] ? 'border-2 border-red-500 p-3 rounded' : 'border-b'}`}>
-        <legend className="pt-2 font-semibold text-sm sm:text-base leading-snug">{item.number ?? index - items.findIndex(previous => previous.section === item.section) + 1}. {item.text} {item.critical && <span className="text-red-600 dark:text-red-300"> · Critical question</span>}</legend>
+        <legend className="pt-2 font-semibold text-sm sm:text-base leading-snug">{item.number ?? index - items.findIndex(previous => previous.section === item.section) + 1}. {item.text}{item.required === false ? ' (optional)' : ''} {item.critical && <span className="text-red-600 dark:text-red-300"> · Critical question</span>}</legend>
         {item.instruction && item !== sectionPhoto && <p className="text-xs sm:text-sm">{item.instruction}</p>}
         {item.condition && <p className="text-xs sm:text-sm">Follow-up to Question {items.find(parent => parent.id === item.condition.item_id)?.number} when answered {item.condition.value}.</p>}
         {item.type === 'text' ? <label className="block">Written response
@@ -268,7 +270,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
       {item.signature_required && signatureControl(item)}
       {item !== sectionPhoto && <EvidenceLinks files={evidence.filter(file => file.item_id === item.id && file.kind === 'photo')} onOpen={openEvidence} />}
     </div>)}
-    <label className="block font-semibold">Manager full name<input aria-label="Manager full name" disabled={readonly || busy} value={name} maxLength={200} onChange={event => { activity.current++; setName(event.target.value) }} className="block w-full border rounded p-3 bg-transparent" /></label>
+    <label className="block font-semibold">{managementAudit ? 'Auditor full name' : 'Manager full name'}<input aria-label={managementAudit ? 'Auditor full name' : 'Manager full name'} disabled={readonly || busy} value={name} maxLength={200} onChange={event => { activity.current++; setName(event.target.value) }} className="block w-full border rounded p-3 bg-transparent" /></label>
     {errors._name && <p role="alert">{errors._name}</p>}
     {signatureControl()}
     {errors._signature && <p role="alert">{errors._signature}</p>}
@@ -289,8 +291,8 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
     <div className="grid grid-cols-[1fr_1fr_auto] gap-2 sticky bottom-0 bg-white dark:bg-tm-dark-surface py-2 border-t pb-[max(0.5rem,env(safe-area-inset-bottom))] text-sm">
       {!readonly && <><button disabled={busy} className="min-h-11 px-2 sm:px-4 border rounded" onClick={() => action(() => save())}>Save Draft</button>
         <button disabled={busy || signatureDirty || !evidenceReady} className="min-h-11 px-2 sm:px-4 rounded bg-tm-teal text-tm-navy font-bold" onClick={() => {
-          const problems = validateChecklist(items, answers, evidence, name); setErrors(problems)
-          if (!Object.keys(problems).length && window.confirm(transport ? 'Submit this checklist? Daily corrections close at the end of the assigned site-local day; weekly corrections close at midnight Monday after the assigned week. Earlier submissions and evidence are preserved. MonitorQA remains official.' : 'Submit this pilot checklist? Answers, photos and signature will be locked. MonitorQA remains official.')) action(() => save(true))
+          const problems = validateChecklist(items, answers, evidence, name, managementAudit); setErrors(problems)
+          if (!Object.keys(problems).length && window.confirm(managementAudit ? 'Submit this management audit? Corrections close at the end of the assigned site-local month or quarter. Earlier submissions and evidence are preserved.' : transport ? 'Submit this checklist? Daily corrections close at the end of the assigned site-local day; weekly corrections close at midnight Monday after the assigned week. Earlier submissions and evidence are preserved. MonitorQA remains official.' : 'Submit this pilot checklist? Answers, photos and signature will be locked. MonitorQA remains official.')) action(() => save(true))
         }}>Submit</button></>}
       <button disabled={busy} className="min-h-11 px-2 sm:px-4 border rounded" onClick={close}>Close</button>
     </div>

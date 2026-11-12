@@ -11,6 +11,7 @@ import { checklistPeriod, completionStatus, localChecklistDate, checklistTimesta
 import '../styles/boldPages.css'
 
 const displayOrder = ['opening', 'midday', 'closing', 'weekly', 'weekly_pm']
+const auditKeys = ['monthly_site_assessment', 'quarterly_safety_audit']
 
 export default function ManagerChecklists() {
   const { user, profile, locations } = useAuth()
@@ -33,7 +34,9 @@ export default function ManagerChecklists() {
       const start = date ? checklistPeriod({ cadence: 'weekly' }, date) : '9999-01-01'
       const results = await Promise.all([
         supabase.from('checklist_templates').select('*'),
-        supabase.from('checklist_submissions').select('*').gte('period_date', start).lte('period_date', date || start).order('created_at'),
+        supabase.from('checklist_submissions').select('*').in('template_key', displayOrder).gte('period_date', start).lte('period_date', date || start).order('created_at'),
+        supabase.from('checklist_submissions').select('*').in('template_key', auditKeys)
+          .gte('period_date', date ? checklistPeriod({ cadence: 'quarterly' }, date) : start).lte('period_date', date || start).order('created_at'),
       ])
       if (current !== request.current) return
       const failed = results.find(result => result.error)
@@ -41,7 +44,8 @@ export default function ManagerChecklists() {
       setTemplates([...(results[0].data || [])].sort((a, b) =>
         (displayOrder.indexOf(a.key) < 0 ? displayOrder.length : displayOrder.indexOf(a.key)) -
         (displayOrder.indexOf(b.key) < 0 ? displayOrder.length : displayOrder.indexOf(b.key))))
-      setRows(results[1].data || [])
+      const auditRows = (results[2].data || []).filter(row => row.period_date === checklistPeriod({ cadence: row.template_key === auditKeys[0] ? 'monthly' : 'quarterly' }, date || start))
+      setRows([...(results[1].data || []), ...auditRows])
 
     } catch (error) { if (current === request.current) setError(error.message) } finally { if (current === request.current) setBusy(false) }
   }
@@ -74,14 +78,14 @@ export default function ManagerChecklists() {
         </div>
         {!today && <p role="alert">A valid site time zone is required before starting a checklist.</p>}
         {scope.length === 0 && !admin && <p>No assigned checklist locations are available.</p>}
-        {today && date && ['daily', 'weekly'].map(cadence => <div role="group" key={cadence} className="tm-checklist-group" data-cadence={cadence} aria-label={cadence === 'daily' ? 'Daily checklists' : 'Weekly checklists'}>
-          <div className="tm-checklist-group-heading font-brand font-bold">{cadence === 'daily' ? 'Daily checklists' : 'Weekly checklists'}</div>
-          <div className="tm-checklist-group-body">{templates.filter(template => template.cadence === cadence).map(template => {
+        {today && date && ['daily', 'weekly', 'management'].filter(cadence => cadence !== 'management' || selected?.exclude_from_reporting !== true).map(cadence => <div role="group" key={cadence} className="tm-checklist-group" data-cadence={cadence} aria-label={cadence === 'daily' ? 'Daily checklists' : cadence === 'weekly' ? 'Weekly checklists' : 'Management Audits'}>
+          <div className="tm-checklist-group-heading font-brand font-bold">{cadence === 'daily' ? 'Daily checklists' : cadence === 'weekly' ? 'Weekly checklists' : 'Management Audits'}</div>
+          <div className="tm-checklist-group-body">{templates.filter(template => cadence === 'management' ? auditKeys.includes(template.key) : template.cadence === cadence).map(template => {
           const period = checklistPeriod(template, date)
           const records = rows.filter(row => row.location_id === site)
           const record = records.find(row => row.template_key === template.key && row.period_date === period)
           return scope.some(location => location.id === site) && <section key={template.key} className="tm-checklist-card p-4 flex flex-wrap gap-4 justify-between items-center" data-status={record?.status || 'available'}>
-            <div className="tm-checklist-card-copy"><h2 className="font-bold">{template.name}</h2><p className="tm-checklist-card-meta"><span className="tm-checklist-status">{completionStatus(template, date, records)}</span> · {period}{record?.is_pilot ? ' · Historical pilot' : ''}</p></div>
+            <div className="tm-checklist-card-copy"><h2 className="font-bold">{template.name}</h2><p className="tm-checklist-card-meta"><span className="tm-checklist-status">{completionStatus(template, date, records)}</span> · {auditKeys.includes(template.key) ? `${template.cadence === 'monthly' ? 'Monthly' : 'Quarterly'} · ` : ''}{period}{record?.is_pilot ? ' · Historical pilot' : ''}</p></div>
             <button disabled={busy || date > today} className="tm-checklist-action min-h-12 px-5 rounded border" onClick={() => open(template, record)}>{record?.status === 'submitted' ? 'View submission' : record?.status === 'discarding' ? 'Finish discarding draft' : record ? 'Resume draft' : 'Start checklist'}</button>
           </section>
         })}</div></div>)}
@@ -89,10 +93,18 @@ export default function ManagerChecklists() {
         {admin && <>
           <h2 className="tm-checklist-review-heading font-bold text-lg">Checklist submission review</h2>
           <p>Existing records from Monday through the selected site-local date. No missing or overdue obligations are generated.</p>
-          <ul>{rows.map(record => <li key={record.id} className="border-b py-3">
+          <ul>{rows.filter(record => !auditKeys.includes(record.template_key)).map(record => <li key={record.id} className="border-b py-3">
             {locations.find(location => location.id === record.location_id)?.site_code} · {record.template_snapshot.name} · {record.period_date} · {record.status}{record.is_pilot ? ' · Historical pilot' : ''}
             <button disabled={busy} className="min-h-12 px-4 underline" onClick={() => open(null, record)}>Review {record.status} · {record.manager_name || 'Unnamed draft'} · {checklistTimestamp(record.submitted_at || record.updated_at, record.template_snapshot.timezone)}</button>
           </li>)}</ul>
+          {rows.some(record => auditKeys.includes(record.template_key)) && <section aria-label="Management audit submission review">
+            <h2 className="tm-checklist-review-heading font-bold text-lg">Management audit submission review</h2>
+            <p>Saved audits for the selected calendar month and quarter.</p>
+            <ul>{rows.filter(record => auditKeys.includes(record.template_key)).map(record => <li key={record.id} className="border-b py-3">
+              {locations.find(location => location.id === record.location_id)?.site_code} · {record.template_snapshot.name} · {record.period_date} · {record.status}
+              <button disabled={busy} className="min-h-12 px-4 underline" onClick={() => open(null, record)}>Review {record.status} · {record.manager_name || 'Unnamed draft'} · {checklistTimestamp(record.submitted_at || record.updated_at, record.template_snapshot.timezone)}</button>
+            </li>)}</ul>
+          </section>}
           <button className="min-h-12 px-4 border rounded" onClick={() => setShowAdmin(previous => !previous)}>{showAdmin ? 'Hide' : 'Manage'} checklist templates</button>
           {showAdmin && <><ChecklistQrAdmin location={selected} /><ChecklistAdmin templates={templates} reload={load} /></>}
         </>}
