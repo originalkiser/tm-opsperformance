@@ -1,3 +1,4 @@
+import { budgetOpportunities } from './budgetConversion.js'
 import { shiftDate, lastCompletedBusinessDate } from './budgetRevenue.js'
 import { toDayTotals } from './insightsHelpers.js'
 
@@ -14,16 +15,18 @@ export function commonReportingToday(locations, now = new Date()) {
 // A cumulative snapshot replaces a site's entire covered MTD, never adds to it.
 // Daily chart points come only from explicit Yesterday counts, not allocation
 // of cumulative totals. Employee/hourly rows are deliberately not handled here.
-export function budgetPerformanceRow(entry, prefix, date) {
+export function budgetPerformanceRow(entry, prefix, date, location) {
   const fields = ['washes', 'redemptions', 'basic', 'good', 'better', 'best']
   if (!entry || !fields.every(f => count(entry[`${prefix}_${f}`]))) return null
   const n = f => Number(entry[`${prefix}_${f}`])
   const sales = n('basic') + n('good') + n('better') + n('best')
   if (n('redemptions') > n('washes')) return null
+  const opportunities = budgetOpportunities(n('washes'), n('redemptions'), entry[`${prefix}_wash_overrides`], location)
+  if (opportunities == null) return null
   return { location_id: entry.location_id, log_date: date, time_slot: '23:59',
     total_washes: n('washes'), member_washes: n('redemptions'),
     basic: n('basic'), good: n('good'), better: n('better'), best: n('best'),
-    memberships_sold: sales, opportunities: n('washes') - n('redemptions'),
+    memberships_sold: sales, opportunities,
     google_reviews: prefix === 'mtd' && count(entry.current_reviews) ? Number(entry.current_reviews) : null,
     budget_source: true }
 }
@@ -39,14 +42,14 @@ export function selectPerformanceSources(logs, entries, locations, range, today)
       && shiftDate(e.entry_date, -1) <= cutoff).sort((a, b) => b.entry_date.localeCompare(a.entry_date))
     const latest = eligible[0]
     const through = latest ? shiftDate(latest.entry_date, -1) : null
-    const snapshot = budgetPerformanceRow(latest, 'mtd', through)
+    const snapshot = budgetPerformanceRow(latest, 'mtd', through, loc)
     if (snapshot) totals.push(snapshot)
     notes.push({ id: loc.id, name: loc.name, through, complete: !!snapshot && through === cutoff,
       message: !snapshot ? 'MTD unavailable — missing or invalid Budget Tracking totals.'
         : through !== cutoff ? `Provisional Budget Tracking MTD through ${through}; expected ${cutoff}.`
           : `Budget Tracking MTD through ${through}.` })
     for (const entry of eligible) {
-      const point = budgetPerformanceRow(entry, 'yesterday', shiftDate(entry.entry_date, -1))
+      const point = budgetPerformanceRow(entry, 'yesterday', shiftDate(entry.entry_date, -1), loc)
       if (point) daily.push(point)
     }
   }

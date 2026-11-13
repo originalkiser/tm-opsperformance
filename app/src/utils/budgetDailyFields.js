@@ -1,3 +1,4 @@
+import { isDetailedBudget, WASH_OVERRIDE_KEYS } from './budgetConversion.js'
 import { cashRevenue, revenueError, revenueCents } from './budgetRevenue.js'
 import { creditCardInputError } from './creditCardCalculator.js'
 import { CASH_COUNT_LABEL, cashCountError } from './cashReconciliation.js'
@@ -6,7 +7,7 @@ import { CASH_COUNT_LABEL, cashCountError } from './cashReconciliation.js'
 // Reports-page admin override (BudgetTrackingReport.jsx), so the two stay in
 // sync and a fix here fixes both places.
 //
-// Every field is required (any value, including 0, counts as entered) —
+// Every field in the required lists is required (including explicit 0) —
 // blank is the only invalid state. This exists because the form used to
 // show a "0" placeholder in every empty box, so a blank field was visually
 // indistinguishable from an intentionally-entered zero, and entries looked
@@ -30,6 +31,16 @@ export const MTD_FIELDS = [
   { key: 'mtd_best',        label: 'MTD Best',   hint: 'Memberships Sold' },
 ]
 
+// Optional historical values calculate as zero without rewriting the saved row.
+export function budgetCountFields(fields, location) {
+  if (!isDetailedBudget(location)) return fields
+  return fields.flatMap(field => field.key.endsWith('_redemptions')
+    ? [field, { key: field.key.replace('_redemptions', '_wash_overrides'),
+      label: field.key.startsWith('yesterday_') ? 'Yesterday Wash Overrides' : 'MTD Wash Overrides',
+      hint: 'Blank counts as zero', optional: true }]
+    : [field])
+}
+
 export const REVENUE_FIELDS = [
   { key: 'yesterday_total_revenue', label: 'YESTERDAY TOTAL TO ACCOUNT FOR / TOTAL PAYMENTS ($)' },
   { key: 'yesterday_cc_revenue', label: 'YESTERDAY CREDIT CARD REVENUE ($)' },
@@ -47,7 +58,7 @@ export const PERFORMANCE_DAILY_FIELDS = [...YESTERDAY_FIELDS, ...MTD_FIELDS, ...
 export const ALL_DAILY_FIELDS = [...PERFORMANCE_DAILY_FIELDS, { key: 'yesterday_cash_counted', label: CASH_COUNT_LABEL }]
 
 export function emptyDailyForm() {
-  return { ...Object.fromEntries(ALL_DAILY_FIELDS.map(f => [f.key, ''])), yesterday_cash_counted: '', mtd_revenue_actual: '' }
+  return { ...Object.fromEntries(ALL_DAILY_FIELDS.map(f => [f.key, ''])), ...Object.fromEntries(WASH_OVERRIDE_KEYS.map(key => [key, ''])), yesterday_cash_counted: '', mtd_revenue_actual: '' }
 }
 
 export const isFieldMissing = (form, key) => form[key] === '' || form[key] == null

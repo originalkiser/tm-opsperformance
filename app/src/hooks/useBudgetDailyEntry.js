@@ -1,3 +1,4 @@
+import { washOverridesError } from '../utils/budgetConversion.js'
 import { fetchDailyRevenueGoals } from '../utils/dailyRevenueGoals.js'
 import { cashCountError } from '../utils/cashReconciliation.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -5,7 +6,7 @@ import { supabase } from '../lib/supabase'
 import { emptyDailyForm, countMissing, validateRevenue } from '../utils/budgetDailyFields'
 import { calculateMtdRevenue, dailyPayload, fetchRevenueEntries, budgetMonthStart, latestHistoricalRevenue, fetchStartingBalances } from '../utils/budgetRevenue'
 
-export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
+export default function useBudgetDailyEntry(locationId, entryDate, onSaved, location) {
 
   const [form, setForm] = useState(emptyDailyForm)
   const [entry, setEntry] = useState(null)
@@ -83,7 +84,7 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
   ], locationId, entryDate, startingBalance), [entries, form, locationId, entryDate, startingBalance])
   const missing = countMissing(form)
   const historicalRevenue = useMemo(() => latestHistoricalRevenue([...entries.filter(row => row.entry_date !== entryDate), { location_id: locationId, entry_date: entryDate, mtd_revenue_actual: form.mtd_revenue_actual }], locationId, entryDate, mtdRevenue.startingBalance), [entries, form.mtd_revenue_actual, locationId, entryDate, mtdRevenue.startingBalance])
-  const revenueError = validateRevenue(form) || cashCountError(form.yesterday_cash_counted)
+  const revenueError = validateRevenue(form) || cashCountError(form.yesterday_cash_counted) || washOverridesError(form, location)
 
   const handleSave = async () => {
     setAttemptedSave(true)
@@ -94,7 +95,7 @@ export default function useBudgetDailyEntry(locationId, entryDate, onSaved) {
     const id = generation.current
     try {
       const { data, error: saveError } = await supabase.from('budget_daily_entries')
-        .upsert(dailyPayload(form, locationId, entryDate), { onConflict: 'location_id,entry_date' })
+        .upsert(dailyPayload(form, locationId, entryDate, location), { onConflict: 'location_id,entry_date' })
         .select('*').single()
       if (saveError) throw saveError
       if (!data) throw new Error('Save could not be confirmed.')

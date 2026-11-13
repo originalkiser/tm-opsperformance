@@ -1,3 +1,4 @@
+import { isDetailedBudget, WASH_OVERRIDE_KEYS, washOverridesError } from './budgetConversion.js'
 // Entry date is the morning AFTER the business date. Keep date arithmetic in
 // UTC so browser timezone and daylight-saving changes cannot shift a day.
 export function shiftDate(date, days) {
@@ -140,16 +141,16 @@ export async function fetchStartingBalances(client, locationIds, entryDate) {
 }
 
 // Live totals are derived, never written over historical cumulative values.
-export function dailyPayload(form, locationId, entryDate) {
+export function dailyPayload(form, locationId, entryDate, location) {
   if (form.yesterday_cash_counted !== '' && form.yesterday_cash_counted != null && revenueCents(form.yesterday_cash_counted) == null) {
     throw new Error('Invalid cash count.')
   }
   if (usesReportedMtd(entryDate) && form.mtd_revenue_actual !== '' && form.mtd_revenue_actual != null && revenueCents(form.mtd_revenue_actual) == null) throw new Error('Invalid reported MTD revenue.')
-  const error = revenueError(form)
+  const error = revenueError(form) || washOverridesError(form, location)
   if (error) throw new Error(error)
   return {
     ...Object.fromEntries(Object.entries(form)
-      .filter(([key, value]) => key !== 'mtd_revenue_actual' || (usesReportedMtd(entryDate) && value !== '' && value != null))
+      .filter(([key, value]) => (!WASH_OVERRIDE_KEYS.includes(key) || isDetailedBudget(location)) && (key !== 'mtd_revenue_actual' || (usesReportedMtd(entryDate) && value !== '' && value != null)))
       .map(([key, value]) => [key, value === '' || value == null ? null : Number(value)])),
     location_id: locationId,
     entry_date: entryDate,

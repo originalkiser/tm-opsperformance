@@ -147,7 +147,7 @@ export default function AreaManagerOverview({ locations }) {
         const entry = budgetEntries.find(r => r.location_id === loc.id)
         const hasToday = entry?.entry_date === todayStr() && isDayComplete(entry)
         const status = morningEntryStatus(hasToday, loc.timezone, now)
-        budget = { entry, status, yst: yesterdayMetrics(entry), mtd: mtdMetrics(entry) }
+        budget = { entry, status, yst: yesterdayMetrics(entry, loc), mtd: mtdMetrics(entry, loc) }
       }
 
       let ownership = null
