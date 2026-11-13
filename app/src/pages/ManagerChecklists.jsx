@@ -6,8 +6,9 @@ import ChecklistQrAdmin from '../components/ChecklistQrAdmin'
 import ChecklistOpenWork from '../components/ChecklistOpenWork'
 import ChecklistAdmin from '../components/ChecklistAdmin'
 import { useAuth } from '../contexts/AuthContext'
-import { supabase } from '../lib/supabase'
+import { supabase, supabasePublicKey } from '../lib/supabase'
 import { checklistPeriod, completionStatus, localChecklistDate, checklistTimestamp } from '../utils/checklistRules'
+import { createChecklistTransport, findChecklistOccurrence } from '../utils/checklistAccess'
 import '../styles/boldPages.css'
 
 const displayOrder = ['opening', 'midday', 'closing', 'weekly', 'weekly_pm']
@@ -20,7 +21,9 @@ export default function ManagerChecklists() {
   const [templates, setTemplates] = useState([]), [rows, setRows] = useState([])
   const [site, setSite] = useState(locations[0]?.id || ''), [date, setDate] = useState(''), [form, setForm] = useState(null)
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [showAdmin, setShowAdmin] = useState(false)
-  const request = useRef(0)
+  const [existing, setExisting] = useState(null)
+  const request = useRef(0), opening = useRef(false)
+  useEffect(() => { setExisting(null) }, [site, date, user?.id, authorized])
   const selected = locations.find(location => location.id === site)
   let today = ''
   try { today = localChecklistDate(selected?.timezone) } catch { /* Invalid zones block starting a checklist. */ }
@@ -29,7 +32,7 @@ export default function ManagerChecklists() {
   async function load() {
     if (!authorized) { setTemplates([]); setRows([]); setForm(null); return }
     const current = ++request.current
-    setError(''); setBusy(true)
+    setError(''); setExisting(null); setBusy(true)
     try {
       const start = date ? checklistPeriod({ cadence: 'weekly' }, date) : '9999-01-01'
       const results = await Promise.all([
@@ -52,15 +55,29 @@ export default function ManagerChecklists() {
   useEffect(() => { load(); return () => { request.current++ } }, [date, user?.id, authorized])
   useEffect(() => { if (!admin && scope.length && !scope.some(location => location.id === site)) setSite(scope[0].id) }, [locations, site])
   async function open(template, record) {
-    setBusy(true); setError('')
+    if (opening.current) return
+    opening.current = true
+    const current = request.current
+    setBusy(true); setError(''); setExisting(null)
     try {
       if (!record) {
         const result = await supabase.rpc('save_checklist', { p_template: template.key, p_location: site, p_date: checklistPeriod(template, date) })
         if (result.error) throw result.error
         record = result.data
       }
-      setForm(record)
-    } catch (error) { setError(`${error.message} No automatic retry. Another manager may already have started this occurrence; ask Admin to review.`) } finally { setBusy(false) }
+      if (current === request.current) setForm(record)
+    } catch (error) {
+      if (current !== request.current) return
+      if (!record && error.code === '23505') {
+        try {
+          const existing = await findChecklistOccurrence(createChecklistTransport(supabase, supabasePublicKey), { templateKey: template.key, periodDate: checklistPeriod(template, date), locationId: site })
+          if (current === request.current) {
+            setExisting(existing)
+            setError(existing ? 'This checklist already exists for this reporting period. Reopen the saved checklist to continue or view its submission.' : 'This checklist already exists, but your account cannot reopen it here. Refresh the list or ask Admin to review access.')
+          }
+        } catch (lookupError) { if (current === request.current) setError(`${lookupError.message} The existing checklist could not be confirmed. Refresh before continuing.`) }
+      } else if (current === request.current) setError(`${error.message} Nothing was retried automatically. Refresh to confirm the saved state.`)
+    } finally { opening.current = false; if (current === request.current) setBusy(false) }
   }
   if (!authorized) return <div><NavBar /><p role="alert">Active checklist account required.</p></div>
   return <div className="tm-bold-page tm-checklists-page min-h-screen bg-tm-cream dark:bg-tm-dark-bg text-slate-900 dark:text-tm-dark-text">
@@ -69,6 +86,7 @@ export default function ManagerChecklists() {
       <header className="tm-checklists-title flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-bold">Manager Checklists</h1><Link to="/checklist-compliance" className="min-h-12 rounded border px-4 py-3 text-sm font-semibold">View Checklist Compliance</Link></header>
       <p className="tm-checklists-notice rounded p-3">MonitorQA remains the official checklist system. Checklists are available, not mandatory. No automatic assignments or reminders. Online connection required.</p>
       {error && <p role="alert" className="text-red-600 dark:text-red-300">{error}</p>}
+      {existing && <div className="border rounded p-3"><p>{existing.template_snapshot.name} · {existing.period_date} · {existing.status}</p><button disabled={busy} className="min-h-12 px-4 border rounded" onClick={() => open(null, existing)}>Reopen Existing Checklist</button></div>}
       {form ? <ChecklistAccessForm key={form.id} initial={form} user={user} admin={admin} locationLabel={locations.find(location => location.id === form.location_id)?.site_code} onSaved={saved => setRows(previous => [...previous.filter(row => row.id !== saved.id), saved])} onClose={() => { setForm(null); load() }} /> : <>
         <div className="tm-checklists-filters flex flex-wrap gap-4">
           <label>Location<select aria-label="Checklist location" disabled={busy} value={site} onChange={e => setSite(e.target.value)} className="block p-3 border rounded bg-white dark:bg-tm-dark-surface">

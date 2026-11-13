@@ -83,3 +83,17 @@ export function createChecklistTransport(client, publicKey, { token = null, reco
   }
   return transport
 }
+
+// Context is already scoped by the server to this actor/QR. Never broaden a
+// duplicate-start lookup to a public table or retry the creation request.
+export async function findChecklistOccurrence(transport, { templateKey, periodDate, locationId }) {
+  let offset = 0
+  while (offset <= 10000) {
+    const page = await transport.request('context', { ...(locationId ? { location_id: locationId } : {}), offset })
+    const record = page.submissions.find(row => ['draft', 'submitted'].includes(row.status) && row.template_key === templateKey && row.period_date === periodDate && (!locationId || row.location_id === locationId))
+    if (record) return record
+    if (!page.has_more || !Number.isInteger(page.next_offset) || page.next_offset <= offset) return null
+    offset = page.next_offset
+  }
+  return null
+}
