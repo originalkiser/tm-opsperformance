@@ -40,8 +40,8 @@ function DailyEntryPane({ location }) {
   const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal, entryDate, dailyGoals, location.id)
 
   const baseInputCls = 'w-full border-2 rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
-  const fieldCls = (key, optional = false) => {
-    if (optional || !isFieldMissing(form, key)) return `${baseInputCls} border-gray-300 dark:border-tm-dark-border focus:ring-tm-teal`
+  const fieldCls = (key) => {
+    if (!isFieldMissing(form, key)) return `${baseInputCls} border-gray-300 dark:border-tm-dark-border focus:ring-tm-teal`
     return attemptedSave
       ? `${baseInputCls} border-red-500 focus:ring-red-400`
       : `${baseInputCls} border-orange-400 focus:ring-orange-300`
@@ -74,7 +74,7 @@ function DailyEntryPane({ location }) {
             <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">
               {f.label}{f.hint && <span className="block normal-case italic text-gray-400">{f.hint}</span>}
             </label>
-            <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key, f.optional)} />
+            <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
           </div>
         ))}
         <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"><BudgetRevenueFields entryDate={entryDate} form={form} set={set} fieldCls={fieldCls} /></div>
