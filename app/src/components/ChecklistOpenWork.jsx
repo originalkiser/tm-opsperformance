@@ -24,7 +24,15 @@ export default function ChecklistOpenWork({ locationId, onOpen, disabled = false
     <h2 className="font-bold text-lg">Unfinished checklists</h2>
     <p>Saved drafts keep their original date or week and remain available on later days. Daily corrections close at the end of the assigned site-local day; weekly corrections close at midnight Monday after the assigned week. Unsubmitted corrections do not extend these deadlines.</p>
     {error && <p role="alert" className="text-red-600 dark:text-red-300">{error}</p>}
-    <ul>{rows.map(record => <li key={record.id} className="border-b py-3 flex flex-wrap justify-between items-center gap-2"><span>{record.template_snapshot.name} · {record.period_date}{record.working_copy_id ? ' · Correction' : ''}</span><button disabled={busy || disabled} className="min-h-12 px-4 underline" onClick={() => onOpen(record)}>Continue saved work</button></li>)}</ul>
+    <ul>{rows.filter(record => !['monthly_site_assessment', 'quarterly_safety_audit'].includes(record.template_key)).map(record => <li key={record.id} className="border-b py-3 flex flex-wrap justify-between items-center gap-2"><span>{record.template_snapshot.name} · {record.period_date}{record.working_copy_id ? ' · Correction' : ''}</span><button disabled={busy || disabled} className="min-h-12 px-4 underline" onClick={() => onOpen(record)}>Continue saved work</button></li>)}</ul>
+    {rows.some(record => ['monthly_site_assessment', 'quarterly_safety_audit'].includes(record.template_key)) && <div>
+      <h3 className="font-semibold">Unfinished Management Audits</h3>
+      <p>Submitted audit corrections close at the end of the assigned site-local month or quarter.</p>
+      <ul>{rows.filter(record => ['monthly_site_assessment', 'quarterly_safety_audit'].includes(record.template_key)).map(record => <li key={record.id} className="border-b py-3 flex flex-wrap justify-between items-center gap-2">
+        <span>{record.template_snapshot.name} · {record.period_date}{record.working_copy_id ? ' · Correction' : ''}</span>
+        <button disabled={busy || disabled} className="min-h-12 px-4 underline" onClick={() => onOpen(record)}>Continue saved audit</button>
+      </li>)}</ul>
+    </div>}
     {!busy && !rows.length && !error && <p>No unfinished checklists.</p>}
     <div className="flex gap-3"><button disabled={busy || disabled} className="min-h-11 px-3 border rounded" onClick={() => load()}>Refresh unfinished work</button>{nextOffset !== null && <button disabled={busy || disabled} className="min-h-11 px-3 border rounded" onClick={() => load(true)}>Load more saved checklists</button>}</div>
   </section>
