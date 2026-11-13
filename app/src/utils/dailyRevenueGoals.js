@@ -39,3 +39,17 @@ export function sumDailyRevenueGoals(goals, locationId, throughDate) {
   const decimal = scale ? `${text.slice(0, -scale)}.${text.slice(-scale)}` : text
   return { amount: Number(decimal), decimal, missingDates, invalidDates }
 }
+
+// Daily Log uses the selected business date directly, without the morning-entry offset.
+export async function fetchDailyRevenueGoal(client, locationId, businessDate) {
+  if (!locationId || !businessDate) return null
+  const { data, error } = await client.from('budget_daily_revenue_goals')
+    .select('total:total_revenue_goal::text')
+    .eq('location_id', locationId).eq('business_date', businessDate).maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  if (typeof data.total !== 'string' || !/^\d+(\.\d+)?$/.test(data.total) || !Number.isFinite(Number(data.total))) {
+    throw new Error('Daily revenue goal must be a nonnegative decimal.')
+  }
+  return data.total
+}

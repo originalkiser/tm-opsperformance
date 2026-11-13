@@ -1,3 +1,4 @@
+import DailyLogRevenueGoal from './DailyLogRevenueGoal'
 import { loadDailyLogEmployees, resolvePastedEmployee, dailyLogPersistence } from '../utils/dailyLogEmployees.js'
 import { netMemberStyle, netMembersCls } from '../utils/netMemberColors'
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -1147,12 +1148,13 @@ export default function DailyLogTable({
             </button>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-3">
           {canEdit && historyRef.current.length > 0 && (
             <span className="text-xs text-gray-400 dark:text-tm-dark-muted font-brand select-none">
               Ctrl+Z · {historyRef.current.length} step{historyRef.current.length !== 1 ? 's' : ''}
             </span>
           )}
+          <DailyLogRevenueGoal locationId={locationId} businessDate={selectedDate} />
         </div>
       </div>
 
