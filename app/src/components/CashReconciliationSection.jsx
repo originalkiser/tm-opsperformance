@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { applicableCashCents, CASH_COUNT_LABEL, cashBusinessDate, cashCountError, fetchCashSetting, reconcileCash } from '../utils/cashReconciliation.js'
 
 const money = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-export default function CashReconciliationSection({ locationId, entryDate, form, entry, set, disabled, attemptedSave = false, showExpected = true, timeZone = 'America/Chicago' }) {
+export default function CashReconciliationSection({ locationId, entryDate, form, entry, set, disabled, attemptedSave = false, showExpected = false, timeZone = 'America/Chicago' }) {
   const [setting, setSetting] = useState(null)
   const [loadedScope, setLoadedScope] = useState(null)
   const [error, setError] = useState('')
@@ -21,6 +21,7 @@ export default function CashReconciliationSection({ locationId, entryDate, form,
   }, [scope, locationId, businessDate])
   const cents = !error && loadedScope === scope ? applicableCashCents(entry, setting) : null
   const result = reconcileCash(form, cents)
+  const showCashResults = showExpected || !!entry?.cash_first_submitted_at
   const validation = cashCountError(form.yesterday_cash_counted) || (attemptedSave && (form.yesterday_cash_counted == null || form.yesterday_cash_counted === '') ? 'Enter TOTAL CASH ONSITE to complete this daily entry.' : '')
   async function loadAudit(event) {
     if (!event.currentTarget.open) return
@@ -39,16 +40,16 @@ export default function CashReconciliationSection({ locationId, entryDate, form,
       <input aria-label={CASH_COUNT_LABEL} required aria-required="true" type="number" step="0.01" min="0" value={form.yesterday_cash_counted ?? ''} onChange={event => set('yesterday_cash_counted', event.target.value)} disabled={disabled} aria-invalid={!!validation}
         className="block w-full border rounded-lg p-2 mt-1 bg-white dark:bg-tm-dark-surface border-gray-300 dark:border-tm-dark-border focus:outline-none focus:ring-2 focus:ring-tm-teal" />
     </label>
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
-      {[['Calculated Cash Revenue', result.revenue], ['Admin Cash on Hand', result.hand], ...(showExpected ? [['Expected Total Cash on Site', result.expected]] : [])].map(([label, value]) => <div key={label}><div className="text-xs">{label}</div><strong>{money(value)}</strong></div>)}
+    <div className={`grid grid-cols-1 ${showExpected ? 'sm:grid-cols-3' : ''} gap-2 mt-2`}>
+      {[['Calculated Cash Revenue', result.revenue], ...(showExpected ? [['Admin Cash on Hand', result.hand], ['Expected Total Cash on Site', result.expected]] : [])].map(([label, value]) => <div key={label}><div className="text-xs">{label}</div><strong>{money(value)}</strong></div>)}
     </div>
     {validation && <p role="alert" className="text-red-800 dark:text-red-300">{validation}</p>}
     {error && <p role="alert">{error}</p>}
     {loadedScope === scope && !error && cents == null && <p className="text-xs mt-1">Cash on Hand not configured for this date.</p>}
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+    {showCashResults && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
       <div>Cash Available for Deposit: <strong>{money(result.deposit)}</strong></div>
       <div className={statusClass} role="status">Cash Variance: <strong>{money(result.variance)}</strong> · {result.status === 'green' ? 'Reconciled' : result.status === 'red' ? `${result.variance < 0 ? 'Shortage' : 'Overage'} ${money(Math.abs(result.variance))}` : 'Incomplete or invalid'}</div>
-    </div>
+    </div>}
     <p className="text-xs mt-1">Discrepancies may be saved. Count all physical cash before the deposit; do not adjust it to force a balance.</p>
     {entry?.cash_edited_after_submission && <p className="text-xs font-bold text-amber-800 dark:text-amber-300">Edited After Submission</p>}
     {entry?.cash_first_submitted_at && <p className="text-xs">Original submitted count: {money(Math.round(Number(entry.cash_original_count) * 100))} · {stamp(entry.cash_first_submitted_at)}</p>}
