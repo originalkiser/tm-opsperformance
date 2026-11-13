@@ -16,3 +16,5 @@ Cash Available for Deposit equals physical cash count minus Cash on Hand, so the
 Use existing role/site checks in both Site Entry and Admin correction forms. Keep all cash arithmetic, discrepancy rules, required-entry validation, save behavior, audit history and historical records unchanged. Reuse existing Light/Dark classes and collapse unused grid columns when fields are hidden.
 
 Focused validation: 22 UI/calculation/completion/history checks passed, including Store/Manager before/after submission, unsaved typed counts, Admin visibility, shortage/overage, required cash entry, Deposit visibility and existing Light/Dark classes. Both production-base builds passed with existing warnings only. No hosted execution or production changes were performed. Release requires separate merge/deployment authorization.
+
+The draft branch uses a documentation-only `[CF-Pages-Skip]` tip to suppress automatic branch preview deployment. A separately authorized production merge must use a normal merge message without skip tags.
