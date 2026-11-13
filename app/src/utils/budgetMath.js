@@ -1,3 +1,4 @@
+import { budgetOpportunities } from './budgetConversion.js'
 import { budgetDaysElapsed, budgetMonthStart } from './budgetRevenue.js'
 // Budget Tracking calculations — ported from the MSMO budget workbook's
 // Setup / Daily Input / Dashboard sheets.
@@ -42,12 +43,12 @@ export function monthProgress(dateStr) {
 }
 
 // ── Yesterday / MTD derived metrics ──────────────────────────────────────────────
-// plansSold = basic+good+better+best, retail = washes-redemptions,
+// plansSold = basic+good+better+best, retail = Budget opportunities (Detailed subtracts Wash Overrides),
 // conversion = plans/retail, pmix = (better+best)/plans — all as fractions (0-1).
 
-function derive(washes, redemptions, basic, good, better, best) {
+function derive(washes, redemptions, basic, good, better, best, overrides, location) {
   const plansSold = toNum(basic) + toNum(good) + toNum(better) + toNum(best)
-  const retail    = Math.max(0, toNum(washes) - toNum(redemptions))
+  const retail    = budgetOpportunities(toNum(washes), toNum(redemptions), overrides, location)
   return {
     plansSold,
     retail,
@@ -56,19 +57,19 @@ function derive(washes, redemptions, basic, good, better, best) {
   }
 }
 
-export function yesterdayMetrics(entry) {
+export function yesterdayMetrics(entry, location) {
   if (!entry) return derive(0, 0, 0, 0, 0, 0)
   return derive(
     entry.yesterday_washes, entry.yesterday_redemptions,
-    entry.yesterday_basic, entry.yesterday_good, entry.yesterday_better, entry.yesterday_best,
+    entry.yesterday_basic, entry.yesterday_good, entry.yesterday_better, entry.yesterday_best, entry.yesterday_wash_overrides, location,
   )
 }
 
-export function mtdMetrics(entry) {
+export function mtdMetrics(entry, location) {
   if (!entry) return derive(0, 0, 0, 0, 0, 0)
   return derive(
     entry.mtd_washes, entry.mtd_redemptions,
-    entry.mtd_basic, entry.mtd_good, entry.mtd_better, entry.mtd_best,
+    entry.mtd_basic, entry.mtd_good, entry.mtd_better, entry.mtd_best, entry.mtd_wash_overrides, location,
   )
 }
 

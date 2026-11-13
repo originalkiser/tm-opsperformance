@@ -1,3 +1,4 @@
+import { budgetWashOverrides } from './budgetConversion.js'
 import { revenueDisplayPlan } from './budgetDisplay.js'
 import { computeScore, rankByScore, yesterdayMetrics, mtdMetrics, membershipStatus, daysInMonth } from './budgetMath.js'
 import { calculateMtdRevenue, latestHistoricalRevenue, revenuePresentation, shiftDate, budgetMonthStart, budgetDaysElapsed, usesReportedMtd } from './budgetRevenue.js'
@@ -41,8 +42,8 @@ export function scoreBudgetLocations({ locations = [], targets = [], entries = [
   const eligible = locations.filter(l => l.show_budget_tracking && !l.exclude_from_reporting)
   const tierFields = ['mtd_basic', 'mtd_good', 'mtd_better', 'mtd_best']
   const validTiers = entry => tierFields.every(key => count(entry[key]) != null)
-  const validCounts = entry => !!entry && validTiers(entry) && count(entry.mtd_washes) != null
-    && count(entry.mtd_redemptions) != null && Number(entry.mtd_redemptions) <= Number(entry.mtd_washes)
+  const validCounts = (entry, location) => !!entry && validTiers(entry) && count(entry.mtd_washes) != null
+    && count(entry.mtd_redemptions) != null && Number(entry.mtd_redemptions) <= Number(entry.mtd_washes) && budgetWashOverrides(entry.mtd_wash_overrides, location) != null
   const rows = eligible.map(loc => {
     const issues = [], componentIssues = {}, componentSources = {}
     const problem = (key, message) => { componentIssues[key] = message; issues.push(message) }
@@ -95,13 +96,13 @@ export function scoreBudgetLocations({ locations = [], targets = [], entries = [
     if (scoringRevenue != null) componentSources.revenue = componentSources.revenuePlan = {
       source: reported.source, throughDate: reported.throughDate, provisional: reported.provisional,
     }
-    const conversionEntry = pick('conversion', validCounts)
+    const conversionEntry = pick('conversion', e => validCounts(e, loc))
     const pmixEntry = pick('pmix', validTiers)
     const washEntry = pick('washes', e => count(e.mtd_washes) != null)
     const memberEntry = pick('growth', e => count(e.mtd_membership_actual) != null)
     const ratingEntry = pick('rating', e => number(e.current_rating) != null && Number(e.current_rating) <= 5)
-    const metrics = conversionEntry ? mtdMetrics(conversionEntry) : null
-    const pmixMetrics = pmixEntry ? mtdMetrics(pmixEntry) : null
+    const metrics = conversionEntry ? mtdMetrics(conversionEntry, loc) : null
+    const pmixMetrics = pmixEntry ? mtdMetrics(pmixEntry, loc) : null
     const conversionGoal = number(loc.metric_thresholds?.conv_yellow ?? DEFAULT_THRESHOLDS.conv_yellow)
     const pmixGoal = number(loc.metric_thresholds?.pmix_green ?? DEFAULT_THRESHOLDS.pmix_green)
     const currentMembers = count(memberEntry?.mtd_membership_actual), baseline = count(target?.starting_members), dailyGrowth = number(target?.membership_daily_growth)
@@ -128,7 +129,7 @@ export function scoreBudgetLocations({ locations = [], targets = [], entries = [
     if (target?.membership_goal === null && baseline == null) problem('growth', 'Membership baseline pending; growth category unavailable')
     else if (components.growth == null) problem('growth', expectedGrowth === 0 ? 'Expected net growth is zero; 0 points (no division by zero)' : 'Current members, month-start members or net-growth target unavailable; 0 points')
     if (components.rating == null) problem('rating', 'Rating or rating target missing/invalid (valid range 0–5); 0 points')
-    const oldMetrics = mtdMetrics(latest), oldYesterday = yesterdayMetrics(latest)
+    const oldMetrics = mtdMetrics(latest, loc), oldYesterday = yesterdayMetrics(latest, loc)
     const oldMem = membershipStatus(latest?.mtd_membership_actual, target?.membership_goal, reportingDate)
     const oldScore = latest ? computeScore({ yesterdayConv: oldYesterday.conversion, mtdConv: oldMetrics.conversion, mtdPmix: oldMetrics.pmix, membershipProgressRatio: oldMem.progressRatio, currentRating: latest.current_rating }) : null
     return { id: loc.id, site: loc.name, entry, loc, reportingDate, businessDate, lastEntryDate: latest?.entry_date ?? null,
@@ -137,7 +138,7 @@ export function scoreBudgetLocations({ locations = [], targets = [], entries = [
       reportedRevenue: reported.amount, reportedThrough: reported.throughDate, provisionalRevenue: reported.provisional,
       growth, expectedGrowth, expectedRevenue, conversionGoal, pmixGoal,
       completeness: { entryPresent: !!entry, dailyEntryComplete, missingEntryFields,
-        mtdCountsValid: validCounts(entry), revenueComplete: revenueReady,
+        mtdCountsValid: validCounts(entry, loc), revenueComplete: revenueReady,
         missingRevenueDates: revenue.missingDates || [], missingReportingDates, incompleteReportingDates } }
   })
   // Every eligible site remains in the pool. Valid-value relative ranking and

@@ -12,7 +12,7 @@ import {
   yesterdayMetrics, mtdMetrics, membershipStatus, membershipPace, pct1,
 } from '../utils/budgetMath'
 import {
-  YESTERDAY_FIELDS, MTD_FIELDS,
+  YESTERDAY_FIELDS, MTD_FIELDS, budgetCountFields,
   isFieldMissing, isDayComplete,
 
 } from '../utils/budgetDailyFields'
@@ -46,17 +46,18 @@ export function BonusBadge({ tier }) {
 function DailyEntryTab({ locations, profile, onSaved }) {
   const [selectedLocId, setSelectedLocId] = useState(() => locations.find(site => site.id === profile?.location_id)?.id || locations[0]?.id || '')
   const [entryDate, setEntryDate] = useState(todayStr)
-  const { dailyGoals, goalError, form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(selectedLocId, entryDate, onSaved)
+  const location = locations.find(site => site.id === selectedLocId)
+  const { dailyGoals, goalError, form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(selectedLocId, entryDate, onSaved, location)
 
-  const yst = yesterdayMetrics(form)
-  const mtd = mtdMetrics(form)
+  const yst = yesterdayMetrics(form, location)
+  const mtd = mtdMetrics(form, location)
   const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal, entryDate, dailyGoals, selectedLocId)
   const mem = membershipStatus(form.mtd_membership_actual, target?.membership_goal, entryDate)
   const memPace = membershipPace(form.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, entryDate)
 
   const baseInputCls = 'w-full border-2 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
-  const fieldCls = (key) => {
-    if (!isFieldMissing(form, key)) return `${baseInputCls} border-gray-300 dark:border-tm-dark-border focus:ring-tm-teal`
+  const fieldCls = (key, optional = false) => {
+    if (optional || !isFieldMissing(form, key)) return `${baseInputCls} border-gray-300 dark:border-tm-dark-border focus:ring-tm-teal`
     return attemptedSave
       ? `${baseInputCls} border-red-500 focus:ring-red-400`
       : `${baseInputCls} border-orange-400 focus:ring-orange-300`
@@ -105,12 +106,12 @@ function DailyEntryTab({ locations, profile, onSaved }) {
               <div>
                 <h4 className="text-xs font-brand font-bold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-2">Yesterday</h4>
                 <div className="space-y-2">
-                  {YESTERDAY_FIELDS.map(f => (
+                  {budgetCountFields(YESTERDAY_FIELDS, location).map(f => (
                     <div key={f.key} className="flex items-center gap-2">
                       <label className="text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">
                         {f.label}{f.hint && <span className="block text-[10px] text-gray-400 dark:text-tm-dark-muted italic">{f.hint}</span>}
                       </label>
-                      <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
+                      <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key, f.optional)} />
                     </div>
                   ))}
                 </div>
@@ -122,12 +123,12 @@ function DailyEntryTab({ locations, profile, onSaved }) {
               <div>
                 <h4 className="text-xs font-brand font-bold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-2">Month to Date</h4>
                 <div className="space-y-2">
-                  {MTD_FIELDS.map(f => (
+                  {budgetCountFields(MTD_FIELDS, location).map(f => (
                     <div key={f.key} className="flex items-center gap-2">
                       <label className="text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">
                         {f.label}{f.hint && <span className="block text-[10px] text-gray-400 dark:text-tm-dark-muted italic">{f.hint}</span>}
                       </label>
-                      <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
+                      <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key, f.optional)} />
                     </div>
                   ))}
                 </div>

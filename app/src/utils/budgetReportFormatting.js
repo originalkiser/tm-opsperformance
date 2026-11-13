@@ -28,7 +28,7 @@ export function reportCash(entry, reportingDate) {
 
 export function reportMetricFormatting(entry, target, location, reportingDate, plan, reported) {
   const fresh = entry?.entry_date === reportingDate
-  const yst = yesterdayMetrics(entry), mtd = mtdMetrics(entry)
+  const yst = yesterdayMetrics(entry, location), mtd = mtdMetrics(entry, location)
   const ystValid = fresh && validCounts(entry, 'yesterday'), mtdValid = fresh && validCounts(entry, 'mtd')
   const thresholds = location?.metric_thresholds
   const membersValid = fresh && nonnegative(entry?.mtd_membership_actual) && Number.isSafeInteger(Number(entry.mtd_membership_actual))

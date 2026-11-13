@@ -20,8 +20,8 @@ export function buildBudgetReportRows({ locations, targets, entries: dailyEntrie
     const loc = scoringResult.loc
     const target = scoringResult.target
     const entry  = entries.filter(e => e.location_id === loc.id).sort((a, b) => b.entry_date.localeCompare(a.entry_date))[0]
-    const yst    = yesterdayMetrics(entry)
-    const mtd    = mtdMetrics(entry)
+    const yst    = yesterdayMetrics(entry, loc)
+    const mtd    = mtdMetrics(entry, loc)
     const revenue = scoringResult.revenueResult
     const historicalRevenue = scoringResult.historicalRevenue
     const rev    = reportedRevenuePace(revenue, historicalRevenue, target?.revenue_goal, reportingDate, dailyGoals, loc.id)

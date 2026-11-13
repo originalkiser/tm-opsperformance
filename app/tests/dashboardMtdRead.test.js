@@ -6,7 +6,7 @@ import { selectPerformanceSources } from '../src/utils/budgetPerformanceSource.j
 
 const sites = [{id:'own',show_budget_tracking:true},{id:'other',show_budget_tracking:true},{id:'logs',show_budget_tracking:false}]
 const range={start:'2026-10-01',end:'2026-10-16'}
-const snapshot=id=>({location_id:id,entry_date:'2026-10-16',mtd_washes:1000,mtd_redemptions:500,mtd_basic:10,mtd_good:10,mtd_better:20,mtd_best:10,current_reviews:12})
+const snapshot=id=>({location_id:id,entry_date:'2026-10-16',mtd_washes:1000,mtd_redemptions:500,mtd_wash_overrides:null,mtd_basic:10,mtd_good:10,mtd_better:20,mtd_best:10,current_reviews:12})
 
 test('Dashboard requests company performance via RPC with a completed-day cutoff and no raw Budget table read',async()=>{
  let calls=0

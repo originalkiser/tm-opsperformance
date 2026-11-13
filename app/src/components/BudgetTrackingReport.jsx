@@ -17,7 +17,7 @@ import TmLoader from './TmLoader'
 import { PaceBadge } from './BudgetTrackingSection'
 import { toDateStr, pct1 } from '../utils/budgetMath'
 import {
-  YESTERDAY_FIELDS, MTD_FIELDS,
+  YESTERDAY_FIELDS, MTD_FIELDS, budgetCountFields,
   isFieldMissing, isDayComplete,
 
 } from '../utils/budgetDailyFields'
@@ -36,12 +36,12 @@ function EditIcon() {
 function DailyEntryPane({ location }) {
   const { profile } = useAuth()
   const [entryDate, setEntryDate] = useState(todayStr)
-  const { dailyGoals, goalError, form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(location.id, entryDate)
+  const { dailyGoals, goalError, form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(location.id, entryDate, undefined, location)
   const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal, entryDate, dailyGoals, location.id)
 
   const baseInputCls = 'w-full border-2 rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
-  const fieldCls = (key) => {
-    if (!isFieldMissing(form, key)) return `${baseInputCls} border-gray-300 dark:border-tm-dark-border focus:ring-tm-teal`
+  const fieldCls = (key, optional = false) => {
+    if (optional || !isFieldMissing(form, key)) return `${baseInputCls} border-gray-300 dark:border-tm-dark-border focus:ring-tm-teal`
     return attemptedSave
       ? `${baseInputCls} border-red-500 focus:ring-red-400`
       : `${baseInputCls} border-orange-400 focus:ring-orange-300`
@@ -69,12 +69,12 @@ function DailyEntryPane({ location }) {
       {saved && <p role="status" className="text-sm text-green-600">Entry saved.</p>}
       <fieldset disabled={saving || loading || !!error}>
       <div className="grid grid-cols-2 gap-3">
-        {[...YESTERDAY_FIELDS, ...MTD_FIELDS].map(f => (
+        {budgetCountFields([...YESTERDAY_FIELDS, ...MTD_FIELDS], location).map(f => (
           <div key={f.key}>
             <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">
               {f.label}{f.hint && <span className="block normal-case italic text-gray-400">{f.hint}</span>}
             </label>
-            <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
+            <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key, f.optional)} />
           </div>
         ))}
         <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"><BudgetRevenueFields entryDate={entryDate} form={form} set={set} fieldCls={fieldCls} /></div>

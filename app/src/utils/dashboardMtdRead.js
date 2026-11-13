@@ -12,7 +12,7 @@ export async function loadDashboardMtd(client, locations, range, cutoff) {
   })
   if (error) throw new Error('Company MTD performance is unavailable. The approved reporting endpoint may not be installed or access may be denied.')
   // Defensive whitelist: never forward other RPC fields into UI/export state.
-  const fields = ['location_id', 'entry_date', 'mtd_washes', 'mtd_redemptions', 'mtd_basic', 'mtd_good', 'mtd_better', 'mtd_best', 'current_reviews']
+  const fields = ['location_id', 'entry_date', 'mtd_washes', 'mtd_redemptions', 'mtd_wash_overrides', 'mtd_basic', 'mtd_good', 'mtd_better', 'mtd_best', 'current_reviews']
   return (data || []).filter(row => ids.includes(row.location_id) && row.entry_date >= shiftDate(range.start, 1)
     && row.entry_date <= shiftDate(cutoff, 1))
     .map(row => Object.fromEntries(fields.map(field => [field, row[field]])))
