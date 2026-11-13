@@ -20,3 +20,7 @@ A migration failure rolls back the transaction. Do not blindly replay or assume 
 For a frontend regression, revert only the approved application merge through normal deployment after separate authorization. Retain the nullable columns, entered override values and compatible extended RPC. Do not delete new values, drop data columns or narrow the result projection while the new frontend remains live. A database restore requires separate authorization and isolated/selective reconciliation; never automatically replace production.
 
 Read-only preflight results are recorded separately; this document does not claim live verification or authorize production changes.
+
+## UI-only input styling correction
+
+The follow-up input-style PR reuses the existing numeric field class path in Site Entry and Admin correction forms. No schema migration, calculation, validation, persistence or reporting change is included. Merge only after separate authorization, using a normal merge message without skip tags.
