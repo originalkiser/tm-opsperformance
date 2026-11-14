@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import ChecklistForm from '../components/ChecklistForm'
 import { supabase, supabasePublicKey } from '../lib/supabase'
-import { takeGuestAccess, clearGuestAccess, createChecklistTransport } from '../utils/checklistAccess'
+import { takeGuestAccess, clearGuestAccess, createChecklistTransport, findChecklistOccurrence } from '../utils/checklistAccess'
 import { checklistPeriod, localChecklistDate } from '../utils/checklistRules'
 import '../styles/boldPages.css'
 
@@ -10,11 +10,12 @@ const order = ['opening', 'midday', 'closing', 'weekly', 'weekly_pm']
 export default function GuestChecklists() {
   const route = useLocation()
   const [context, setContext] = useState(null), [form, setForm] = useState(null)
+  const [existing, setExisting] = useState(null)
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   const transport = useRef(null), generation = useRef(0), alive = useRef(true), working = useRef(false)
   useEffect(() => {
     alive.current = true; generation.current++; working.current = false
-    transport.current = null; setContext(null); setForm(null); setError(''); setBusy(false)
+    transport.current = null; setContext(null); setForm(null); setExisting(null); setError(''); setBusy(false)
     try {
       const access = takeGuestAccess(window.location, window.history, sessionStorage)
       if (!access) setError('Scan your store’s checklist QR code to continue. No account login is needed.')
@@ -24,7 +25,7 @@ export default function GuestChecklists() {
   }, [route.search])
   async function load(more = false) {
     if (!transport.current || working.current) return
-    working.current = true; setBusy(true); setError('')
+    working.current = true; setBusy(true); setError(''); setExisting(null)
     const current = ++generation.current
     try {
       const result = await transport.current.request('context', more ? { offset: context.next_offset } : {})
@@ -37,12 +38,27 @@ export default function GuestChecklists() {
   }
   async function open(template, record) {
     if (working.current || !transport.current) return
-    working.current = true; setBusy(true); setError('')
-    const current = generation.current
+    working.current = true; setBusy(true); setError(''); setExisting(null)
+    const current = generation.current, accessTransport = transport.current
+    let periodDate
     try {
-      const result = record ? await transport.current.load(record.id) : await transport.current.start({ template_key: template.key })
+      // Bind creation and duplicate recovery to the same displayed occurrence.
+      // The server still rejects a guest start if that period is no longer current.
+      if (!record) periodDate = checklistPeriod(template, localChecklistDate(context.location.timezone, new Date(context.server_now)))
+      const result = record ? await accessTransport.load(record.id) : await accessTransport.start({ template_key: template.key, period_date: periodDate })
       if (alive.current && current === generation.current) setForm(result)
-    } catch (error) { if (alive.current && current === generation.current) setError(`${error.message} Nothing was retried automatically. Refresh to confirm the saved state.`) }
+    } catch (error) {
+      if (!alive.current || current !== generation.current) return
+      if (!record && error.status === 409) {
+        try {
+          const existing = await findChecklistOccurrence(accessTransport, { templateKey: template.key, periodDate })
+          if (alive.current && current === generation.current) {
+            setExisting(existing)
+            setError(existing ? 'This checklist already exists for this reporting period. Reopen the saved checklist to continue or view its submission.' : 'This checklist already exists, but it is not available to reopen here. Refresh the list to check your current access.')
+          }
+        } catch (lookupError) { if (alive.current && current === generation.current) setError(`${lookupError.message} The existing checklist could not be confirmed. Refresh before continuing.`) }
+      } else if (alive.current && current === generation.current) setError(`${error.message} Nothing was retried automatically. Refresh to confirm the saved state.`)
+    }
     finally { if (current === generation.current) { working.current = false; if (alive.current) setBusy(false) } }
   }
   let today = ''
@@ -53,6 +69,7 @@ export default function GuestChecklists() {
       <header className="tm-checklists-title"><h1 className="text-2xl font-bold">Store Checklists</h1><p>{context ? `${context.location.site_code} · ${context.location.name || ''}` : 'Secure store QR access'}</p></header>
       <p className="tm-checklists-notice rounded p-3">No login needed. Anyone with this store’s QR can continue its checklists. Names are self-reported. Internet connection required. MonitorQA remains official.</p>
       {error && <p role="alert" className="border border-red-500 rounded p-3 text-red-700 dark:text-red-300">{error}</p>}
+      {existing && <div className="border rounded p-3"><p>{existing.template_snapshot.name} · {existing.period_date} · {existing.status}</p><button disabled={busy} className="min-h-12 px-4 border rounded" onClick={() => open(null, existing)}>Reopen Existing Checklist</button></div>}
       {busy && <p role="status">Loading checklist…</p>}
       {form ? <ChecklistForm key={`${form.row.id}:${form.row.working_copy_id || 'original'}`} initial={form.row} initialCapabilities={form.capabilities} initialEvidence={form.evidence} transport={transport.current} locationLabel={context?.location.site_code} onSaved={row => setContext(previous => ({ ...previous, submissions: [...previous.submissions.filter(item => item.id !== row.id), row] }))} onClose={() => { setForm(null); load() }} /> : context && <>
         <div className="flex flex-wrap gap-3 items-center"><p>Store-local date: {today || 'Unavailable'}</p><button disabled={busy} className="min-h-12 px-4 border rounded" onClick={() => load()}>Refresh</button></div>
