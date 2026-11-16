@@ -6,11 +6,11 @@ const [opening,midday,closing,weekly]=checklistTemplates
 const complete=t=>Object.fromEntries(t.definition.map(i=>[i.id,{value:i.options[0]}]))
 const photos=t=>[...t.definition.filter(i=>i.photo_required).map(i=>({item_id:i.id,kind:'photo'})),{kind:'signature'}]
 
-test('approved inventory: original wording, critical exception, six photo requirements and conditional N/A',()=>{
+test('approved inventory: original wording, critical exception, eight photo requirements and conditional N/A',()=>{
  assert.deepEqual(checklistTemplates.map(t=>t.definition.length),[31,5,19,16])
  assert.deepEqual(checklistTemplates.map(t=>t.definition.filter(i=>i.critical).length),[31,0,18,0])
  assert.equal(closing.definition.find(i=>i.text==='Secure the site - Lock front and back door and set alarm system').critical,false)
- assert.deepEqual(checklistTemplates.map(t=>t.definition.filter(i=>i.photo_required).length),[1,0,3,2])
+ assert.deepEqual(checklistTemplates.map(t=>t.definition.filter(i=>i.photo_required).length),[3,0,3,2])
  assert.deepEqual(checklistTemplates.map(t=>t.definition.filter(i=>i.na_allowed).length),[0,0,1,3])
  assert.deepEqual(midday.definition[4].options,['Empty','Half full','Overflowing/needs to be emptied'])
  assert.equal(opening.definition[14].text,'Pull top brush down and spin it around to ensure no debris has wrapped around it from the prior day.')

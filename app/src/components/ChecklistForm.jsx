@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import ChecklistSignature from './ChecklistSignature'
+import ChecklistCamera from './ChecklistCamera'
 import { validateChecklist, validateEvidence, checklistTimestamp, isChecklistItemActive } from '../utils/checklistRules'
 import { downloadChecklistEvidence, checklistUploadRejection } from '../utils/checklistEvidence'
 
@@ -27,6 +28,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   const signatureDirty = Object.values(dirtySignatures).some(Boolean)
   const dirty = !readonly && (JSON.stringify(answers) !== JSON.stringify(row.answers) || name !== row.manager_name || signatureDirty)
   latestDirty.current = dirty
+  const operationalChecklist = ['opening', 'midday', 'closing', 'weekly', 'weekly_pm'].includes(row.template_key)
   const managementAudit = ['monthly_site_assessment', 'quarterly_safety_audit'].includes(row.template_key)
   const auditorSignature = managementAudit || row.template_key === 'weekly_pm'
   const items = row.template_snapshot.definition
@@ -202,6 +204,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
           setNotice(`${kind === 'photo' ? 'Photo' : 'Signature'} saved privately.`)
           return
         }
+        if (kind === 'photo' && operationalChecklist) throw new Error('Reopen this checklist through the current checklist page before adding a photo.')
         const id = crypto.randomUUID(), extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.type]
         const path = `${row.id}/${id}.${extension}`
         const uploaded = await supabase.storage.from('manager-checklist-evidence').upload(path, file, { contentType: file.type, cacheControl: '0', upsert: false })
@@ -238,11 +241,11 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
     return <div ref={node => { invalidTargets.current[`photo:${item.id}`] = node }} tabIndex={-1} className="space-y-1 text-sm scroll-mb-48" aria-label={section ? 'Communications Board section photo' : `Photo evidence ${item.id}`}>
       <p className="font-semibold">{section ? 'One photo required for the Communications Board section.' : 'One photo required for this item.'}</p>
       {section && item.instruction && <p>{item.instruction}</p>}
-      {!readonly && (!transport || capabilities?.can_upload) && <label className="block">Add photo
+      {!readonly && (!transport || capabilities?.can_upload) && (operationalChecklist ? <ChecklistCamera itemId={item.id} disabled={busy || staleVersion.current} onCapture={file => upload(file, item.id, 'photo')} /> : <label className="block">Add photo
         <input aria-label={`Upload photo ${item.id}`} disabled={busy || staleVersion.current} type="file" accept="image/jpeg,image/png,image/webp"
           className="block w-full min-h-11 min-w-0 text-sm file:min-h-11 file:mr-2 file:px-3 file:border file:rounded file:bg-transparent file:text-inherit"
           onChange={e => { const file = e.target.files?.[0]; if (file) upload(file, item.id, 'photo'); e.target.value = '' }} />
-      </label>}
+      </label>)}
     </div>
   }
   function signatureControl(item = null) {

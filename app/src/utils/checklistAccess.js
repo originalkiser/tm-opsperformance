@@ -59,6 +59,7 @@ export function createChecklistTransport(client, publicKey, { token = null, reco
     }
     return action === 'download' ? response.blob() : response.json()
   }
+  const photoRequests = new WeakMap()
   const transport = {
     guest: !!token, recoveryKey: recoveryKey || 'authenticated', request,
     context: () => request('context'),
@@ -68,7 +69,14 @@ export function createChecklistTransport(client, publicKey, { token = null, reco
     save: async (row, { answers, name, submit }) => normalizeChecklistResult(await request('save', { id: row.id, revision: row.revision, working_copy_id: row.working_copy_id || null, answers, manager_name: name, submit })),
     upload: async (row, file, item, kind) => {
       validateEvidence(file)
-      await request('upload', { id: row.id, working_copy_id: row.working_copy_id || null, item_id: item, kind, file })
+      let uploadId
+      if (kind === 'photo' && ['opening', 'midday', 'closing', 'weekly', 'weekly_pm'].includes(row.template_key)) {
+        const scope = `${row.id}:${row.working_copy_id || ''}:${item}`
+        let retry = photoRequests.get(file)
+        if (!retry || retry.scope !== scope) { retry = { scope, id: crypto.randomUUID() }; photoRequests.set(file, retry) }
+        uploadId = retry.id
+      }
+      await request('upload', { id: row.id, working_copy_id: row.working_copy_id || null, item_id: item, kind, file, ...(uploadId ? { upload_id: uploadId } : {}) })
       return transport.load(row.id)
     },
     download: async (row, file, signal) => {

@@ -1,3 +1,4 @@
+import { weeklyPmTemplate as pm } from '../src/utils/weeklyPmTemplate.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -7,6 +8,7 @@ import { validateChecklist, validateEvidence, checklistTimestamp, checklistPerio
 import { downloadChecklistEvidence, checklistUploadRejection } from '../src/utils/checklistEvidence.js'
 import { resourceAccess } from '../src/utils/resourceLibrary.js'
 const template=checklistTemplates.find(t=>t.key==='midday')
+const libraryTemplate={...checklistTemplates[0],key:'monthly_site_assessment'} // Synthetic audit fixture exercises the preserved library/legacy upload path.
 const actor='00000000-0000-0000-0000-000000000002'
 function form({submitted=false,other=false,fail=false,slow=false,cached=null,cancelNavigation=false,templateData=template,uploadFail=false,attachFail=false,evidenceFiles=[],denied=false,slowEvidence=false,discardFail=false,slowDiscard=false,pending=false,admin=false,slowUpload=false,uploadError=null,saveError=null,attachError=null,liveStatus='draft',statusReadFail=false}={}) {
  const row={id:'draft',created_by:other?'another':actor,location_id:'site',template_key:templateData.key,period_date:'2026-11-02',status:submitted?'submitted':pending?'discarding':'draft',revision:1,answers:{},manager_name:'',submitted_at:'2026-11-02T12:00:00Z',updated_at:'2026-11-02T12:00:00Z',template_snapshot:{...templateData,timezone:'America/Los_Angeles'}}
@@ -90,10 +92,18 @@ test('a new unsaved signature blocks final submission until captured signature i
  signature.props.onDirty(true);h.render()
  assert.equal(button(h,'Submit').props.disabled,true);h.unmount()
 })
-test('single native photo picker appears only for required photo evidence',async()=>{
- const source=readFileSync(new URL('../src/components/ChecklistForm.jsx',import.meta.url),'utf8')
- assert.doesNotMatch(source,/capture="environment"/);assert.match(source,/upsert: false/)
- const h=form();await h.flush();assert.equal(h.all(n=>n.type==='input'&&n.props.type==='file').length,0);h.unmount()
+test('both Management Audit photo controls retain the native camera/library picker',async()=>{
+ // Quarterly currently has no photo-required items: use a fictional snapshot, never edit its template.
+ for(const key of ['monthly_site_assessment','quarterly_safety_audit']){
+  const templateData={...libraryTemplate,key}
+  const h=form({templateData});await h.flush()
+  const pickers=h.all(n=>n.type==='input'&&n.props.type==='file')
+  assert.equal(pickers.length,templateData.definition.filter(i=>i.photo_required).length)
+  assert.ok(pickers.length>0)
+  for(const picker of pickers){assert.equal(picker.props.capture,undefined);assert.equal(picker.props.accept,'image/jpeg,image/png,image/webp')}
+  assert.equal(h.all(n=>typeof n.props?.onCapture==='function').length,0)
+  h.unmount()
+ }
 })
 test('navigation follows the active assigned-account access decision',()=>{
  for(const allowed of [false,true]){
@@ -140,19 +150,30 @@ test('canceling browser Back preserves the draft and restores the prior history 
  assert.equal(h.find(n=>n.type==='input'&&n.props.value==='No').props.checked,true);h.unmount()
 })
 
-test('six photo requirements expose one native picker each; invalid files never reach RPC/storage',async()=>{
- for(const templateData of checklistTemplates){
+test('operational photo requirements expose cameras and no native library input',async()=>{
+ for(const templateData of [...checklistTemplates,pm]){
   const h=form({templateData});await h.flush()
-  const inputs=h.all(n=>n.type==='input'&&n.props.type==='file')
-  const required=templateData.definition.filter(i=>i.photo_required).length
-  assert.equal(inputs.length,required);assert.ok(inputs.every(n=>!n.props.capture))
-  if(inputs.length){inputs[0].props.onChange({target:{files:[new Blob(['invalid'],{type:'image/svg+xml'})],value:'selected'}});await h.flush();assert.equal(h.calls.length,0)}
+  assert.equal(h.all(n=>n.type==='input'&&n.props.type==='file').length,0)
+  const cameras=h.all(n=>typeof n.props?.onCapture==='function')
+  assert.deepEqual(cameras.map(n=>n.props.itemId),templateData.definition.filter(i=>i.photo_required).map(i=>i.id))
+  if(cameras.length) {await cameras[0].props.onCapture(new Blob(['invalid'],{type:'image/svg+xml'}));await h.flush();assert.equal(h.calls.length,0)}
   h.unmount()
  }
 })
+test('Opening has gauge and both Critical trap-door cameras with removal instructions',async()=>{
+ const h=form({templateData:checklistTemplates[0]});await h.flush()
+ assert.deepEqual(h.all(n=>typeof n.props?.onCapture==='function').map(n=>n.props.itemId),['opening-6','opening-9','opening-10'])
+ for(const id of ['opening-9','opening-10']){
+  const item=checklistTemplates[0].definition.find(i=>i.id===id)
+  assert.equal(item.critical,true);assert.equal(item.photo_required,true)
+  assert.equal(item.instruction,'Photo must clearly show the inspected components with the grate(s) removed.')
+ }
+ assert.equal(h.all(n=>n.type==='p'&&textContent(n).includes('Photo must clearly show the inspected components')).length,2)
+ h.unmount()
+})
 test('photo uploads save draft first, never upsert, and register evidence only after upload succeeds',async()=>{
  for(const config of [{},{uploadFail:true},{attachFail:true}]){
-  const h=form({...config,templateData:checklistTemplates[0]});await h.flush()
+  const h=form({...config,templateData:libraryTemplate});await h.flush()
   h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[new Blob(['fictional-image'],{type:'image/png'})],value:'selected'}})
   await h.flush()
   assert.deepEqual(h.calls.map(x=>x.name),config.uploadFail?['save_checklist','upload']:['save_checklist','upload','attach_checklist_evidence'])
@@ -191,29 +212,18 @@ test('leaving during an evidence request aborts it and never creates an orphaned
 })
 
 
-test('weekly section photo sits outside questions; one picker per requirement preserves attachment keys',async()=>{
- const weekly=checklistTemplates.find(t=>t.key==='weekly')
- const h=form({templateData:weekly});await h.flush()
- const inputs=h.all(n=>n.type==='input'&&n.props.type==='file')
- assert.equal(inputs.length,2)
- assert.deepEqual(inputs.map(n=>n.props['aria-label']),['Upload photo weekly-9','Upload photo weekly-13'])
- const containsPicker=node=>Array.isArray(node)?node.some(containsPicker):!!node&&typeof node==='object'&&(node.props?.['aria-label']==='Upload photo weekly-9'||containsPicker(node.props?.children))
+test('weekly section camera sits outside questions and preserves attachment item keys',async()=>{
+ const weekly=checklistTemplates.find(t=>t.key==='weekly'),h=form({templateData:weekly});await h.flush()
+ assert.equal(h.all(n=>n.type==='input'&&n.props.type==='file').length,0)
+ const cameras=h.all(n=>typeof n.props?.onCapture==='function')
+ assert.deepEqual(cameras.map(n=>n.props.itemId),['weekly-9','weekly-13'])
+ const containsCamera=node=>Array.isArray(node)?node.some(containsCamera):!!node&&typeof node==='object'&&(node.props?.itemId==='weekly-9'||containsCamera(node.props?.children))
  assert.ok(h.find(n=>n.props?.['aria-label']==='Communications Board section photo'))
- assert.ok(h.all(n=>n.type==='fieldset').every(n=>!containsPicker(n)))
- assert.ok(inputs.every(n=>!n.props.capture&&n.props.accept==='image/jpeg,image/png,image/webp'))
- const picker=inputs[0],target={files:[new Blob(['photo'],{type:'image/png'})],value:'selected'}
- picker.props.onChange({target});await h.flush()
- assert.equal(target.value,'')
- assert.equal(h.calls.find(c=>c.name==='attach_checklist_evidence').args.p_item,'weekly-9')
- assert.equal(h.calls.find(c=>c.name==='attach_checklist_evidence').args.p_kind,'photo')
- assert.equal(h.calls.filter(c=>c.name==='upload').length,1)
- assert.ok(button(h,'Save Draft'));assert.ok(button(h,'Submit'));assert.ok(button(h,'Close'))
- h.unmount()
+ assert.ok(h.all(n=>n.type==='fieldset').every(n=>!containsCamera(n)))
+ assert.ok(button(h,'Save Draft'));h.unmount()
  const review=form({templateData:weekly,submitted:true});await review.flush()
- assert.equal(review.all(n=>n.type==='input'&&n.props.type==='file').length,0)
- review.unmount()
+ assert.equal(review.all(n=>typeof n.props?.onCapture==='function').length,0);review.unmount()
 })
-
 
 test('answers use local recovery only; server saves are explicit and discard requires confirmation',async()=>{
  const h=form({cancelNavigation:true});await h.flush()
@@ -223,7 +233,7 @@ test('answers use local recovery only; server saves are explicit and discard req
  assert.equal(h.calls.length,0);assert.ok(button(h,'Save Draft'));h.unmount()
 })
 test('confirmed discard clears local recovery, closes only on success, and blocks stale save/upload callbacks',async()=>{
- const h=form({slowDiscard:true,templateData:checklistTemplates[0]});await h.flush()
+ const h=form({slowDiscard:true,templateData:libraryTemplate});await h.flush()
  h.find(n=>n.type==='input'&&n.props.value==='Not Completed').props.onChange();await h.flush()
  const save=button(h,'Save Draft').props.onClick,discard=button(h,'Discard Draft').props.onClick
  const upload=h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange
@@ -254,7 +264,7 @@ test('pending save prevents discard; no overlapping cleanup while an upload/save
 
 
 test('an in-flight evidence upload prevents discard until upload and registration finish',async()=>{
- const h=form({slowUpload:true,templateData:checklistTemplates[0]});await h.flush()
+ const h=form({slowUpload:true,templateData:libraryTemplate});await h.flush()
  const discard=button(h,'Discard Draft').props.onClick
  h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}})
  await h.flush();await discard()
@@ -264,7 +274,7 @@ test('an in-flight evidence upload prevents discard until upload and registratio
 })
 
 test('known stale Storage rejection gets a clear message, no attachment and no automatic retry',async()=>{
- const h=form({templateData:checklistTemplates[0],uploadError:{status:500,statusCode:'500',message:'database error, code: P0001'},liveStatus:null});await h.flush()
+ const h=form({templateData:libraryTemplate,uploadError:{status:500,statusCode:'500',message:'database error, code: P0001'},liveStatus:null});await h.flush()
  const upload=h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange
  upload({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}});await h.flush()
  assert.deepEqual(h.calls.map(c=>c.name),['save_checklist','upload','read_draft_status'])
@@ -274,7 +284,7 @@ test('known stale Storage rejection gets a clear message, no attachment and no a
  assert.equal(h.calls.filter(c=>c.name==='upload').length,1);assert.equal(h.calls.filter(c=>c.name==='attach_checklist_evidence').length,0);h.unmount()
 })
 test('interrupted cleanup blocks uploads with clear guidance while preserving explicit discard resumption',async()=>{
- const h=form({templateData:checklistTemplates[0],uploadError:{status:500,message:'database error, code: P0001'},liveStatus:'discarding'});await h.flush()
+ const h=form({templateData:libraryTemplate,uploadError:{status:500,message:'database error, code: P0001'},liveStatus:'discarding'});await h.flush()
  const upload=h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange
  upload({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}});await h.flush()
  upload({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}});await h.flush()
@@ -288,14 +298,14 @@ test('interrupted cleanup blocks uploads with clear guidance while preserving ex
 })
 test('stale photo/signature saves and attachment registration failures are handled without recreating records',async()=>{
  for(const kind of ['photo','signature']){
-  const h=form({templateData:checklistTemplates[0],saveError:{code:'P0002',message:'query returned no rows'},liveStatus:null});await h.flush()
+  const h=form({templateData:libraryTemplate,saveError:{code:'P0002',message:'query returned no rows'},liveStatus:null});await h.flush()
   const blob=new Blob(['synthetic'],{type:'image/png'})
   if(kind==='photo')h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[blob],value:''}})
   else await h.find(n=>typeof n.props?.onDirty==='function').props.onSave(blob)
   await h.flush();assert.deepEqual(h.calls.map(c=>c.name),['save_checklist','read_draft_status'])
   assert.ok(h.find(n=>n.props?.role==='alert'&&String(n.props.children).includes('Uploads are no longer allowed.')));h.unmount()
  }
- const h=form({templateData:checklistTemplates[0],attachError:{code:'P0002',message:'query returned no rows'},liveStatus:null});await h.flush()
+ const h=form({templateData:libraryTemplate,attachError:{code:'P0002',message:'query returned no rows'},liveStatus:null});await h.flush()
  h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}});await h.flush()
  assert.equal(h.calls.filter(c=>c.name==='attach_checklist_evidence').length,1)
  assert.equal(h.all(n=>Array.isArray(n.props?.files)&&n.props.files.length>0).length,0);h.unmount()
@@ -306,7 +316,7 @@ test('unknown Storage errors, still-editable drafts and failed state reads keep 
   {uploadError:{status:500,message:'database error, code: P0001'},liveStatus:'draft'},
   {uploadError:{status:500,message:'database error, code: P0001'},statusReadFail:true},
  ]){
-  const h=form({...config,templateData:checklistTemplates[0]});await h.flush()
+  const h=form({...config,templateData:libraryTemplate});await h.flush()
   h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[new Blob(['photo'],{type:'image/png'})],value:''}});await h.flush()
   assert.ok(h.find(n=>n.props?.role==='alert'&&String(n.props.children).startsWith(config.uploadError.message)))
   assert.ok(button(h,'Save Draft'));assert.equal(h.calls.filter(c=>c.name==='upload').length,1)
@@ -357,10 +367,9 @@ test('Admin management keeps template editing and makes no pilot/user grant quer
  assert.ok(button(h,'Save template'));h.unmount()
 })
 
-const { weeklyPmTemplate: pm } = await import('../src/utils/weeklyPmTemplate.js')
 const pmClean = () => Object.fromEntries(pm.definition.filter(i=>!i.condition).map(i=>[i.id,{value:i.options.find(v=>!i.failure_values.includes(v))}]))
 const textContent = node => typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(textContent).join('') : node?.props ? textContent(node.props.children) : ''
-test('PM mobile form shows 62 source-numbered main items, three signature controls and no required photos',async()=>{
+test('PM mobile form shows 62 main items and three original signature controls',async()=>{
  const h=form({templateData:pm});await h.flush()
  assert.equal(h.all(n=>n.type==='fieldset').length,62)
  assert.equal(h.all(n=>typeof n.props?.onDirty==='function').length,3)
@@ -403,7 +412,7 @@ test('PM signature saves bind the two item IDs and final signature separately; a
  h.unmount()
 })
 test('PM restored draft can submit with inactive branches unanswered and three signatures; immutable review shows them',async()=>{
- const files=[{id:'a',kind:'signature',item_id:'weekly-pm-tunnel-27'},{id:'b',kind:'signature',item_id:'weekly-pm-booster-1'},{id:'c',kind:'signature',item_id:null}]
+ const files=[...pm.definition.filter(i=>i.photo_required).map(i=>({id:i.id,kind:'photo',item_id:i.id})),{id:'a',kind:'signature',item_id:'weekly-pm-tunnel-27'},{id:'b',kind:'signature',item_id:'weekly-pm-booster-1'},{id:'c',kind:'signature',item_id:null}]
  const h=form({templateData:pm,cached:{answers:pmClean(),name:'Fictional Manager'},evidenceFiles:files});await h.flush()
  button(h,'Restore unsaved answers').props.onClick();h.render()
  await button(h,'Submit').props.onClick();await h.flush()

@@ -75,3 +75,15 @@ test('changing QR stores in one tab invalidates late reads from the previous sto
   assert.equal(h.all(n=>n.type==='article').length,0);assert.equal(b.values.size,0)
   h.unmount()
 })
+test('operational photo retries retain their request ID; audits and signatures keep existing upload fields',async()=>{
+ const uploads=[],row={id:'draft',template_key:'weekly_pm'},file=new Blob(['photo'],{type:'image/jpeg'})
+ const t=createChecklistTransport({supabaseUrl:'https://fictional.invalid'},'public',{token,fetcher:async(url,options)=>{
+  if(options.body instanceof FormData){uploads.push(options.body);return Response.json({attachment:{id:'photo'}})}
+  return Response.json({submission:{...row},evidence:[],capabilities:{can_edit:true}})
+ }})
+ await t.upload(row,file,'entry','photo');await t.upload(row,file,'entry','photo')
+ assert.equal(uploads[0].get('upload_id'),uploads[1].get('upload_id'));assert.match(uploads[0].get('upload_id'),/^[0-9a-f-]{36}$/)
+ for(const template_key of ['monthly_site_assessment','quarterly_safety_audit'])await t.upload({...row,template_key},file,'entry','photo')
+ await t.upload(row,file,null,'signature')
+ assert.deepEqual(uploads.slice(2).map(form=>form.get('upload_id')),[null,null,null])
+})

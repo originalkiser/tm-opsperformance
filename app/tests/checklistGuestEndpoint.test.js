@@ -79,3 +79,31 @@ test('non-retryable application conflicts return one safe HTTP409 for edit, save
   assert.equal(c.calls.length,1)
  }
 })
+test('operational photo hashes are computed from bytes on server, ignoring caller hash; duplicate message stays actionable',async()=>{
+ const {createHash}=await import('node:crypto')
+ for(const guest of [false,true]){
+  const c=clients({rpc:async args=>({data:args.p_action==='upload_begin'?{upload_id:id,object_path:'server/photo.png',photo_integrity:true}:{attachment:{id}},error:null})})
+  const r=await checklistAccess(multipart({action:'upload',id,kind:'photo',sha256:'spoofed',...(guest?{token}:{})}),c.user,c.server,webcrypto)
+  assert.equal(r.status,200);assert.equal(c.calls[0].args.p_body.sha256,undefined)
+  assert.equal(c.calls[1].args.p_body.sha256,createHash('sha256').update(png).digest('hex'))
+ }
+ const c=clients({rpc:async args=>args.p_action==='upload_begin'?{data:{upload_id:id,object_path:'server/photo.png',photo_integrity:true}}:{error:{code:'P0002',message:'This photo was already used for this location. Take a new photo of the current inspection.'}}})
+ const r=await checklistAccess(multipart({action:'upload',id,kind:'photo'}),c.user,c.server,webcrypto)
+ assert.equal(r.status,400);assert.match((await r.json()).error,/Take a new photo/)
+})
+test('operational upload retries verify an existing immutable object; mismatch never registers',async()=>{
+ for(const same of [false,true]){
+  const c=clients({rpc:async args=>({data:args.p_action==='upload_begin'?{upload_id:id,object_path:'server/photo.png',photo_integrity:true}:{attachment:{id}}}),upload:async()=>({error:{message:'already exists'}}),download:async()=>({data:new Blob([same?png:new Uint8Array([1])],{type:'image/png'})})})
+  const r=await checklistAccess(multipart({action:'upload',id,kind:'photo',upload_id:id}),c.user,c.server,webcrypto)
+  assert.equal(r.status,same?200:409);assert.equal(c.calls.length,same?2:1)
+ }
+ const c=clients({rpc:async args=>({data:args.p_action==='upload_begin'?{upload_id:id,object_path:'server/photo.png',photo_integrity:true,registered:true}:{attachment:{id}}}),upload:async()=>{throw Error('must not upload registered photo')}})
+ assert.equal((await checklistAccess(multipart({action:'upload',id,kind:'photo',upload_id:id}),c.user,c.server,webcrypto)).status,200)
+})
+test('new photo endpoint remains compatible before bootstrap and forces its own verifier protocol marker',async()=>{
+ const c=clients({rpc:async args=>({data:args.p_action==='upload_begin'?{upload_id:id,object_path:'server/photo.png'}:{attachment:{id}}})})
+ const r=await checklistAccess(multipart({action:'upload',id,kind:'photo',verifier_version:'spoofed',sha256:'spoofed'}),c.user,c.server,webcrypto)
+ assert.equal(r.status,200)
+ assert.equal(c.calls[0].args.p_body.verifier_version,'sha256-v1')
+ assert.equal(c.calls[1].args.p_body.sha256,undefined) // Original dispatcher omitted photo_integrity.
+})

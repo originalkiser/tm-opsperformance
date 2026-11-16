@@ -19,8 +19,8 @@ async function boundedBytes(req, limit) {
   for (const part of parts) { result.set(part, offset); offset += part.length }
   return result
 }
-async function digest(value, cryptoImpl) {
-  const bytes = await cryptoImpl.subtle.digest('SHA-256', new TextEncoder().encode(value))
+export async function digest(value, cryptoImpl) {
+  const bytes = await cryptoImpl.subtle.digest('SHA-256', typeof value === 'string' ? new TextEncoder().encode(value) : value)
   return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('')
 }
 function newToken(cryptoImpl) {
@@ -59,7 +59,7 @@ export async function checklistAccess(req, userClient, serverClient, cryptoImpl 
     }
     // Whitelist actual action fields; never pass a token or caller-controlled actor/hash/path through.
     const payload = {}
-    for (const key of ['id','template_key','location_id','period_date','revision','answers','manager_name','submit','working_copy_id','item_id','kind','attachment_id','offset','expected_generation']) {
+    for (const key of ['id','template_key','location_id','period_date','revision','answers','manager_name','submit','working_copy_id','item_id','kind','attachment_id','upload_id','offset','expected_generation']) {
       if (body[key] !== undefined && (body[key] !== '' || key === 'manager_name')) payload[key] = body[key]
     }
     const call = async (action, value = payload) => {
@@ -97,10 +97,20 @@ export async function checklistAccess(req, userClient, serverClient, cryptoImpl 
       if (!file || typeof file.arrayBuffer !== 'function' || !extensions[file.type] || !file.size || file.size > 10 * 1024 * 1024) throw new RequestError('Use a JPEG, PNG or WebP image between 1 byte and 10 MB', 415)
       const image = new Uint8Array(await file.arrayBuffer())
       if (!validMagic(image, file.type)) throw new RequestError('Image contents do not match its file type', 415)
-      const intent = await call('upload_begin', { ...payload, extension: extensions[file.type] })
-      const { error } = await serverClient.storage.from(bucket).upload(intent.object_path, image, { contentType: file.type, cacheControl: '0', upsert: false })
-      if (error) throw new RequestError('Upload was not confirmed. Refresh before trying again.', 409)
-      return json(await call('upload_finish', { id: payload.id, working_copy_id: payload.working_copy_id ?? null, upload_id: intent.upload_id }))
+      const intent = await call('upload_begin', { ...payload, extension: extensions[file.type], verifier_version: 'sha256-v1' })
+      const sha256 = intent.photo_integrity ? await digest(image, cryptoImpl) : null
+      if (!intent.registered) {
+        const { error } = await serverClient.storage.from(bucket).upload(intent.object_path, image, { contentType: file.type, cacheControl: '0', upsert: false })
+        if (error) {
+          if (!intent.photo_integrity) throw new RequestError('Upload was not confirmed. Refresh before trying again.', 409)
+          // An interrupted response may have left the immutable object uploaded. Verify it, never overwrite it.
+          const existing = await serverClient.storage.from(bucket).download(intent.object_path)
+          if (existing.error || !existing.data || existing.data.size > 10 * 1024 * 1024 || await digest(new Uint8Array(await existing.data.arrayBuffer()), cryptoImpl) !== sha256) {
+            throw new RequestError('Upload was not confirmed. Refresh before trying again.', 409)
+          }
+        }
+      }
+      return json(await call('upload_finish', { id: payload.id, working_copy_id: payload.working_copy_id ?? null, upload_id: intent.upload_id, ...(sha256 ? { sha256 } : {}) }))
     }
     return json(await call(body.action))
   } catch (error) {
