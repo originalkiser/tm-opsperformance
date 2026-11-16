@@ -1,6 +1,6 @@
 # Checklist photo integrity and Weekly PM replacement
 
-Local implementation only. No hosted SQL, function deployment, production upload, release, push or merge is authorized by this document.
+Implementation is published in draft PR #68. See [release preparation](release/checklist-photo-integrity-preparation.md) for the read-only production preflight and blocking rollout conflict. No hosted SQL, function deployment, production upload, hashing, release or merge is authorized by this document.
 
 ## Baseline and scope
 
