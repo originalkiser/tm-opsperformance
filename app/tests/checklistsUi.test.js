@@ -92,10 +92,18 @@ test('a new unsaved signature blocks final submission until captured signature i
  signature.props.onDirty(true);h.render()
  assert.equal(button(h,'Submit').props.disabled,true);h.unmount()
 })
-test('single native photo picker appears only for required photo evidence',async()=>{
- const source=readFileSync(new URL('../src/components/ChecklistForm.jsx',import.meta.url),'utf8')
- assert.doesNotMatch(source,/capture="environment"/);assert.match(source,/upsert: false/)
- const h=form();await h.flush();assert.equal(h.all(n=>n.type==='input'&&n.props.type==='file').length,0);h.unmount()
+test('both Management Audit photo controls retain the native camera/library picker',async()=>{
+ // Quarterly currently has no photo-required items: use a fictional snapshot, never edit its template.
+ for(const key of ['monthly_site_assessment','quarterly_safety_audit']){
+  const templateData={...libraryTemplate,key}
+  const h=form({templateData});await h.flush()
+  const pickers=h.all(n=>n.type==='input'&&n.props.type==='file')
+  assert.equal(pickers.length,templateData.definition.filter(i=>i.photo_required).length)
+  assert.ok(pickers.length>0)
+  for(const picker of pickers){assert.equal(picker.props.capture,undefined);assert.equal(picker.props.accept,'image/jpeg,image/png,image/webp')}
+  assert.equal(h.all(n=>typeof n.props?.onCapture==='function').length,0)
+  h.unmount()
+ }
 })
 test('navigation follows the active assigned-account access decision',()=>{
  for(const allowed of [false,true]){
