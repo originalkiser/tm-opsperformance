@@ -3,7 +3,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { weeklyPmTemplate } from '../../app/src/utils/weeklyPmTemplate.js'
-import { setup, api, actor, root, start, upload, ready, saveNew, configure, guest, allAnswers, uuid, site, away, admin, store, other, outsider } from './helpers/checklistPhotoFixture.mjs'
+import { setup, api, actor, root, start, upload, ready, saveNew, configure, guest, allAnswers, uuid, site, away, admin, store, other, outsider, maintenance, activate } from './helpers/checklistPhotoFixture.mjs'
+const pmSql=readFileSync(new URL('../../app/supabase/migrations/20261116031924_weekly_pm_trap_door_inspections.sql',import.meta.url),'utf8')
 const integritySql=readFileSync(new URL('../../app/supabase/migrations/20261116023332_checklist_photo_integrity.sql',import.meta.url),'utf8')
 async function photo(db,row,sha='c'.repeat(64),item=row.template_snapshot.definition[0].id,uploadId) {
  const body={id:row.id,item_id:item,kind:'photo',extension:'png',working_copy_id:row.working_copy_id,...(uploadId?{upload_id:uploadId}:{})}
@@ -54,6 +55,7 @@ test('prospective PM replacement retains original snapshots, all other items and
   const old=(await start(db,'weekly_pm')).submission
   const audits=await root(db,"select key,definition,version from public.checklist_templates where key in ('monthly_site_assessment','quarterly_safety_audit') order by key")
   await db.exec('reset role');await db.exec(integritySql)
+  await activate(db);await db.exec('reset role');await db.exec(pmSql)
   const previousWeek=(await root(db,'select ($1::date-7)::text d',[old.period_date]))[0].d
   const current=(await api(db,'start',{location_id:site,template_key:'weekly_pm',period_date:previousWeek},other)).submission
   const oldItems=old.template_snapshot.definition,newItems=current.template_snapshot.definition
@@ -72,12 +74,15 @@ test('prospective PM replacement retains original snapshots, all other items and
   await assert.rejects(api(db,'save',{id:r.id,revision:r.revision,answers:allAnswers(r),manager_name:'Auditor',submit:true},other),/Required|Photo|signature/)
  }finally{await db.close()}
 })
-test('history hashing resumes, reports inaccessible objects, preserves legacy duplicates and gates new photos by location',async()=>{
+test('history hashing resumes and reports inaccessible objects without blocking staging uploads',async()=>{
  const {db}=await setup({integrity:false});try{
   const row=(await start(db,'opening')).submission
   const legacy=await upload(db,row,row.template_snapshot.definition[0].id,'photo')
   await db.exec('reset role');await db.exec(integritySql)
-  await assert.rejects(api(db,'upload_begin',{id:row.id,item_id:legacy.item_id,kind:'photo',extension:'png'}),/history verification is incomplete/)
+  const extra=await api(db,'upload_begin',{id:row.id,item_id:legacy.item_id,kind:'photo',extension:'png'})
+  assert.ok(extra.upload_id)
+  await root(db,"update checklist_private.upload_intents set expires_at=now()-interval '1 second' where id=$1",[extra.upload_id])
+  await db.exec('reset role;set role service_role')
   let batch=(await db.query("select public.checklist_photo_history('batch') r")).rows[0].r
   assert.equal(batch.objects.length,1)
   await db.query("select public.checklist_photo_history('record',$1)",[JSON.stringify({attachment_id:legacy.id,error_code:'download_failed'})])
@@ -86,6 +91,7 @@ test('history hashing resumes, reports inaccessible objects, preserves legacy du
   await db.query("select public.checklist_photo_history('record',$1)",[JSON.stringify({attachment_id:legacy.id,sha256:'f'.repeat(64)})])
   await db.query("select public.checklist_photo_history('record',$1)",[JSON.stringify({attachment_id:legacy.id,sha256:'f'.repeat(64)})])
   assert.deepEqual((await api(db,'read',{id:row.id})).evidence.map(e=>e.id),[legacy.id])
+  await activate(db)
   const otherRow=(await start(db,'closing')).submission
   await assert.rejects((await photo(db,otherRow,'f'.repeat(64))).finish,/already used/)
   assert.equal((await root(db,'select count(*)::int n from public.checklist_attachments'))[0].n,1)

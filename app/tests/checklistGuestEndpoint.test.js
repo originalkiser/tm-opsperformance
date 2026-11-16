@@ -100,3 +100,10 @@ test('operational upload retries verify an existing immutable object; mismatch n
  const c=clients({rpc:async args=>({data:args.p_action==='upload_begin'?{upload_id:id,object_path:'server/photo.png',photo_integrity:true,registered:true}:{attachment:{id}}}),upload:async()=>{throw Error('must not upload registered photo')}})
  assert.equal((await checklistAccess(multipart({action:'upload',id,kind:'photo',upload_id:id}),c.user,c.server,webcrypto)).status,200)
 })
+test('new photo endpoint remains compatible before bootstrap and forces its own verifier protocol marker',async()=>{
+ const c=clients({rpc:async args=>({data:args.p_action==='upload_begin'?{upload_id:id,object_path:'server/photo.png'}:{attachment:{id}}})})
+ const r=await checklistAccess(multipart({action:'upload',id,kind:'photo',verifier_version:'spoofed',sha256:'spoofed'}),c.user,c.server,webcrypto)
+ assert.equal(r.status,200)
+ assert.equal(c.calls[0].args.p_body.verifier_version,'sha256-v1')
+ assert.equal(c.calls[1].args.p_body.sha256,undefined) // Original dispatcher omitted photo_integrity.
+})

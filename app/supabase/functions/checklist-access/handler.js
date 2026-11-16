@@ -97,7 +97,7 @@ export async function checklistAccess(req, userClient, serverClient, cryptoImpl 
       if (!file || typeof file.arrayBuffer !== 'function' || !extensions[file.type] || !file.size || file.size > 10 * 1024 * 1024) throw new RequestError('Use a JPEG, PNG or WebP image between 1 byte and 10 MB', 415)
       const image = new Uint8Array(await file.arrayBuffer())
       if (!validMagic(image, file.type)) throw new RequestError('Image contents do not match its file type', 415)
-      const intent = await call('upload_begin', { ...payload, extension: extensions[file.type] })
+      const intent = await call('upload_begin', { ...payload, extension: extensions[file.type], verifier_version: 'sha256-v1' })
       const sha256 = intent.photo_integrity ? await digest(image, cryptoImpl) : null
       if (!intent.registered) {
         const { error } = await serverClient.storage.from(bucket).upload(intent.object_path, image, { contentType: file.type, cacheControl: '0', upsert: false })

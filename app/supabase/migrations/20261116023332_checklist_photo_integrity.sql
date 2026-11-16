@@ -1,5 +1,14 @@
--- REVIEW ONLY: no hosted execution authorized. Existing audit behavior and Storage policies unchanged.
+-- BOOTSTRAP ONLY. Enforcement starts DISABLED; no hosted execution is authorized.
+-- Existing audits, upload clients, Storage policies and submission snapshots remain compatible.
 begin;
+create table checklist_private.photo_rollout (
+ singleton boolean primary key default true check(singleton), enforced boolean not null default false,
+ endpoint_version text, endpoint_deployment text, endpoint_verified_at timestamptz, activated_at timestamptz
+);
+insert into checklist_private.photo_rollout(singleton) values(true);
+alter table checklist_private.photo_rollout enable row level security;
+revoke all on checklist_private.photo_rollout from public,anon,authenticated,service_role;
+alter table checklist_private.upload_intents add column photo_verifier_version text;
 create table checklist_private.photo_fingerprints (
  attachment_id uuid primary key, submission_id uuid not null, location_id uuid not null,
  object_path text not null, sha256 text check(sha256 ~ '^[a-f0-9]{64}$'),
@@ -7,7 +16,7 @@ create table checklist_private.photo_fingerprints (
  error_code text, checked_at timestamptz,
  check((state='verified')=(sha256 is not null))
 );
-create index checklist_photo_history_pending on checklist_private.photo_fingerprints(location_id,attachment_id) where legacy and state<>'verified';
+create index checklist_photo_history_pending on checklist_private.photo_fingerprints(location_id,attachment_id) where state<>'verified';
 -- No FK: retain only the fingerprint if draft evidence is discarded, never its image.
 create table checklist_private.photo_claims (
  location_id uuid not null, sha256 text not null check(sha256 ~ '^[a-f0-9]{64}$'),
@@ -16,31 +25,37 @@ create table checklist_private.photo_claims (
 alter table checklist_private.photo_fingerprints enable row level security;
 alter table checklist_private.photo_claims enable row level security;
 revoke all on checklist_private.photo_fingerprints,checklist_private.photo_claims from public,anon,authenticated,service_role;
--- Capture the exact legacy attachment set once. Never reclassify later uploads as legacy.
-insert into checklist_private.photo_fingerprints(attachment_id,submission_id,location_id,object_path,legacy,state)
- select a.id,s.id,s.location_id,a.object_path,true,'pending' from public.checklist_attachments a
- join public.checklist_submissions s on s.id=a.submission_id
- where a.kind='photo' and s.template_key in ('opening','midday','closing','weekly','weekly_pm');
-
 create function checklist_private.claim_photo(p_attachment uuid,p_submission uuid,p_location uuid,p_path text,p_sha text) returns void
 language plpgsql security definer set search_path='' as $$
-declare winner uuid;
+declare winner uuid; enabled boolean; old_f checklist_private.photo_fingerprints;
 begin
+ select enforced into strict enabled from checklist_private.photo_rollout where singleton for share;
+ select * into old_f from checklist_private.photo_fingerprints where attachment_id=p_attachment for update;
+ if old_f.attachment_id is not null and (old_f.submission_id<>p_submission or old_f.location_id<>p_location or old_f.object_path<>p_path or (old_f.state='verified' and old_f.sha256 is distinct from p_sha)) then raise exception 'Photo verification mismatch'; end if;
  if p_sha is null or p_sha !~ '^[a-f0-9]{64}$' then raise exception 'Server photo verification required'; end if;
  -- The unique constraint arbitrates simultaneous requests even under different statement snapshots.
  insert into checklist_private.photo_claims(location_id,sha256,attachment_id) values(p_location,p_sha,p_attachment)
  on conflict(location_id,sha256) do update set sha256=excluded.sha256 returning attachment_id into winner;
- if winner<>p_attachment then raise exception 'This photo was already used for this location. Take a new photo of the current inspection.' using errcode='P0002'; end if;
- insert into checklist_private.photo_fingerprints(attachment_id,submission_id,location_id,object_path,sha256,state,checked_at)
- values(p_attachment,p_submission,p_location,p_path,p_sha,'verified',clock_timestamp());
+ if enabled and winner<>p_attachment and old_f.attachment_id is null then raise exception 'This photo was already used for this location. Take a new photo of the current inspection.' using errcode='P0002'; end if;
+ insert into checklist_private.photo_fingerprints(attachment_id,submission_id,location_id,object_path,sha256,legacy,state,checked_at)
+ values(p_attachment,p_submission,p_location,p_path,p_sha,not enabled,'verified',clock_timestamp())
+ on conflict(attachment_id) do update set sha256=excluded.sha256,state='verified',error_code=null,checked_at=excluded.checked_at;
 end;
 $$;
 revoke all on function checklist_private.claim_photo(uuid,uuid,uuid,text,text) from public,anon,authenticated,service_role;
 
 create function checklist_private.guard_photo_attachment() returns trigger
 language plpgsql security definer set search_path='' as $$
+declare enabled boolean;
 begin
  if new.kind='photo' and exists(select 1 from public.checklist_submissions s where s.id=new.submission_id and s.template_key in ('opening','midday','closing','weekly','weekly_pm')) then
+  select enforced into strict enabled from checklist_private.photo_rollout where singleton for share;
+  if not enabled then
+   insert into checklist_private.photo_fingerprints(attachment_id,submission_id,location_id,object_path,legacy,state)
+    select new.id,new.submission_id,s.location_id,new.object_path,true,'pending' from public.checklist_submissions s where s.id=new.submission_id
+    on conflict(attachment_id) do nothing;
+   return new;
+  end if;
   if not exists(select 1 from checklist_private.photo_fingerprints f join checklist_private.upload_intents u on u.id=f.attachment_id
    where f.attachment_id=new.id and f.submission_id=new.submission_id and f.object_path=new.object_path and f.state='verified' and not f.legacy
    and u.submission_id=new.submission_id and u.object_path=new.object_path and u.kind='photo' and u.item_id is not distinct from new.item_id
@@ -53,6 +68,13 @@ end;
 $$;
 revoke all on function checklist_private.guard_photo_attachment() from public,anon,authenticated,service_role;
 create trigger checklist_photo_integrity before insert on public.checklist_attachments for each row execute function checklist_private.guard_photo_attachment();
+-- Existing and transition-era photos are grandfathered; every later staging insert is queued by the trigger.
+insert into checklist_private.photo_fingerprints(attachment_id,submission_id,location_id,object_path,legacy,state)
+ select a.id,s.id,s.location_id,a.object_path,true,'pending' from public.checklist_attachments a
+ join public.checklist_submissions s on s.id=a.submission_id
+ where a.kind='photo' and s.template_key in ('opening','midday','closing','weekly','weekly_pm') on conflict(attachment_id) do nothing;
+
+
 -- Authorized discard can remove an unhashed legacy draft. Do not strand its location behind a queue entry.
 create function checklist_private.discard_pending_fingerprint() returns trigger
 language plpgsql security definer set search_path='' as $$
@@ -72,7 +94,7 @@ begin
  if jsonb_typeof(p_answers) is distinct from 'object' or octet_length(p_answers::text)>200000 or p_name is null or length(p_name)>200 then raise exception 'Invalid checklist answers or name'; end if;
  if exists(select 1 from jsonb_object_keys(p_answers) k where not exists(select 1 from jsonb_array_elements(s.template_snapshot->'definition') e where e->>'id'=k)) then raise exception 'Unknown answer item'; end if;
  ids:=checklist_private.evidence_ids(s,p_work);
- if p_submit and checklist_private.qr_template_allowed(s.template_key) and exists(
+ if p_submit and (select enforced from checklist_private.photo_rollout where singleton) and checklist_private.qr_template_allowed(s.template_key) and exists(
   select 1 from public.checklist_attachments e where e.id=any(ids) and e.kind='photo' and not exists(
    select 1 from checklist_private.photo_fingerprints f where f.attachment_id=e.id and (f.legacy or f.state='verified'))
  ) then raise exception 'Server photo verification required'; end if;
@@ -100,7 +122,7 @@ $$;
 create or replace function checklist_private.access_action(p_actor uuid,p_hash text,p_action text,p_body jsonb) returns jsonb
 language plpgsql security definer set search_path='' as $$
 declare g checklist_private.qr_grants; s public.checklist_submissions; t public.checklist_templates; w checklist_private.working_copies; u checklist_private.upload_intents;
- loc uuid; ts timestamptz; tz text; day date; d date; n integer; ids uuid[]; a public.checklist_attachments; result jsonb; is_admin boolean; off integer; existing_intent checklist_private.upload_intents;
+ loc uuid; ts timestamptz; tz text; day date; d date; n integer; ids uuid[]; a public.checklist_attachments; result jsonb; is_admin boolean; off integer; existing_intent checklist_private.upload_intents; photo_enabled boolean;
 begin
  if p_body is null or jsonb_typeof(p_body)<>'object' or octet_length(p_body::text)>220000 then raise exception 'Invalid request'; end if;
  if p_hash is not null then
@@ -233,9 +255,7 @@ begin
    (p_body->>'kind'='signature' and p_body->>'item_id' is not null and not exists(select 1 from jsonb_array_elements(s.template_snapshot->'definition') i where i->>'id'=p_body->>'item_id' and coalesce((i->>'signature_required')::boolean,false))) then raise exception 'Invalid evidence item'; end if;
   -- Operational photos only: a stable request UUID permits safe verification retries.
   if p_body->>'kind'='photo' and checklist_private.qr_template_allowed(s.template_key) then
-   if exists(select 1 from checklist_private.photo_fingerprints where location_id=s.location_id and legacy and state<>'verified') then
-    raise exception 'Photo history verification is incomplete for this location. Save Draft and contact your manager.';
-   end if;
+   select enforced into strict photo_enabled from checklist_private.photo_rollout where singleton for share;
    u.id:=coalesce((p_body->>'upload_id')::uuid,gen_random_uuid());
    select * into existing_intent from checklist_private.upload_intents where id=u.id;
    if found then
@@ -245,19 +265,20 @@ begin
   else u.id:=gen_random_uuid(); end if;
   if (select count(*) from checklist_private.upload_intents where submission_id=s.id)>=200 then raise exception 'Checklist upload limit reached' using errcode='54000'; end if;
   if (select count(*) from checklist_private.upload_intents where created_at>ts-interval '1 minute' and ((g.id is not null and actor_guest=g.id) or (p_actor is not null and actor_user=p_actor)))>=30 then raise exception 'Upload rate limit reached' using errcode='54000'; end if;
-  insert into checklist_private.upload_intents(id,submission_id,working_copy_id,object_path,kind,item_id,actor_user,actor_guest,guest_generation,expires_at)
-   values(u.id,s.id,w.id,s.id::text||'/'||u.id::text||'.'||(p_body->>'extension'),p_body->>'kind',p_body->>'item_id',p_actor,g.id,g.generation,least(ts+interval '5 minutes',coalesce(checklist_private.deadline(s),ts+interval '5 minutes'))) returning * into u;
+  insert into checklist_private.upload_intents(id,submission_id,working_copy_id,object_path,kind,item_id,actor_user,actor_guest,guest_generation,expires_at,photo_verifier_version)
+   values(u.id,s.id,w.id,s.id::text||'/'||u.id::text||'.'||(p_body->>'extension'),p_body->>'kind',p_body->>'item_id',p_actor,g.id,g.generation,least(ts+interval '5 minutes',coalesce(checklist_private.deadline(s),ts+interval '5 minutes')),case when p_body->>'kind'='photo' and checklist_private.qr_template_allowed(s.template_key) and p_body->>'verifier_version'='sha256-v1' then 'sha256-v1' end) returning * into u;
   return jsonb_build_object('upload_id',u.id,'object_path',u.object_path,'photo_integrity',u.kind='photo' and checklist_private.qr_template_allowed(s.template_key));
  elsif p_action='upload_finish' then
   select * into u from checklist_private.upload_intents where id=(p_body->>'upload_id')::uuid and submission_id=s.id for update;
   if not found or (not u.registered and u.expires_at<=clock_timestamp()) or u.working_copy_id is distinct from w.id or u.actor_user is distinct from p_actor or u.actor_guest is distinct from g.id or (g.id is not null and u.guest_generation<>g.generation) then raise exception 'Upload authorization expired' using errcode='42501'; end if;
   if u.kind='photo' and checklist_private.qr_template_allowed(s.template_key) then
-   if coalesce(p_body->>'sha256','') !~ '^[a-f0-9]{64}$' then raise exception 'Server photo verification required'; end if;
+   select enforced into strict photo_enabled from checklist_private.photo_rollout where singleton for share;
+   if coalesce(p_body->>'sha256','') ~ '^[a-f0-9]{64}$' then
+    perform checklist_private.claim_photo(u.id,s.id,s.location_id,u.object_path,p_body->>'sha256');
+   elsif photo_enabled and not u.registered then raise exception 'Server photo verification required'; end if;
    if u.registered then
-    if not exists(select 1 from checklist_private.photo_fingerprints where attachment_id=u.id and sha256=p_body->>'sha256' and state='verified') then raise exception 'Photo verification mismatch'; end if;
     return jsonb_build_object('attachment',(select to_jsonb(e)-'created_by_guest' from public.checklist_attachments e where e.id=u.id));
    end if;
-   perform checklist_private.claim_photo(u.id,s.id,s.location_id,u.object_path,p_body->>'sha256');
   elsif u.registered then raise exception 'Upload authorization expired' using errcode='42501'; end if;
   if not exists(select 1 from storage.objects where bucket_id='manager-checklist-evidence' and name=u.object_path) then raise exception 'Upload must complete before attachment'; end if;
   insert into public.checklist_attachments(id,submission_id,item_id,kind,object_path,created_by,created_by_guest,working_copy_id) values(u.id,s.id,u.item_id,u.kind,u.object_path,p_actor,g.id,w.id) returning * into a;
@@ -269,24 +290,86 @@ end;
 $$;
 
 
+-- Readiness includes every eligible location, and all operational photos (even outside that set).
+create function checklist_private.photo_readiness() returns jsonb
+language sql stable security definer set search_path='' as $$
+ select jsonb_build_object(
+ 'enforced',(select enforced from checklist_private.photo_rollout where singleton),
+ 'endpoint_version',(select endpoint_version from checklist_private.photo_rollout where singleton),
+ 'endpoint_deployment',(select endpoint_deployment from checklist_private.photo_rollout where singleton),
+ 'endpoint_drained',(select coalesce(endpoint_verified_at<=clock_timestamp()-interval '10 minutes',false) from checklist_private.photo_rollout where singleton),
+ 'endpoint_drain_until',(select endpoint_verified_at+interval '10 minutes' from checklist_private.photo_rollout where singleton),
+ 'eligible_location_ids',(select coalesce(jsonb_agg(id order by id),'[]'::jsonb) from public.locations where exclude_from_reporting is not true),
+ 'unverified_photos',(select count(*) from public.checklist_attachments a join public.checklist_submissions s on s.id=a.submission_id
+   where a.kind='photo' and checklist_private.qr_template_allowed(s.template_key) and not exists(select 1 from checklist_private.photo_fingerprints f where f.attachment_id=a.id and f.object_path=a.object_path and f.location_id=s.location_id and f.state='verified')),
+ 'missing_objects',(select count(*) from public.checklist_attachments a join public.checklist_submissions s on s.id=a.submission_id
+   where a.kind='photo' and checklist_private.qr_template_allowed(s.template_key) and not exists(select 1 from storage.objects o where o.bucket_id='manager-checklist-evidence' and o.name=a.object_path)),
+ 'in_flight_uploads',(select count(*) from checklist_private.upload_intents u join public.checklist_submissions s on s.id=u.submission_id
+   where u.kind='photo' and checklist_private.qr_template_allowed(s.template_key) and not u.registered and u.expires_at>clock_timestamp()),
+ 'legacy_in_flight_uploads',(select count(*) from checklist_private.upload_intents u join public.checklist_submissions s on s.id=u.submission_id
+   where u.kind='photo' and checklist_private.qr_template_allowed(s.template_key) and not u.registered and u.expires_at>clock_timestamp() and u.photo_verifier_version is distinct from 'sha256-v1'),
+ 'locations',(select coalesce(jsonb_agg(x order by x.location_id),'[]'::jsonb) from (
+   select l.id location_id,l.site_code,count(a.id) photos,
+    count(a.id) filter(where f.state is distinct from 'verified') unverified,
+    count(a.id) filter(where f.state='inaccessible') inaccessible,
+    count(a.id) filter(where o.id is null) missing_objects
+   from public.locations l left join public.checklist_submissions s on s.location_id=l.id and checklist_private.qr_template_allowed(s.template_key)
+   left join public.checklist_attachments a on a.submission_id=s.id and a.kind='photo'
+   left join checklist_private.photo_fingerprints f on f.attachment_id=a.id and f.object_path=a.object_path and f.location_id=l.id
+   left join storage.objects o on o.bucket_id='manager-checklist-evidence' and o.name=a.object_path
+   where l.exclude_from_reporting is not true group by l.id,l.site_code
+ ) x));
+$$;
+revoke all on function checklist_private.photo_readiness() from public,anon,authenticated,service_role;
+
 -- Service-only maintenance surface. Never exposed through checklist-access or to QR/account callers.
 create function public.checklist_photo_history(p_action text,p_body jsonb default '{}'::jsonb) returns jsonb
 language plpgsql security definer set search_path='' as $$
-declare f checklist_private.photo_fingerprints; result jsonb;
+declare f checklist_private.photo_fingerprints; result jsonb; enabled boolean; expected_ids jsonb; changed integer;
 begin
- if p_action='batch' then
+ if p_action='attest_endpoint' then
+  if p_body->>'version' is distinct from 'sha256-v1' or btrim(coalesce(p_body->>'deployment_id',''))='' then raise exception 'Verified endpoint deployment required'; end if;
+  -- Operator attestation only after observing the deployed version and compatible upload checks.
+  update checklist_private.photo_rollout set endpoint_version='sha256-v1',endpoint_deployment=p_body->>'deployment_id',endpoint_verified_at=clock_timestamp() where singleton and (endpoint_deployment is distinct from p_body->>'deployment_id' or endpoint_version is distinct from 'sha256-v1');
+  return jsonb_build_object('attested',true);
+ elsif p_action='activate' then
+  -- EXCLUSIVE phase barrier: all insertion, finish and maintenance writers take SHARE first.
+  select enforced into strict enabled from checklist_private.photo_rollout where singleton for update;
+  result:=checklist_private.photo_readiness();
+  if result->>'endpoint_version' is distinct from 'sha256-v1' or btrim(coalesce(result->>'endpoint_deployment',''))='' then raise exception 'Verified endpoint deployment required'; end if;
+  -- Exceeds Supabase's documented 400-second maximum paid-worker lifetime after verified deployment.
+  if (result->>'endpoint_drained')::boolean is not true then raise exception 'Endpoint drain window is still open. Submissions remain available; retry activation later'; end if;
+  if jsonb_typeof(p_body->'expected_location_ids') is distinct from 'array' then raise exception 'Confirm every eligible location before activation'; end if;
+  select jsonb_agg(value order by value) into expected_ids from jsonb_array_elements_text(p_body->'expected_location_ids');
+  if expected_ids is distinct from result->'eligible_location_ids' then raise exception 'Eligible locations changed; review every location before activation'; end if;
+  if (result->>'unverified_photos')::bigint<>0 or (result->>'missing_objects')::bigint<>0 then raise exception 'Photo history is not ready. Resolve pending, inaccessible or missing photos before activation'; end if;
+  if (result->>'in_flight_uploads')::bigint<>0 then raise exception 'Photo uploads are still in flight. Submissions remain available; retry activation after uploads finish'; end if;
+  update checklist_private.photo_rollout set enforced=true,activated_at=coalesce(activated_at,clock_timestamp()) where singleton;
+  return checklist_private.photo_readiness();
+ elsif p_action='reconcile' then
+  select enforced into strict enabled from checklist_private.photo_rollout where singleton for share;
+  if enabled then raise exception 'Reconciliation is only available before activation'; end if;
+  insert into checklist_private.photo_fingerprints(attachment_id,submission_id,location_id,object_path,legacy,state)
+   select a.id,s.id,s.location_id,a.object_path,true,'pending' from public.checklist_attachments a join public.checklist_submissions s on s.id=a.submission_id
+   where a.kind='photo' and checklist_private.qr_template_allowed(s.template_key) on conflict(attachment_id) do nothing;
+  get diagnostics changed=row_count;
+  return jsonb_build_object('queued',changed);
+ elsif p_action='batch' then
   select coalesce(jsonb_agg(to_jsonb(x)),'[]'::jsonb) into result from (
    select attachment_id,object_path from checklist_private.photo_fingerprints
-   where legacy and state=case when coalesce((p_body->>'retry_inaccessible')::boolean,false) then 'inaccessible' else 'pending' end
+   where state=case when coalesce((p_body->>'retry_inaccessible')::boolean,false) then 'inaccessible' else 'pending' end
    and (p_body->>'after' is null or attachment_id>(p_body->>'after')::uuid) order by attachment_id limit 25
   ) x; return jsonb_build_object('objects',result);
  elsif p_action='record' then
+  perform 1 from checklist_private.photo_rollout where singleton for share;
   select * into strict f from checklist_private.photo_fingerprints where attachment_id=(p_body->>'attachment_id')::uuid and legacy for update;
   if f.state='verified' then
    if f.sha256 is distinct from p_body->>'sha256' then raise exception 'Historical photo fingerprint mismatch'; end if;
    return jsonb_build_object('recorded',true);
   end if;
-  if coalesce(p_body->>'sha256','') ~ '^[a-f0-9]{64}$' then
+  if not exists(select 1 from storage.objects where bucket_id='manager-checklist-evidence' and name=f.object_path) then
+   update checklist_private.photo_fingerprints set state='inaccessible',error_code='missing_object',checked_at=clock_timestamp() where attachment_id=f.attachment_id;
+  elsif coalesce(p_body->>'sha256','') ~ '^[a-f0-9]{64}$' then
    -- Existing historical duplicates remain legitimate. They still block new reuse.
    insert into checklist_private.photo_claims values(f.location_id,p_body->>'sha256',f.attachment_id) on conflict do nothing;
    update checklist_private.photo_fingerprints set sha256=p_body->>'sha256',state='verified',error_code=null,checked_at=clock_timestamp() where attachment_id=f.attachment_id;
@@ -296,24 +379,12 @@ begin
   end if;
   return jsonb_build_object('recorded',true);
  elsif p_action='report' then
-  return jsonb_build_object('counts',(select jsonb_object_agg(state,n) from (select state,count(*) n from checklist_private.photo_fingerprints where legacy group by state) x),
-   'inaccessible',coalesce((select jsonb_agg(jsonb_build_object('attachment_id',attachment_id,'location_id',location_id,'error_code',error_code)) from checklist_private.photo_fingerprints where legacy and state='inaccessible'),'[]'::jsonb));
+  return checklist_private.photo_readiness() || jsonb_build_object('counts',(select jsonb_object_agg(state,n) from (select state,count(*) n from checklist_private.photo_fingerprints group by state) x),
+   'inaccessible',coalesce((select jsonb_agg(jsonb_build_object('attachment_id',attachment_id,'location_id',location_id,'error_code',error_code)) from checklist_private.photo_fingerprints where state='inaccessible'),'[]'::jsonb));
  end if;
  raise exception 'Unsupported photo history action';
 end;
 $$;
 revoke all on function public.checklist_photo_history(text,jsonb) from public,anon,authenticated;
 grant execute on function public.checklist_photo_history(text,jsonb) to service_role;
-
-do $$
-begin
- if not exists(select 1 from public.checklist_templates where key='weekly_pm' and exists(select 1 from jsonb_array_elements(definition) i where i->>'id'='weekly-pm-conveyer-10' and i->>'text'='Inspect trap doors! Are they in good condition and are the bolts tight?')) then raise exception 'Weekly PM baseline differs; review replacement before applying'; end if;
-end;
-$$;
-update public.checklist_templates set definition=(select jsonb_agg(entry order by position) from (
- select entry,ordinality::numeric position from jsonb_array_elements(definition) with ordinality x(entry,ordinality) where entry->>'id'<>'weekly-pm-conveyer-10'
- union all select value,(select max(ordinality) from jsonb_array_elements(definition) with ordinality x(entry,ordinality) where entry->>'section'='Tunnel Equipment')+ordinality::numeric/10
- from jsonb_array_elements($photos$[{"id": "weekly-pm-tunnel-entry-trap-door", "section": "Tunnel Equipment", "number": 28, "text": "Remove the front grate(s) and inspect the entry trap door and carriage for proper tension. Listen for any air leaks. Check the trap door’s condition and confirm its bolts are tight.", "type": "completion", "options": ["Completed", "Not Completed"], "failure_values": ["Not Completed"], "critical": true, "photo_required": true, "instruction": "Photo must clearly show the inspected components with the grate(s) removed.", "na_allowed": false}, {"id": "weekly-pm-tunnel-exit-trap-door", "section": "Tunnel Equipment", "number": 29, "text": "Remove the last two grates at the tunnel exit. Inspect the exit trap door, sprockets for wear and proper alignment, and the HECO drive for chemical leaks or debris. Check the trap door’s condition and confirm its bolts are tight.", "type": "completion", "options": ["Completed", "Not Completed"], "failure_values": ["Not Completed"], "critical": true, "photo_required": true, "instruction": "Photo must clearly show the inspected components with the grate(s) removed.", "na_allowed": false}]$photos$::jsonb) with ordinality
- ) prospective),version=version+1,updated_at=clock_timestamp() where key='weekly_pm';
--- No submission, snapshot, answer, version, signature, Storage object or policy is rewritten.
 commit;

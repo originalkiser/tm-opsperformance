@@ -7,7 +7,7 @@ const uuid = n => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`
 const admin=uuid(1),store=uuid(2),other=uuid(3),outsider=uuid(4),inactive=uuid(5),deleted=uuid(6),manager=uuid(7),site=uuid(10),away=uuid(11)
 async function actor(db,id=admin,role='authenticated') { await db.exec(`reset role;set role ${role}`); await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id || '']) }
 async function root(db,sql,args=[]) { await db.exec('reset role');const result=await db.query(sql,args);await db.exec('set role authenticated');return result.rows }
-async function setup({deadlines=true,integrity=true}={}) {
+async function setup({deadlines=true,integrity=true,enforcement=true,pm=true}={}) {
  const db=new PGlite()
  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema storage;
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
@@ -41,6 +41,7 @@ async function setup({deadlines=true,integrity=true}={}) {
  if(deadlines) await db.exec(readFileSync(new URL('../../../app/supabase/migrations/20261112184148_checklist_occurrence_deadlines.sql',import.meta.url),'utf8'))
  if(deadlines) await db.exec(readFileSync(new URL('../../../app/supabase/migrations/20261112222936_management_audits.sql',import.meta.url),'utf8'))
  if(integrity) await db.exec(readFileSync(new URL('../../../app/supabase/migrations/20261116023332_checklist_photo_integrity.sql',import.meta.url),'utf8'))
+ if(integrity && enforcement) {await activate(db);if(pm) {await db.exec('reset role');await db.exec(readFileSync(new URL('../../../app/supabase/migrations/20261116031924_weekly_pm_trap_door_inspections.sql',import.meta.url),'utf8'))}}
  await db.exec('set role service_role')
  return {db,today}
 }
@@ -69,3 +70,16 @@ async function ready(db,row,who=store,token=null) {
 async function saveNew(db,row,submit=false,who=store,token=null,answers=allAnswers(row)) {return api(db,'save',{id:row.id,working_copy_id:row.working_copy_id,revision:row.revision,answers,manager_name:'Fictional Auditor',submit},who,token)}
 
 export { setup, api, actor, root, start, upload, ready, saveNew, configure, guest, allAnswers, uuid, site, away, admin, store, other, outsider }
+
+async function maintenance(db,action,body={}) {
+ await db.exec('reset role;set role service_role')
+ return (await db.query('select public.checklist_photo_history($1,$2::jsonb) result',[action,JSON.stringify(body)])).rows[0].result
+}
+async function activate(db) {
+ await maintenance(db,'attest_endpoint',{version:'sha256-v1',deployment_id:'fictional-verified-deployment'})
+ // Fictional fixture clock advance only; production has no drain bypass action.
+ await root(db,"update checklist_private.photo_rollout set endpoint_verified_at=clock_timestamp()-interval '11 minutes' where singleton")
+ const report=await maintenance(db,'report')
+ return maintenance(db,'activate',{expected_location_ids:report.eligible_location_ids})
+}
+export { maintenance, activate }
