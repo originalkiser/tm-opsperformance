@@ -7,27 +7,27 @@ const main = items.filter(i => !i.condition)
 const followups = items.filter(i => i.condition)
 const id = (section, number) => `weekly-pm-${section}-${number}`
 const cleanAnswers = () => Object.fromEntries(main.map(i => [i.id, { value: i.options.find(v => !i.failure_values.includes(v)) }]))
-const signatures = () => [...items.filter(i => i.signature_required).map(i => ({ kind: 'signature', item_id: i.id })), { kind: 'signature', item_id: null }]
+const signatures = () => [...items.filter(i => i.signature_required).map(i => ({ kind: 'signature', item_id: i.id })), { kind: 'signature', item_id: null }, ...items.filter(i=>i.photo_required).map(i=>({kind:'photo',item_id:i.id}))]
 
-test('PM source inventory: 62 main, 18 conditional, 36 critical; eight section labels include Trench/Pit', () => {
- assert.equal(main.length, 62); assert.equal(followups.length, 18); assert.equal(items.length, 80)
- assert.equal(new Set(items.map(i => i.id)).size, 80)
+test('PM source inventory: 63 main, 18 conditional, 38 critical; eight section labels include Trench/Pit', () => {
+ assert.equal(main.length, 63); assert.equal(followups.length, 18); assert.equal(items.length, 81)
+ assert.equal(new Set(items.map(i => i.id)).size, 81)
  assert.deepEqual([...new Set(items.map(i => i.section))], ['Carwash Controls', 'Conveyer and Track', 'Conveyer and Track / Trench/Pit', 'Prep Station', 'Tunnel Equipment', 'Air Compressor', 'Vacuums', 'Booster Pump Mesh Filter'])
- const expected = {controls:[], conveyer:[1,4,7,9,12], prep:[], tunnel:[1,2,3,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,26,27], air:[1,4,5], vacuums:[3,5], booster:[1]}
+ const expected = {controls:[], conveyer:[1,4,7,9,12], prep:[], tunnel:[1,2,3,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,26,27,28,29], air:[1,4,5], vacuums:[3,5], booster:[1]}
  for (const [section, nums] of Object.entries(expected)) assert.deepEqual(main.filter(i => i.id.startsWith(`weekly-pm-${section}-`) && i.critical).map(i => i.number), nums)
  assert.deepEqual(followups.filter(i => i.critical).map(i => i.id), [id('tunnel',7)+'-followup'])
- assert.equal(items.filter(i => i.critical).length,36)
+ assert.equal(items.filter(i => i.critical).length,38)
  assert.equal(items.find(i => i.id === id('prep',6)).text, 'Check pump levels! If the level is low add')
- assert.equal(items.some(i => i.photo_required || i.photo_on_failure || i.na_allowed), false)
+ assert.equal(items.some(i => i.photo_on_failure || i.na_allowed), false)
 })
 test('PM preserves section numbering, including Trench/Pit 14 and Tunnel 24 to 26 gap', () => {
  const expected = {controls:5,conveyer:14,prep:6,air:5,vacuums:5,booster:1}
- for (const [section,count] of Object.entries(expected)) assert.deepEqual(main.filter(i => i.id.startsWith(`weekly-pm-${section}-`)).map(i => i.number), Array.from({length:count},(_,n)=>n+1))
- assert.deepEqual(main.filter(i => i.section === 'Tunnel Equipment').map(i => i.number), [...Array.from({length:24},(_,n)=>n+1),26,27])
+ for (const [section,count] of Object.entries(expected)) assert.deepEqual(main.filter(i => i.id.startsWith(`weekly-pm-${section}-`)).map(i => i.number), Array.from({length:count},(_,n)=>n+1).filter(n=>section!=='conveyer'||n!==10))
+ assert.deepEqual(main.filter(i => i.section === 'Tunnel Equipment').map(i => i.number), [...Array.from({length:24},(_,n)=>n+1),26,27,28,29])
  assert.ok(followups.every(i => i.number === 1))
 })
 test('PM original response formats and safety instructions are retained', () => {
- assert.deepEqual(Object.fromEntries(['yesno','passfail','completion','text'].map(type => [type,items.filter(i => i.type===type).length])),{yesno:44,passfail:3,completion:16,text:17})
+ assert.deepEqual(Object.fromEntries(['yesno','passfail','completion','text'].map(type => [type,items.filter(i => i.type===type).length])),{yesno:43,passfail:3,completion:18,text:17})
  for (const i of items) assert.deepEqual(i.options, {yesno:['Yes','No'],passfail:['Passed','Failed'],completion:['Completed','Not Completed'],text:[]}[i.type])
  assert.equal(items.find(i=>i.id===id('tunnel',1)).text,'Complete the lock out tag out for the wash!')
  assert.equal(items.find(i=>i.id===id('tunnel',8)).text,'Remove lock out tag after verifying no one is in the tunnel and turn on the wash!')

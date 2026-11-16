@@ -45,6 +45,7 @@ async function setup({deadlines=true,audits=true}={}) {
  if(deadlines) await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112184148_checklist_occurrence_deadlines.sql',import.meta.url),'utf8'))
  await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261111200615_checklist_compliance_report.sql',import.meta.url),'utf8'))
  if(audits) await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261112222936_management_audits.sql',import.meta.url),'utf8'))
+ if(audits && process.env.CHECKLIST_PHOTO_INTEGRITY==='1') await db.exec(readFileSync(new URL('../../app/supabase/migrations/20261116023332_checklist_photo_integrity.sql',import.meta.url),'utf8'))
  await db.exec('set role service_role')
  return {db,today}
 }
@@ -63,7 +64,7 @@ async function upload(db,row,item=null,kind='signature',who=store,token=null) {
  const u=await api(db,'upload_begin',body,who,token)
  await db.exec('reset role')
  await db.query("insert into storage.objects(bucket_id,name,metadata) values('manager-checklist-evidence',$1,'{}'::jsonb)",[u.object_path])
- const done=await api(db,'upload_finish',{...body,upload_id:u.upload_id},who,token)
+ const done=await api(db,'upload_finish',{...body,upload_id:u.upload_id,sha256:u.upload_id.replaceAll('-','').padEnd(64,'0')},who,token)
  return done.attachment
 }
 async function ready(db,row,who=store,token=null) {
