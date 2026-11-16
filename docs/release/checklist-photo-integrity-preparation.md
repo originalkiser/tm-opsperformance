@@ -1,6 +1,8 @@
+> Controlled release authorized November 16, 2026, conditional on final gates passing. Assignment corrected to Opening. See [mapping correction](checklist-photo-opening-mapping-correction.md).
+
 # Checklist photo integrity staged release
 
-Draft PR #68. The user separately authorized controlled production backend preparation: the disabled bootstrap, compatible endpoint deployment and historical registry writes have now completed. **Duplicate-photo enforcement remains disabled. Activation, PM template publication, frontend deployment and merge are not authorized.** See [backend execution record](checklist-photo-integrity-backend-2026-11-15.md). The sequence below is the reviewed runbook; it does not itself grant permission for any remaining step.
+Draft PR #68. The user separately authorized controlled production backend preparation: the disabled bootstrap, compatible endpoint deployment and historical registry writes have now completed. **Duplicate-photo enforcement remains disabled. Final activation, Opening publication, frontend deployment and merge are now conditionally authorized by the user; stop at any failed gate.** See [backend execution record](checklist-photo-integrity-backend-2026-11-15.md). The sequence below is the reviewed runbook; it does not itself grant permission for any remaining step.
 
 ## Artifacts and scope
 
@@ -8,16 +10,16 @@ Draft PR #68. The user separately authorized controlled production backend prepa
 - Endpoint: existing `checklist-access` only. The new handler accepts the old dispatcher before bootstrap; bootstrap accepts original hash-less endpoint requests while staging. Updated endpoint requests carry a server-owned protocol marker and compute SHA-256 from image bytes.
 - Historical maintenance: existing `scripts/hash-checklist-photo-history.mjs`; service-only `checklist_photo_history` actions reconcile, batch, record and report. No object, submission, snapshot, signature or QR mutation is performed by hashing.
 - Activation: service-only `checklist_photo_history('activate',...)`, serialized against all photo registration/verification writers. It is not invoked by bootstrap, endpoint traffic, frontend loading or a timer.
-- Prospective PM template: separate `app/supabase/migrations/20261116031924_weekly_pm_trap_door_inspections.sql`, which refuses execution before backend activation. Existing snapshots remain unchanged.
+- Prospective Opening template: separate `app/supabase/migrations/20261116031924_opening_trap_door_inspections.sql`, which refuses execution before backend activation. Existing snapshots remain unchanged.
 
-The change remains limited to the approved five operational checklists, photo integrity and PM replacements, plus their targeted tests/release instructions. Both Management Audits retain their definitions, native picker options, authorization and QR exclusion. No Admin editor, dependency, bucket-policy or unrelated application changes are included. Source SHA-256 values are recorded with the frozen reviewed head before any future hosted step.
+The change remains limited to the approved five operational checklists, photo integrity and Opening replacements, plus their targeted tests/release instructions. Both Management Audits retain their definitions, native picker options, authorization and QR exclusion. No Admin editor, dependency, bucket-policy or unrelated application changes are included. Source SHA-256 values are recorded with the frozen reviewed head before any future hosted step.
 
 Frozen staged artifact checksums (SHA-256 of local source only):
 
 | Artifact | SHA-256 |
 | --- | --- |
 | `20261116023332_checklist_photo_integrity.sql` | `85fa94be7ca20791da0afeb6e99cb87e44c5e67deb5f8cd5de53720fd99a04d4` |
-| `20261116031924_weekly_pm_trap_door_inspections.sql` | `a01a0f8aaae84f297c569eccc3830def024f85a0bc9eba7122b22d632d176972` |
+| `20261116031924_opening_trap_door_inspections.sql` | `93696671f683557ac50347294cd1e7b04ed4e696af041624143dc0b87c489616` |
 | `handler.js` | `6528a9e5b32bb2b465466985b8ec439a744e9a026144491d24d20a614f3ea4e3` |
 
 ## Transition guarantees
@@ -76,7 +78,7 @@ A refusal leaves staging active and normal submissions available. Pending/inacce
      'expected_location_ids','<reviewed complete JSON array of eligible UUIDs>'::jsonb));
    ```
 
-   Verify enforcement true, safe retries, duplicate rejection, retained draft/correction evidence, QR restrictions and unchanged audits. Only after backend verification, separately apply `20261116031924_weekly_pm_trap_door_inspections.sql` to publish the prospective PM version. This second artifact also checks activation and the exact old question before changing the template.
+   Verify enforcement true, safe retries, duplicate rejection, retained draft/correction evidence, QR restrictions and unchanged audits. Only after backend verification, separately apply `20261116031924_opening_trap_door_inspections.sql` to publish the prospective Opening version. This second artifact also checks activation and the exact old question before changing the template.
 7. **Obtain separate merge/frontend release approval.** Merge the frozen reviewed head with a normal message; let the existing GitHub Pages/Cloudflare production integrations deploy. Do not add a second deployment path. Inspect both hosts and perform approved non-destructive smoke checks. Branch preparation commits use `[CF-Pages-Skip]`; never dispatch deployment workflows during preparation.
 
 ## Current verification and limits

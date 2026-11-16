@@ -1,3 +1,5 @@
+> Correction notice: the proposed trap-door changes belong to Opening. Prior Weekly PM proposal/test fixtures are superseded; preserve their saved snapshots. Preview work and release are paused. See [verified mapping](checklist-photo-opening-mapping-correction.md).
+
 # PR #68 controlled backend preparation
 
 Production project `qbdvixxooofdlfurcpqy`; backend artifacts frozen at source commit `ffc191ed0eba49efdadd303e6412e150d91203d4`. Executed only after explicit authorization. **Enforcement remains disabled. No PM template update, frontend deployment or PR merge occurred.**

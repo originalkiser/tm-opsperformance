@@ -1,3 +1,5 @@
+> Correction notice: the proposed trap-door changes belong to Opening. Prior Weekly PM proposal/test fixtures are superseded; preserve their saved snapshots. Preview work and release are paused. See [verified mapping](checklist-photo-opening-mapping-correction.md).
+
 # PR #68 minimal physical-device acceptance
 
 Preparation only. No frontend preview has been deployed by this step. Production enforcement stays disabled; no production template change or merge is authorized.

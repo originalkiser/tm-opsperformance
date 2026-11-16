@@ -2,9 +2,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { weeklyPmTemplate } from '../../app/src/utils/weeklyPmTemplate.js'
+import { checklistTemplates } from '../../app/src/utils/checklistTemplates.js'
 import { setup, api, actor, root, start, upload, ready, saveNew, configure, guest, allAnswers, uuid, site, away, admin, store, other, outsider, maintenance, activate } from './helpers/checklistPhotoFixture.mjs'
-const pmSql=readFileSync(new URL('../../app/supabase/migrations/20261116031924_weekly_pm_trap_door_inspections.sql',import.meta.url),'utf8')
+const openingSql=readFileSync(new URL('../../app/supabase/migrations/20261116031924_opening_trap_door_inspections.sql',import.meta.url),'utf8')
 const integritySql=readFileSync(new URL('../../app/supabase/migrations/20261116023332_checklist_photo_integrity.sql',import.meta.url),'utf8')
 async function photo(db,row,sha='c'.repeat(64),item=row.template_snapshot.definition[0].id,uploadId) {
  const body={id:row.id,item_id:item,kind:'photo',extension:'png',working_copy_id:row.working_copy_id,...(uploadId?{upload_id:uploadId}:{})}
@@ -50,28 +50,26 @@ test('verification is idempotent, actor-bound and direct attachment/RPC/table by
   assert.equal((await root(db,'select count(*)::int n from checklist_private.photo_fingerprints'))[0].n,1)
  }finally{await db.close()}
 })
-test('prospective PM replacement retains original snapshots, all other items and audit definitions',async()=>{
+test('prospective Opening replacement preserves snapshots, order, Weekly PM and audits',async()=>{
  const {db}=await setup({integrity:false});try{
-  const old=(await start(db,'weekly_pm')).submission
-  const audits=await root(db,"select key,definition,version from public.checklist_templates where key in ('monthly_site_assessment','quarterly_safety_audit') order by key")
-  await db.exec('reset role');await db.exec(integritySql)
-  await activate(db);await db.exec('reset role');await db.exec(pmSql)
-  const previousWeek=(await root(db,'select ($1::date-7)::text d',[old.period_date]))[0].d
-  const current=(await api(db,'start',{location_id:site,template_key:'weekly_pm',period_date:previousWeek},other)).submission
-  const oldItems=old.template_snapshot.definition,newItems=current.template_snapshot.definition
-  assert.equal(oldItems.length,80);assert.equal(newItems.length,81)
-  assert.deepEqual(newItems,weeklyPmTemplate.definition)
-  assert.deepEqual(newItems.filter(i=>!i.id.includes('-trap-door')),oldItems.filter(i=>i.id!=='weekly-pm-conveyer-10'))
-  for(const item of newItems.filter(i=>i.id.includes('-trap-door'))) {
-   assert.equal(item.critical,true);assert.equal(item.photo_required,true);assert.equal(item.section,'Tunnel Equipment');assert.match(item.text,/condition.*bolts are tight/)
-   assert.equal(item.instruction,'Photo must clearly show the inspected components with the grate(s) removed.')
-  }
+  const old=(await start(db,'opening')).submission
+  const untouched=await root(db,"select key,definition,version from public.checklist_templates where key<>'opening' order by key")
+  await db.exec('reset role');await db.exec(integritySql);await activate(db);await db.exec('reset role');await db.exec(openingSql)
+  const previous=(await root(db,'select ($1::date-1)::text d',[old.period_date]))[0].d
+  const current=(await start(db,'opening',store,null,previous)).submission
+  assert.equal(current.template_snapshot.version,2)
+  assert.deepEqual(current.template_snapshot.definition,checklistTemplates[0].definition)
+  assert.deepEqual(current.template_snapshot.definition.map(i=>i.id),old.template_snapshot.definition.map(i=>i.id))
+  assert.deepEqual(current.template_snapshot.definition.filter(i=>!['opening-9','opening-10'].includes(i.id)),old.template_snapshot.definition.filter(i=>!['opening-9','opening-10'].includes(i.id)))
   assert.deepEqual((await api(db,'read',{id:old.id})).submission.template_snapshot,old.template_snapshot)
-  assert.deepEqual(await root(db,"select key,definition,version from public.checklist_templates where key in ('monthly_site_assessment','quarterly_safety_audit') order by key"),audits)
-  // Incomplete drafts save; final requires each separate photo before ordinary signatures/answers pass.
-  let saved=await api(db,'save',{id:current.id,revision:current.revision,answers:{},manager_name:'',submit:false},other)
-  const r=saved.submission
-  await assert.rejects(api(db,'save',{id:r.id,revision:r.revision,answers:allAnswers(r),manager_name:'Auditor',submit:true},other),/Required|Photo|signature/)
+  assert.deepEqual(await root(db,"select key,definition,version from public.checklist_templates where key<>'opening' order by key"),untouched)
+  // Existing version-one drafts still submit with their original gauge-photo requirement.
+  await ready(db,old);const completed=(await saveNew(db,old,true)).submission
+  assert.equal(completed.template_snapshot.version,1)
+  const correction=(await api(db,'begin_edit',{id:old.id,revision:completed.revision})).submission
+  await upload(db,correction,null,'signature');const retained=await saveNew(db,correction,true)
+  assert.equal(retained.evidence.filter(e=>e.kind==='photo').length,1)
+  assert.deepEqual(retained.submission.template_snapshot,old.template_snapshot)
  }finally{await db.close()}
 })
 test('history hashing resumes and reports inaccessible objects without blocking staging uploads',async()=>{
@@ -108,7 +106,7 @@ test('required photos, saved draft continuation, correction retention and QR rev
   await upload(db,correction,null,'signature')
   const applied=await saveNew(db,correction,true)
   assert.equal(applied.submission.template_snapshot.version,r.template_snapshot.version)
-  assert.equal(applied.evidence.filter(e=>e.kind==='photo').length,2)
+  assert.equal(applied.evidence.filter(e=>e.kind==='photo').length,0)
   const history=await api(db,'history',{id:r.id});assert.ok(history.versions.length>=2)
   const qr=(await guest(db,'start',{template_key:'opening'})).submission
   await assert.rejects(guest(db,'start',{template_key:'monthly_site_assessment'}),/Authenticated/)
@@ -126,14 +124,15 @@ test('concurrent contenders leave exactly one claim and one attachment (PGlite s
   assert.equal((await root(db,'select count(*)::int n from public.checklist_attachments'))[0].n,1)
  }finally{await db.close()}
 })
-test('server requires each new PM photo before final submit but allows incomplete draft continuation',async()=>{
+test('server requires each new Opening photo before final submit but allows incomplete draft continuation',async()=>{
  const {db}=await setup();try{
-  let row=(await start(db,'weekly_pm')).submission
+  let row=(await start(db,'opening')).submission
   row=(await api(db,'save',{id:row.id,revision:row.revision,answers:{},manager_name:'',submit:false})).submission
   for(const i of row.template_snapshot.definition.filter(i=>i.signature_required))await upload(db,row,i.id,'signature')
   await upload(db,row,null,'signature')
   const photos=row.template_snapshot.definition.filter(i=>i.photo_required)
-  assert.equal(photos.length,2)
+  assert.equal(photos.length,3)
+  await (await photo(db,row,'3'.repeat(64),photos.shift().id)).finish()
   await assert.rejects(saveNew(db,row,true),/Photo required: Remove the front/)
   await (await photo(db,row,'1'.repeat(64),photos[0].id)).finish()
   await assert.rejects(saveNew(db,row,true),/Photo required: Remove the last two/)

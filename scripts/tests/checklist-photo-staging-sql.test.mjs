@@ -3,7 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {setup,api,actor,root,start,upload,ready,saveNew,configure,guest,uuid,site,away,store,admin,maintenance,activate} from './helpers/checklistPhotoFixture.mjs'
-const pmSql=readFileSync(new URL('../../app/supabase/migrations/20261116031924_weekly_pm_trap_door_inspections.sql',import.meta.url),'utf8')
+const openingSql=readFileSync(new URL('../../app/supabase/migrations/20261116031924_opening_trap_door_inspections.sql',import.meta.url),'utf8')
 async function oldUpload(db,row,{guestActor=false,item=null}={}) {
  const body={id:row.id,kind:'photo',item_id:item||row.template_snapshot.definition.find(i=>i.photo_required).id,extension:'png'}
  const call=(action,body)=>guestActor?guest(db,action,body):api(db,action,body)
@@ -105,7 +105,7 @@ test('reconciliation discovers transition arrivals and remains idempotent; no or
   assert.equal((await api(db,'read',{id:row.id})).evidence[0].object_path,one.object_path)
  }finally{await db.close()}
 })
-test('legacy attachment RPC queues during staging; browser roles cannot attest or activate; PM replacement waits for backend activation',async()=>{
+test('legacy attachment RPC queues during staging; browser roles cannot attest or activate; Opening publication waits for backend activation',async()=>{
  const {db}=await setup({enforcement:false});try{
   const row=(await start(db,'opening')).submission,id=uuid(999),path=`${row.id}/${id}.png`
   await root(db,"insert into storage.objects(bucket_id,name) values('manager-checklist-evidence',$1)",[path])
@@ -115,9 +115,9 @@ test('legacy attachment RPC queues during staging; browser roles cannot attest o
   await actor(db,store)
   for(const action of ['activate','attest_endpoint','reconcile'])await assert.rejects(db.query('select public.checklist_photo_history($1,$2)',[action,JSON.stringify({expected_location_ids:[site,away],version:'sha256-v1',deployment_id:'spoof'})]),/permission denied/)
   await db.exec('reset role')
-  await assert.rejects(db.exec(pmSql),/Activate the verified photo backend/);await db.exec('rollback')
+  await assert.rejects(db.exec(openingSql),/Activate the verified photo backend/);await db.exec('rollback')
   const pm=(await start(db,'weekly_pm')).submission;assert.equal(pm.template_snapshot.definition.length,80)
-  await recordAll(db);await activate(db);await db.exec('reset role');await db.exec(pmSql)
+  await recordAll(db);await activate(db);await db.exec('reset role');await db.exec(openingSql)
   assert.equal((await api(db,'read',{id:pm.id})).submission.template_snapshot.definition.length,80)
  }finally{await db.close()}
 })

@@ -160,6 +160,17 @@ test('operational photo requirements expose cameras and no native library input'
   h.unmount()
  }
 })
+test('Opening has gauge and both Critical trap-door cameras with removal instructions',async()=>{
+ const h=form({templateData:checklistTemplates[0]});await h.flush()
+ assert.deepEqual(h.all(n=>typeof n.props?.onCapture==='function').map(n=>n.props.itemId),['opening-6','opening-9','opening-10'])
+ for(const id of ['opening-9','opening-10']){
+  const item=checklistTemplates[0].definition.find(i=>i.id===id)
+  assert.equal(item.critical,true);assert.equal(item.photo_required,true)
+  assert.equal(item.instruction,'Photo must clearly show the inspected components with the grate(s) removed.')
+ }
+ assert.equal(h.all(n=>n.type==='p'&&textContent(n).includes('Photo must clearly show the inspected components')).length,2)
+ h.unmount()
+})
 test('photo uploads save draft first, never upsert, and register evidence only after upload succeeds',async()=>{
  for(const config of [{},{uploadFail:true},{attachFail:true}]){
   const h=form({...config,templateData:libraryTemplate});await h.flush()
@@ -358,9 +369,9 @@ test('Admin management keeps template editing and makes no pilot/user grant quer
 
 const pmClean = () => Object.fromEntries(pm.definition.filter(i=>!i.condition).map(i=>[i.id,{value:i.options.find(v=>!i.failure_values.includes(v))}]))
 const textContent = node => typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(textContent).join('') : node?.props ? textContent(node.props.children) : ''
-test('PM mobile form shows 63 main items, three signature controls and two required cameras',async()=>{
+test('PM mobile form shows 62 main items and three original signature controls',async()=>{
  const h=form({templateData:pm});await h.flush()
- assert.equal(h.all(n=>n.type==='fieldset').length,63)
+ assert.equal(h.all(n=>n.type==='fieldset').length,62)
  assert.equal(h.all(n=>typeof n.props?.onDirty==='function').length,3)
  assert.equal(h.all(n=>n.type==='input'&&n.props.type==='file').length,0)
  assert.equal(h.all(n=>n.type==='h3').length,8)
