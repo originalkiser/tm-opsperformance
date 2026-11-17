@@ -33,7 +33,7 @@ serve(async (req) => {
       .single()
 
     if (!prof || prof.role !== 'admin') {
-      throw new Error('Forbidden: only admins and area managers can invite users')
+      throw new Error('Forbidden: only admins can invite users')
     }
 
     // Use service role to invite
