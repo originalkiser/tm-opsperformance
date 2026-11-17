@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import AdminStartingBalancePanel from './AdminStartingBalancePanel'
 
 export default function HistoricalMtdStartingBalances({ locations }) {

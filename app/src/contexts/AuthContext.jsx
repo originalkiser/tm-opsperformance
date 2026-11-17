@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { assertViewWritable, loadManagerView, managerViewState, pendingViewWrites, setManagerViewReadOnly, viewStorageKey } from '../utils/managerViewPolicy'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { clearLocationSelection, locationFailureMessage, recoverLocationAccess } from '../utils/locationAccess'
 
@@ -14,6 +15,24 @@ export function AuthProvider({ children }) {
   const [locationRepairMessage, setLocationRepairMessage] = useState('')
   const [locationSelectionVersion, setLocationSelectionVersion] = useState(0)
   const repair = useRef(null)
+  const [viewPreference, setViewPreference] = useState(null)
+  let storage = null
+  try { storage = typeof window !== 'undefined' ? window.sessionStorage : null } catch { /* Blocked storage must not prevent sign-in. */ }
+  const preference = viewPreference?.userId === user?.id ? viewPreference : loadManagerView(storage, user?.id)
+  const view = managerViewState(user, profile, locations, preference)
+  setManagerViewReadOnly(view.active)
+  const persistView = next => {
+    if (!view.allowed) return
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))) throw new Error('Save or discard unsaved changes before changing views or locations.')
+    if (pendingViewWrites()) throw new Error('Wait for the current save or upload to finish before changing views.')
+    const entry = { ...preference, ...next, userId: user.id }
+    setManagerViewReadOnly(entry.manager)
+    try { storage?.setItem(viewStorageKey(user.id), JSON.stringify(entry)) } catch { /* In-memory view still works. */ }
+    setViewPreference(entry)
+  }
+  const setManagerPreview = manager => persistView({ manager, site: view.site })
+  const setPreviewSite = site => { if (locations.some(l => l.id === site)) persistView({ site }) }
+
 
   useEffect(() => {
     let alive = true, currentId = null, loadedId = null, pendingId = null, generation = 0
@@ -96,7 +115,7 @@ export function AuthProvider({ children }) {
       return load(currentId, true)
     }
     return () => {
-      alive = false; generation++; clearTimeout(scheduled); repair.current = null; subscription.unsubscribe()
+      alive = false; generation++; clearTimeout(scheduled); repair.current = null; subscription.unsubscribe(); setManagerViewReadOnly(false)
     }
   }, [])
 
@@ -105,6 +124,7 @@ export function AuthProvider({ children }) {
 
   const updateProfileSettings = async (updates) => {
     if (!user) return
+    assertViewWritable()
     const newSettings = { ...(profile?.settings || {}), ...updates }
     await supabase.from('user_profiles').update({ settings: newSettings }).eq('id', user.id)
     setProfile(prev => prev ? { ...prev, settings: newSettings } : prev)
@@ -112,10 +132,22 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{ user, profile, locations, loading, signOut, updateProfileSettings,
-      locationError, repairingLocation, locationRepairMessage, locationSelectionVersion, reloadMyLocation }}>
+      locationError, repairingLocation, locationRepairMessage, locationSelectionVersion, reloadMyLocation,
+      managerViewAllowed: view.allowed, managerPreview: view.active, previewReadOnly: view.active, previewSiteId: view.site,
+      actualLocations: locations, setManagerPreview, setPreviewSite }}>
       {children}
     </AuthContext.Provider>
   )
 }
 
 export const useAuth = () => useContext(AuthContext)
+
+// UI presentation only. useAuth continues to expose the real authenticated profile.
+export function useDisplayAuth() {
+  const auth = useAuth()
+  return useMemo(() => {
+    if (!auth.managerPreview) return auth
+    return { ...auth, actualProfile: auth.profile, profile: { ...auth.profile, role: 'store', location_id: auth.previewSiteId },
+      locations: auth.locations.filter(l => l.id === auth.previewSiteId) }
+  }, [auth])
+}

@@ -15,7 +15,7 @@ serve(async (req) => {
     const { email, name } = await req.json()
     if (!email) throw new Error('email is required')
 
-    // Verify caller is admin or area_manager
+    // Verify caller is Admin
     const authHeader = req.headers.get('Authorization')
     const userClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -32,7 +32,7 @@ serve(async (req) => {
       .eq('id', user.id)
       .single()
 
-    if (!prof || !['admin', 'area_manager'].includes(prof.role)) {
+    if (!prof || prof.role !== 'admin') {
       throw new Error('Forbidden: only admins and area managers can invite users')
     }
 

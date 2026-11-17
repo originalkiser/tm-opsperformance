@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import NavBar from '../components/NavBar'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { localChecklistDate } from '../utils/checklistRules'
 import { complianceTemplates, complianceStatusLabels, complianceRange, fetchChecklistCompliance, buildComplianceRows, summarizeCompliance, downloadComplianceCsv } from '../utils/checklistCompliance'
@@ -10,8 +10,8 @@ const control = 'block min-h-11 w-full rounded-md border border-slate-300 bg-whi
 const statusClass = { submitted: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200', draft: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200', discarding: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200', missing: 'bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-200', future: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }
 
 export default function ChecklistCompliance() {
-  const { user, profile, locations } = useAuth()
-  const authorized = !!user && profile?.is_active === true && !profile.deleted_at && ['admin', 'area_manager', 'store'].includes(profile.role)
+  const { user, profile, locations, managerPreview, previewSiteId } = useAuth()
+  const authorized = !!user && profile?.is_active === true && !profile.deleted_at && ['admin', 'store'].includes(profile.role)
   let initialDate = ''
   try { initialDate = localChecklistDate(locations[0]?.timezone) } catch { /* A chosen report date is required if location metadata is unavailable. */ }
   const [cadence, setCadence] = useState('daily')
@@ -39,7 +39,7 @@ export default function ChecklistCompliance() {
     setResult(null); setFailure(null)
     if (!authorized || !range) return
     fetchChecklistCompliance(supabase, range).then(data => {
-      if (request.current === current) setResult({ scope, data })
+      if (request.current === current) setResult({ scope, data: managerPreview ? { ...data, locations: data.locations.filter(l => l.id === previewSiteId), submissions: data.submissions.filter(r => r.location_id === previewSiteId) } : data })
     }).catch(error => {
       if (request.current === current) setFailure({ scope, message: error.message })
     })

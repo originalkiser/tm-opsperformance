@@ -133,7 +133,8 @@ test('navigation access uses active authenticated roles and existing assignments
   return new Function('useAuth',source+'\nreturn useChecklistAccess()')(()=>({profile,locations,user}))
  }
  const active={role:'store',is_active:true,deleted_at:null}
- for(const role of ['admin','store','area_manager']) assert.equal(allowed({...active,role}),true)
+ for(const role of ['admin','store']) assert.equal(allowed({...active,role}),true)
+ assert.equal(allowed({...active,role:'area_manager'}),false)
  assert.equal(allowed(active,[]),false)
  assert.equal(allowed({...active,role:'admin'},[]),true)
  for(const profile of [{...active,is_active:false},{...active,deleted_at:'2026-01-01'},{...active,role:'unknown'},null]) assert.equal(allowed(profile),false)
@@ -325,7 +326,7 @@ test('unknown Storage errors, still-editable drafts and failed state reads keep 
 })
 
 test('companywide page shows availability without auto-created drafts or derived overdue rows; Admin reviews historical records',async()=>{
- for(const role of ['admin','store','area_manager']) {
+ for(const role of ['admin','store']) {
   const calls=[],records=[{id:'historic',location_id:'site',template_key:'midday',period_date:'2026-11-02',status:'submitted',is_pilot:true,manager_name:'Fictional Manager',submitted_at:'2026-11-02T12:00:00Z',template_snapshot:{name:'Mid-Day Checklist',timezone:'America/New_York'}}]
   const h=locationHelpHarness('pages/ManagerChecklists',{
    ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,

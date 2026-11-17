@@ -1,3 +1,4 @@
+import { createViewFetch } from './managerViewPolicy.js'
 import { validateEvidence } from './checklistRules.js'
 
 const credentialKey = 'tm_checklist_guest_access'
@@ -33,6 +34,7 @@ export function normalizeChecklistResult(result) {
   return { row: result.submission, evidence: result.evidence || [], capabilities: result.capabilities }
 }
 export function createChecklistTransport(client, publicKey, { token = null, recoveryKey = null, fetcher = fetch } = {}) {
+  const safeFetch = token ? fetcher : createViewFetch(fetcher)
   async function request(action, fields = {}, signal) {
     const headers = { apikey: publicKey }
     if (!token) {
@@ -49,7 +51,7 @@ export function createChecklistTransport(client, publicKey, { token = null, reco
       headers['Content-Type'] = 'application/json'
       body = JSON.stringify({ ...fields, action, ...(token ? { token } : {}) })
     }
-    const response = await fetcher(`${client.supabaseUrl}/functions/v1/checklist-access`, { method: 'POST', headers, body, signal, cache: 'no-store', credentials: 'omit' })
+    const response = await safeFetch(`${client.supabaseUrl}/functions/v1/checklist-access`, { method: 'POST', headers, body, signal, cache: 'no-store', credentials: 'omit' })
     if (!response.ok) {
       let detail
       try { detail = await response.json() } catch { /* Keep a bounded neutral error. */ }

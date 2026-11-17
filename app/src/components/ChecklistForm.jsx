@@ -5,7 +5,7 @@ import ChecklistCamera from './ChecklistCamera'
 import { validateChecklist, validateEvidence, checklistTimestamp, isChecklistItemActive } from '../utils/checklistRules'
 import { downloadChecklistEvidence, checklistUploadRejection } from '../utils/checklistEvidence'
 
-export default function ChecklistForm({ initial, user, locationLabel, onClose, onSaved, admin = false, transport = null, initialCapabilities = null, initialEvidence = [] }) {
+export default function ChecklistForm({ initial, user, locationLabel, onClose, onSaved, admin = false, previewReadOnly = false, transport = null, initialCapabilities = null, initialEvidence = [] }) {
   const recoveryKey = record => transport ? `tm_checklist_draft_${transport.guest ? transport.recoveryKey : user?.id}_${record.id}_${rowRecoveryId(record)}` : `tm_checklist_draft_${user.id}_${record.id}`
   const cached = record => { try { return JSON.parse(sessionStorage.getItem(recoveryKey(record)) || 'null') } catch { return null } }
   const recovery = useRef(cached(initial))
@@ -23,8 +23,8 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   const position = useRef(null), restoringHistory = useRef(false)
   const discarding = row.status === 'discarding' || discardRequested.current
   const correcting = !!row.working_copy_id
-  const readonly = unavailable.current || discarding || (transport ? !evidenceReady || !capabilities?.can_edit : row.status === 'submitted' || row.created_by !== user.id)
-  const canDiscard = !transport?.guest && !correcting && !unavailable.current && row.status !== 'submitted' && (transport ? capabilities?.can_discard === true : row.created_by === user.id || admin)
+  const readonly = previewReadOnly || unavailable.current || discarding || (transport ? !evidenceReady || !capabilities?.can_edit : row.status === 'submitted' || row.created_by !== user.id)
+  const canDiscard = !previewReadOnly && !transport?.guest && !correcting && !unavailable.current && row.status !== 'submitted' && (transport ? capabilities?.can_discard === true : row.created_by === user.id || admin)
   const signatureDirty = Object.values(dirtySignatures).some(Boolean)
   const dirty = !readonly && (JSON.stringify(answers) !== JSON.stringify(row.answers) || name !== row.manager_name || signatureDirty)
   latestDirty.current = dirty
@@ -54,6 +54,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   }
   useEffect(() => {
     let alive = true
+    if (previewReadOnly && row.preview_only) { setEvidenceReady(true); return }
     if (transport) {
       transport.load(row.id).then(result => { if (alive) acceptResult(result, true) }).catch(error => { if (alive) setError(error.message) })
       return () => { alive = false }
@@ -241,8 +242,8 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
     return <div ref={node => { invalidTargets.current[`photo:${item.id}`] = node }} tabIndex={-1} className="space-y-1 text-sm scroll-mb-48" aria-label={section ? 'Communications Board section photo' : `Photo evidence ${item.id}`}>
       <p className="font-semibold">{section ? 'One photo required for the Communications Board section.' : 'One photo required for this item.'}</p>
       {section && item.instruction && <p>{item.instruction}</p>}
-      {!readonly && (!transport || capabilities?.can_upload) && (operationalChecklist ? <ChecklistCamera itemId={item.id} disabled={busy || staleVersion.current} onCapture={file => upload(file, item.id, 'photo')} /> : <label className="block">Add photo
-        <input aria-label={`Upload photo ${item.id}`} disabled={busy || staleVersion.current} type="file" accept="image/jpeg,image/png,image/webp"
+      {(!readonly || (previewReadOnly && row.status === 'draft')) && (!transport || capabilities?.can_upload || previewReadOnly) && (operationalChecklist ? <ChecklistCamera itemId={item.id} disabled={busy || staleVersion.current || previewReadOnly} onCapture={file => upload(file, item.id, 'photo')} /> : <label className="block">Add photo
+        <input aria-label={`Upload photo ${item.id}`} disabled={busy || staleVersion.current || previewReadOnly} type="file" accept="image/jpeg,image/png,image/webp"
           className="block w-full min-h-11 min-w-0 text-sm file:min-h-11 file:mr-2 file:px-3 file:border file:rounded file:bg-transparent file:text-inherit"
           onChange={e => { const file = e.target.files?.[0]; if (file) upload(file, item.id, 'photo'); e.target.value = '' }} />
       </label>)}
@@ -253,7 +254,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
     return <div ref={node => { invalidTargets.current[item ? `signature:${item.id}` : '_signature'] = node }} tabIndex={-1} className="space-y-2 scroll-mb-48" aria-label={item ? `Required signature ${item.id}` : 'Final auditor signature'}>
       <p className="font-semibold">{item ? 'Signature is required' : auditorSignature ? 'Auditor Signature' : 'Manager signature'}</p>
       <EvidenceLinks files={evidence.filter(file => file.kind === 'signature' && (file.item_id || null) === (item?.id || null)).slice(-1)} onOpen={openEvidence} />
-      {!readonly && (!transport || capabilities?.can_upload) && <ChecklistSignature key={`${signatureKey}:${signatureReset}`} label={item ? `${item.section} Question ${item.number} handwritten signature` : auditorSignature ? 'Auditor handwritten signature' : 'Manager handwritten signature'} disabled={busy || staleVersion.current} onDirty={value => { activity.current++; setDirtySignatures(previous => ({ ...previous, [signatureKey]: value })) }} onSave={blob => upload(blob, item?.id || null, 'signature')} />}
+      {(!readonly || (previewReadOnly && row.status === 'draft')) && (!transport || capabilities?.can_upload || previewReadOnly) && <ChecklistSignature key={`${signatureKey}:${signatureReset}`} label={item ? `${item.section} Question ${item.number} handwritten signature` : auditorSignature ? 'Auditor handwritten signature' : 'Manager handwritten signature'} disabled={busy || staleVersion.current || previewReadOnly} onDirty={value => { activity.current++; setDirtySignatures(previous => ({ ...previous, [signatureKey]: value })) }} onSave={blob => upload(blob, item?.id || null, 'signature')} />}
       {dirtySignatures[signatureKey] && <p role="status" className="text-amber-800 dark:text-amber-200">Save this drawn signature before submitting. Use Save signature above; drawing alone does not save it.</p>}
     </div>
   }
@@ -268,8 +269,8 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
     {transport && capabilities?.edit_deadline_at && <p className="text-sm">Corrections close: {checklistTimestamp(capabilities.edit_deadline_at, row.template_snapshot.timezone)}. The assigned date or week sets this deadline.</p>}
     {correcting && !capabilities?.can_edit && <p role="alert" className="rounded border border-amber-500 p-3">This is an unfinished correction, not the submitted record. Editing is locked. Refresh the saved checklist to view the official version.</p>}
     {correcting && <p role="status" className="rounded border p-3">Editing a correction. The last submitted version remains official until you submit these changes. Draw fresh required signatures to confirm these corrected answers.</p>}
-    {transport && capabilities?.can_begin_edit && !correcting && <button disabled={busy} className="min-h-12 px-4 border rounded" onClick={() => action(async () => { acceptResult(await transport.beginCorrection(row), true); recovery.current = null; setNotice('Correction started. Earlier answers, photos and signatures are preserved.') })}>Make correction</button>}
-    {transport && <button disabled={busy} className="min-h-11 px-3 border rounded" onClick={reloadSaved}>Refresh saved checklist</button>}
+    {transport && !previewReadOnly && capabilities?.can_begin_edit && !correcting && <button disabled={busy} className="min-h-12 px-4 border rounded" onClick={() => action(async () => { acceptResult(await transport.beginCorrection(row), true); recovery.current = null; setNotice('Correction started. Earlier answers, photos and signatures are preserved.') })}>Make correction</button>}
+    {transport && !row.preview_only && <button disabled={busy} className="min-h-11 px-3 border rounded" onClick={reloadSaved}>Refresh saved checklist</button>}
     <p>{readonly ? `${row.status} · ${row.manager_name || 'Unnamed draft'} · ${checklistTimestamp(row.submitted_at || row.updated_at, row.template_snapshot.timezone)}` : 'Answers are not autosaved to TM Ops. Use Save Draft; adding a photo or signature also saves your answers. Internet connection required.'}</p>
     {discarding && <p role="status">Discard pending. Editing and uploads are blocked. Use Discard Draft to finish cleanup.</p>}
     {recovery.current && !readonly && <div className="border p-3"><p>Unsaved answers were found in this browser tab. Review before restoring; saved data may have changed.</p>
@@ -329,8 +330,8 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
         {transport && staleVersion.current && <button disabled={busy} className="min-h-11 px-3 border rounded" onClick={reloadSaved}>Reload Latest Saved Version</button>}
       </div>
       <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-      {!readonly && <><button disabled={busy || staleVersion.current} className="min-h-11 px-2 sm:px-4 border rounded" onClick={() => action(() => save())}>Save Draft</button>
-        <button disabled={busy || staleVersion.current || signatureDirty || !evidenceReady} className="min-h-11 px-2 sm:px-4 rounded bg-tm-teal text-tm-navy font-bold" onClick={() => {
+      {(!readonly || (previewReadOnly && row.status === 'draft')) && <><button disabled={busy || staleVersion.current || previewReadOnly} className="min-h-11 px-2 sm:px-4 border rounded" onClick={() => action(() => save())}>Save Draft</button>
+        <button disabled={busy || staleVersion.current || signatureDirty || !evidenceReady || previewReadOnly} className="min-h-11 px-2 sm:px-4 rounded bg-tm-teal text-tm-navy font-bold" onClick={() => {
           const problems = validateChecklist(items, answers, evidence, name, managementAudit); setErrors(problems)
           if (!Object.keys(problems).length && window.confirm(managementAudit ? 'Submit this management audit? Corrections close at the end of the assigned site-local month or quarter. Earlier submissions and evidence are preserved.' : transport ? 'Submit this checklist? Daily corrections close at the end of the assigned site-local day; weekly corrections close at midnight Monday after the assigned week. Earlier submissions and evidence are preserved. MonitorQA remains official.' : 'Submit this pilot checklist? Answers, photos and signature will be locked. MonitorQA remains official.')) action(() => save(true))
         }}>Submit</button></>}

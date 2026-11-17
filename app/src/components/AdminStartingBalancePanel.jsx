@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { TRANSITION_MONTH } from '../utils/budgetRevenue'
 import RevenueStartingBalanceEditor from './RevenueStartingBalanceEditor'

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
 import DashboardPerformance from '../components/DashboardPerformance'
@@ -351,7 +351,7 @@ export default function Insights() {
 
   const rangeLabel = fmtDateRange(dateRange.start, dateRange.end)
 
-  const isManager = ['admin', 'area_manager'].includes(profile?.role)
+  const isManager = profile?.role === 'admin'
 
   const SECTION_CFG = {
     ...(isManager ? {
