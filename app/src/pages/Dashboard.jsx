@@ -278,6 +278,7 @@ export default function Dashboard() {
             {/* Preserve tabs within a site; discard drafts and pending views on site changes. */}
             <div key={selectedLocationId} data-entry-content="true" className="p-4">
               <div className={activeTab === 'daily' ? 'block' : 'hidden'}>
+                <PreviewReadOnly>
                 <DailyLogTable
                   key={`${selectedLocationId}:${selectedDate}`}
                   locationId={selectedLocationId}
@@ -291,6 +292,7 @@ export default function Dashboard() {
                   metricThresholds={location?.metric_thresholds}
                   downtimeEnabled={!!location?.downtime_tracking_enabled}
                 />
+                </PreviewReadOnly>
                 <div className="tm-entry-summary mt-8 pt-4 border-t border-gray-100 dark:border-tm-dark-border">
                   <EmployeeSummary
                     rows={liveRows}
@@ -325,6 +327,7 @@ export default function Dashboard() {
 
               {location?.show_budget_tracking && (
                 <div className={activeTab === 'budget' ? 'block' : 'hidden'}>
+                  <PreviewReadOnly>
                   <BudgetTrackingSection
                     locations={location ? [location] : []}
                     allLocations={location ? [location] : []}
@@ -332,16 +335,19 @@ export default function Dashboard() {
                     initialTab="daily"
                     onSaved={() => setStatusRefreshKey(k => k + 1)}
                   />
+                  </PreviewReadOnly>
                 </div>
               )}
 
               {location?.show_ownership_tools && (
                 <div className={activeTab === 'ownership' ? 'block' : 'hidden'}>
+                  <PreviewReadOnly>
                   <OwnershipLogSection
                     locations={location ? [location] : []}
                     profile={profile}
                     onSaved={() => setStatusRefreshKey(k => k + 1)}
                   />
+                  </PreviewReadOnly>
                 </div>
               )}
             </div>

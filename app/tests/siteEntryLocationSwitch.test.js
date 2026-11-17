@@ -78,6 +78,7 @@ function dashboard(client = api().supabase) {
     shopTotals: rows => rows[0] || null, morningEntryStatus: complete => complete ? 'complete' : 'pending',
     supabase: client, setInterval: () => 1, clearInterval() {},
     NavBar: Placeholder, LocationRepair: Placeholder, DateSelector: Placeholder, LocationSelector: Picker,
+    PreviewReadOnly: ({ children }) => children,
     DailyLogTable: Daily, BudgetTrackingSection: Budget, OwnershipLogSection: Ownership,
     MonthlyRollup: Rollup, DailySnapshot: Snapshot, EmployeeSummary: Summary,
   })
