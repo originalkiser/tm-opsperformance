@@ -1,0 +1,120 @@
+{
+  "environment": "isolated synthetic PostgreSQL 17.6, private Unix socket; not production",
+  "cases": [
+    {
+      "case": "rollback_scope_gate_before_locks",
+      "pass": true,
+      "seconds": 0.0574,
+      "detail": "Full rollback is isolated-test-only; production requires guard-preserving recovery; rejection precedes table lock request"
+    },
+    {
+      "case": "reviewed_preflight_read_only",
+      "pass": true,
+      "seconds": 0.0537,
+      "detail": "All three inventory SELECTs execute in READ ONLY transaction; no data/schema differences"
+    },
+    {
+      "case": "prepared_regressions",
+      "pass": true,
+      "seconds": 0.1046,
+      "detail": "Prepared migration + functional/RLS/PlansLost suite passed"
+    },
+    {
+      "case": "all_null_rollback",
+      "pass": true,
+      "seconds": 0.1057,
+      "detail": "All-NULL rollback suite passed"
+    },
+    {
+      "case": "nonnull_id_rollback_refuses_without_mutation",
+      "pass": true,
+      "seconds": 0.0552,
+      "detail": "Non-NULL employee IDs exist: preserve them and review forward repair; no automatic rollback; legacy metric edits and assignment guards remain operational"
+    },
+    {
+      "case": "reapplication_refuses_without_mutation",
+      "pass": true,
+      "seconds": 0.0562,
+      "detail": "Expected original employee FK; stop on missing, changed or already-applied foundation"
+    },
+    {
+      "case": "cross_site_preexisting_id_aborts_atomically",
+      "pass": true,
+      "seconds": 0.0553,
+      "detail": "insert or update on table \"daily_logs\" violates foreign key constraint \"daily_logs_employee_id_fkey\""
+    },
+    {
+      "case": "constraint_comment_drift_refuses",
+      "pass": true,
+      "seconds": 0.0551,
+      "detail": "Original constraint comments require an explicitly preserving migration/rollback revision"
+    },
+    {
+      "case": "rollback_guard_body_drift_refuses",
+      "pass": true,
+      "seconds": 0.0611,
+      "detail": "Guard implementation drift: separately reviewed forward repair required"
+    },
+    {
+      "case": "busy_writer_lock_timeout_and_retry",
+      "pass": true,
+      "seconds": 2.0718,
+      "detail": {
+        "expected_lock_timeout_seconds": 2.0025,
+        "message": "canceling statement due to lock timeout",
+        "retry_after_release": "pass"
+      }
+    },
+    {
+      "case": "queued_legacy_and_id_writers",
+      "pass": true,
+      "seconds": 0.3362,
+      "detail": {
+        "nonnull_id": {
+          "state": "23514",
+          "seconds": 0.2561
+        },
+        "legacy": {
+          "state": "ok",
+          "seconds": 0.2584
+        }
+      }
+    },
+    {
+      "case": "production_policy_reproduction_parity",
+      "pass": true,
+      "seconds": 0.0839,
+      "detail": {
+        "legacy_policy_cases": 11,
+        "before_equals_after": true,
+        "id_assignment_denied": {
+          "admin_B": "23514",
+          "assigned_manager_A": "23514",
+          "store_A": "23514",
+          "service_role": "23514"
+        },
+        "legacy_gaps_preserved_not_repaired": [
+          "disabled/deleted store helper checks",
+          "manager roster scope"
+        ]
+      }
+    },
+    {
+      "case": "synthetic_lock_benchmarks",
+      "pass": true,
+      "seconds": 0.9527,
+      "detail": [
+        {
+          "synthetic_rows": 24514,
+          "daily_logs_bytes_before": 7282688,
+          "blocking_ddl_seconds": 0.0048
+        },
+        {
+          "synthetic_rows": 100002,
+          "daily_logs_bytes_before": 29327360,
+          "blocking_ddl_seconds": 0.0106
+        }
+      ]
+    }
+  ]
+}
