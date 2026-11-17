@@ -1,6 +1,6 @@
 # Admin / Manager View — local implementation
 
-Branch: `codex/admin-store-view`, isolated worktree `/Users/christopherwilliams/Developer/tm-ops-admin-store-view`, based on current main `58e5bf1a3e3b94b9c909f97b4b29b642f05f50f5`. No branch push, PR, migration installation, function deployment or production data write is authorized or performed.
+Branch: `codex/admin-store-view`, isolated worktree `/Users/christopherwilliams/Developer/tm-ops-admin-store-view`, based on current main `58e5bf1a3e3b94b9c909f97b4b29b642f05f50f5`. Branch push, a draft PR and read-only production preflight are now authorized. Migration installation, merge, deployment and production data writes remain unauthorized.
 
 ## Behavior
 
