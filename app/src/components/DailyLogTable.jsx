@@ -3,7 +3,7 @@ import { loadDailyLogEmployees, resolvePastedEmployee, dailyLogPersistence } fro
 import { netMemberStyle, netMembersCls } from '../utils/netMemberColors'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import EmployeeSelect from './EmployeeSelect'
 import TmLoader from './TmLoader'
 import DowntimeModal from './DowntimeModal'

@@ -4,7 +4,7 @@ import NavBar from '../components/NavBar'
 import ResourceViewer from '../components/ResourceViewer'
 import ResourceCatalogEditor from '../components/ResourceCatalogEditor'
 import { catalogCategories, catalogManufacturers, categoryFolder, resourceLabels } from '../utils/resourceCatalog'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { supabase, supabasePublicKey } from '../lib/supabase'
 import { resourceAccess, validateResourceMetadata, validatePdf, filterResources, resourceAction, cleanupResource, uploadResource } from '../utils/resourceLibrary'
 
@@ -19,7 +19,7 @@ function MetadataFields({ value, change, catalog, optionalTitle = false }) {
 }
 
 export default function Resources() {
-  const { user, profile } = useAuth(), allowed = resourceAccess(profile), admin = allowed && profile.role === 'admin'
+  const { user, profile, managerPreview } = useAuth(), allowed = resourceAccess(profile), admin = allowed && profile.role === 'admin'
   const [catalog, setCatalog] = useState([])
   const [rows, setRows] = useState([]), [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [query, setQuery] = useState(''), [category, setCategory] = useState(''), [brand, setBrand] = useState('')
@@ -33,7 +33,7 @@ export default function Resources() {
     const [result, folders] = await Promise.all([supabase.from('resource_documents').select('*').order('title'), supabase.from('resource_catalog').select('*').order('sort_order')])
     if (!mounted.current || generation !== request.current) return
     if (result.error || folders.error) throw new Error(result.error?.message || folders.error.message)
-    setRows(result.data || []); setCatalog(folders.data || [])
+    setRows(managerPreview ? (result.data || []).filter(row => row.object_path && !row.removed).map(({ pending_upload, ...row }) => row) : result.data || []); setCatalog(folders.data || [])
   }
   useEffect(() => {
     mounted.current = true; setRows([]); setCatalog([]); setViewer(null)

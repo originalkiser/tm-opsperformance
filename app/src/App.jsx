@@ -34,6 +34,7 @@ function ProtectedRoute({ children }) {
       </div>
     )
   }
+  if (user && profile && !['admin','store'].includes(profile.role)) return <div><NavBar /><p role="alert">This account role is not supported. Ask an Admin to review your account.</p></div>
   return user ? children : <Navigate to="/login" replace />
 }
 
@@ -44,14 +45,19 @@ function AdminRoute({ children }) {
 }
 
 function ManagerRoute({ children }) {
-  const { profile } = useAuth()
+  const { profile, managerPreview } = useAuth()
   if (!profile) return null
-  return ['admin', 'area_manager'].includes(profile.role) ? children : <Navigate to="/" replace />
+  return profile.role === 'admin' && !managerPreview ? children : <Navigate to="/" replace />
 }
 
 function VersionWatcher() {
   const updateAvailable = useVersionCheck()
   return updateAvailable ? <UpdateBanner /> : null
+}
+
+function ViewPages({ children }) {
+  const { managerPreview, previewSiteId } = useAuth()
+  return <div key={managerPreview ? `preview:${previewSiteId}` : 'normal'}>{children}</div>
 }
 
 function AccountApp() {
@@ -61,7 +67,7 @@ function AccountApp() {
 
           <TargetsBanner />
           <DailyLogSaveNotice />
-          <Routes>
+          <ViewPages><Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route
@@ -85,7 +91,7 @@ function AccountApp() {
             <Route path="/checklist-compliance" element={<ProtectedRoute><ChecklistCompliance /></ProtectedRoute>} />
             <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          </Routes></ViewPages>
 
       </AuthProvider>
 

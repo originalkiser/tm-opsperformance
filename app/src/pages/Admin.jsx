@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createEmployeeIfMissing, duplicateEmployeeGroups } from '../utils/employeeIdentity.js'
 import { supabase, supabasePublicKey } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
 import TmLoader from '../components/TmLoader'
 import HistoricalMtdStartingBalances from '../components/HistoricalMtdStartingBalances'
@@ -29,12 +29,10 @@ function daysLeft(deletedAt) {
 export default function Admin() {
   const { profile: currentProfile, locations: myLocations } = useAuth()
   const isAdmin   = currentProfile?.role === 'admin'
-  const isAreaMgr = currentProfile?.role === 'area_manager'
 
   const [locations,    setLocations]    = useState([])
   const [users,        setUsers]        = useState([])
   const [deletedUsers, setDeletedUsers] = useState([])
-  const [managerLocs,  setManagerLocs]  = useState([])
   const [selectedLocId, setSelectedLocId] = useState('')
   const [employees,    setEmployees]    = useState([])
   const [newEmpName,   setNewEmpName]   = useState('')
@@ -57,7 +55,7 @@ export default function Admin() {
   const [emailStatus,   setEmailStatus]   = useState({})
 
   useEffect(() => {
-    const tasks = [fetchLocations(), fetchUsers(), fetchManagerLocs()]
+    const tasks = [fetchLocations(), fetchUsers()]
     if (isAdmin) tasks.push(fetchDeletedUsers())
     Promise.all(tasks).then(() => setLoading(false))
   }, [])
@@ -89,10 +87,6 @@ export default function Admin() {
     setDeletedUsers(data || [])
   }
 
-  const fetchManagerLocs = async () => {
-    const { data } = await supabase.from('manager_locations').select('manager_id, location_id')
-    setManagerLocs(data || [])
-  }
 
   const fetchEmployees = async () => {
     const request = ++employeeReadRef.current
@@ -205,17 +199,7 @@ export default function Admin() {
   }
 
 
-  const addManagerToLocation = async (managerId, locId) => {
-    if (!managerId || !locId) return
-    await supabase.from('manager_locations').upsert({ manager_id: managerId, location_id: locId })
-    fetchManagerLocs()
-  }
 
-  const removeManagerFromLocation = async (managerId, locId) => {
-    await supabase.from('manager_locations')
-      .delete().eq('manager_id', managerId).eq('location_id', locId)
-    fetchManagerLocs()
-  }
 
   const addUser = async (e) => {
     e.preventDefault()
@@ -241,7 +225,6 @@ export default function Admin() {
 
   const canResetUser = (u) => {
     if (isAdmin) return true
-    if (isAreaMgr && u.location_id) return myLocations.some(l => l.id === u.location_id)
     return false
   }
 
@@ -272,7 +255,6 @@ export default function Admin() {
     fetchEmployees()
   }
 
-  const areaManagers = users.filter(u => u.role === 'area_manager')
 
   if (loading) return (
     <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
@@ -394,7 +376,6 @@ export default function Admin() {
                                 className="border border-gray-300 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-card text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal"
                               >
                                 <option value="store">Store</option>
-                                <option value="area_manager">Area Manager</option>
                                 <option value="admin">Admin</option>
                               </select>
                             </td>
@@ -665,12 +646,8 @@ export default function Admin() {
             <LocationsTab
               locations={locations}
               users={users}
-              areaManagers={areaManagers}
-              managerLocs={managerLocs}
               onUpdateFormula={updateLocationFormula}
               onUpdateMarket={updateLocationMarket}
-              onAddManager={addManagerToLocation}
-              onRemoveManager={removeManagerFromLocation}
               onUpdateThresholds={updateLocationThresholds}
               onUpdateExclude={updateLocationExclude}
               onUpdateDowntimeEnabled={updateLocationDowntimeEnabled}
@@ -697,7 +674,7 @@ export default function Admin() {
 }
 
 // ── Locations tab ─────────────────────────────────────────────────────────────
-function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFormula, onUpdateMarket, onAddManager, onRemoveManager, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled, onUpdateEmail, onUpdateTimezone, onUpdateHoursOverride, onUpdateBudgetTracking, onUpdateOwnershipTools }) {
+function LocationsTab({ locations, users, onUpdateFormula, onUpdateMarket, onUpdateThresholds, onUpdateExclude, onUpdateDowntimeEnabled, onUpdateEmail, onUpdateTimezone, onUpdateHoursOverride, onUpdateBudgetTracking, onUpdateOwnershipTools }) {
   const [marketInputs,    setMarketInputs]    = useState({})
   const [addMgrOpen,      setAddMgrOpen]      = useState({})
   const [thresholdInputs, setThresholdInputs] = useState({})
@@ -733,17 +710,8 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
     onUpdateMarket(locId, val)
   }
 
-  const getAssignedMgrs = (locId) =>
-    managerLocs
-      .filter(ml => ml.location_id === locId)
-      .map(ml => users.find(u => u.id === ml.manager_id))
-      .filter(Boolean)
-
   const getPrimaryUsers = (locId) =>
     users.filter(u => u.location_id === locId && u.role === 'store')
-
-  const unassignedMgrs = (locId) =>
-    areaManagers.filter(am => !managerLocs.some(ml => ml.manager_id === am.id && ml.location_id === locId))
 
   const getThresholds = (loc) => ({
     pmix_green:  loc.metric_thresholds?.pmix_green  ?? DEFAULT_THRESHOLDS.pmix_green,
@@ -787,15 +755,12 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
               <th className="px-3 py-2 text-left">Time Zone</th>
               <th className="px-3 py-2 text-left">Hours Override</th>
               <th className="px-3 py-2 text-left">Site Email</th>
-              <th className="px-3 py-2 text-left">Area Manager(s)</th>
               <th className="px-3 py-2 text-left">Store User(s)</th>
             </tr>
           </thead>
           <tbody>
             {locations.map((loc, i) => {
-              const assignedMgrs  = getAssignedMgrs(loc.id)
               const primaryUsers  = getPrimaryUsers(loc.id)
-              const availableMgrs = unassignedMgrs(loc.id)
 
               return (
                 <tr key={loc.id} className={i % 2 === 0 ? 'bg-white dark:bg-tm-dark-surface' : 'bg-gray-50 dark:bg-tm-dark-row-alt'}>
@@ -917,57 +882,7 @@ function LocationsTab({ locations, users, areaManagers, managerLocs, onUpdateFor
                       className="w-full border border-gray-200 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-surface text-gray-700 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
                     />
                   </td>
-                  <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
-                    <div className="flex flex-wrap items-center gap-1">
-                      {assignedMgrs.map(am => (
-                        <span
-                          key={am.id}
-                          className="inline-flex items-center gap-1 bg-tm-blue/10 dark:bg-tm-blue/30 text-tm-blue dark:text-tm-sky text-xs px-2 py-0.5 rounded-full font-brand"
-                        >
-                          {am.name || am.email || am.id.slice(0, 8)}
-                          <button
-                            onClick={() => onRemoveManager(am.id, loc.id)}
-                            className="text-tm-blue/50 hover:text-red-500 transition-colors leading-none"
-                            title="Remove"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                      {/* Inline add AM button */}
-                      {availableMgrs.length > 0 && (
-                        <div className="relative" ref={el => dropdownRefs.current[loc.id] = el}>
-                          <button
-                            onClick={() => setAddMgrOpen(p => ({ ...p, [loc.id]: !p[loc.id] }))}
-                            title="Add area manager"
-                            className="inline-flex items-center gap-0.5 text-gray-400 dark:text-tm-dark-muted hover:text-tm-teal transition-colors"
-                          >
-                            {/* Headshot silhouette */}
-                            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"/>
-                            </svg>
-                            <span className="text-[11px] font-bold leading-none">+</span>
-                          </button>
-                          {addMgrOpen[loc.id] && (
-                            <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-lg shadow-lg min-w-[160px] py-1">
-                              {availableMgrs.map(am => (
-                                <button
-                                  key={am.id}
-                                  onClick={() => {
-                                    onAddManager(am.id, loc.id)
-                                    setAddMgrOpen(p => ({ ...p, [loc.id]: false }))
-                                  }}
-                                  className="w-full text-left px-3 py-1.5 text-xs font-brand text-gray-700 dark:text-tm-dark-text hover:bg-tm-sky/20 dark:hover:bg-tm-teal/10 transition-colors"
-                                >
-                                  {am.name || am.email}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </td>
+
                   <td className="border border-gray-200 dark:border-tm-dark-border px-3 py-2">
                     <div className="flex flex-wrap gap-1">
                       {primaryUsers.length ? primaryUsers.map(u => (

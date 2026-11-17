@@ -1,3 +1,4 @@
+import { assertViewWritable, loadManagerView, managerViewState, pendingViewWrites, setManagerViewReadOnly, viewStorageKey } from '../../src/utils/managerViewPolicy.js'
 import { readFileSync } from 'node:fs'
 import { transformSync } from 'esbuild'
 import React from 'react'
@@ -17,7 +18,7 @@ export function locationHelpHarness(path, globals = {}, props = {}, exportName =
   const source = readFileSync(new URL(`../../src/${path}.jsx`, import.meta.url), 'utf8').replace(/^import .*\n/gm, '')
     + (exportName === 'ProtectedRoute' ? '\nexport { ProtectedRoute }' : '')
   const mod = { exports: {} }
-  const bindings = { React, createContext: React.createContext, useState, useEffect, useRef, ChecklistCamera: () => null, ...globals }
+  const bindings = { assertViewWritable, loadManagerView, managerViewState, pendingViewWrites, setManagerViewReadOnly, viewStorageKey, PreviewReadOnly: ({children}) => children, ManagerViewSwitch: () => null, React, createContext: React.createContext, useState, useEffect, useRef, ChecklistCamera: () => null, ...globals }
   new Function('module', 'exports', ...Object.keys(bindings), transformSync(source, { loader: 'jsx', format: 'cjs' }).code)(mod, mod.exports, ...Object.values(bindings))
   const render = () => { do { dirty = false; cursor = 0; queue = []; tree = mod.exports[exportName](props); queue.forEach(fn => fn()) } while (dirty); return tree }
   const nodes = node => !node || typeof node !== 'object' ? [] : [node, ...React.Children.toArray(node.props?.children).flatMap(nodes)]

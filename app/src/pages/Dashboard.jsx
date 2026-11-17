@@ -1,8 +1,9 @@
+import PreviewReadOnly from '../components/PreviewReadOnly'
 import '../styles/siteEntryColors.css'
 import LocationRepair from '../components/LocationRepair'
 import { entryLocationOptions, resolveEntryLocation } from '../utils/locationAccess'
 import { useState, useEffect } from 'react'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import NavBar from '../components/NavBar'
 import DateSelector, { computeDateRange, fmtDateRange, loadSavedDateRange, saveDateRange } from '../components/DateSelector'
@@ -31,7 +32,7 @@ function todayStr() {
 }
 
 export default function Dashboard() {
-  const { profile, locations, locationSelectionVersion, locationRepairMessage, repairingLocation } = useAuth()
+  const { profile, locations, managerPreview, previewSiteId, locationSelectionVersion, locationRepairMessage, repairingLocation } = useAuth()
 
   const [selectedChoice, setSelectedLocationId] = useState(
     () => localStorage.getItem('tm_selected_location') || null
@@ -58,7 +59,7 @@ export default function Dashboard() {
 
   const markets = [...new Set(locations.map(l => l.market).filter(Boolean))].sort()
   const filteredLocations = entryLocationOptions(profile, locations, selectedMarket)
-  const selectedLocationId = resolveEntryLocation(filteredLocations, selectedChoice)
+  const selectedLocationId = resolveEntryLocation(filteredLocations, managerPreview ? previewSiteId : selectedChoice)
   const entryScope = `${selectedLocationId}:${selectedDate}`
   const liveRows = liveData.scope === entryScope ? liveData.rows : []
 
@@ -70,6 +71,7 @@ export default function Dashboard() {
 
   // Persist selections
   useEffect(() => {
+    if (managerPreview) return
     if (selectedLocationId) localStorage.setItem('tm_selected_location', selectedLocationId)
     else localStorage.removeItem('tm_selected_location')
   }, [selectedLocationId])
@@ -151,11 +153,10 @@ export default function Dashboard() {
   const latestHour = formatTimeSlot(shopTotals(liveRows)?.time_slot ?? null)
   const canEdit =
     profile?.role === 'admin' ||
-    profile?.role === 'area_manager' ||
     profile?.location_id === selectedLocationId
 
   const opportunitiesFormula = location?.opportunities_formula ?? 'detailed'
-  const isManager = ['admin', 'area_manager'].includes(profile?.role)
+  const isManager = profile?.role === 'admin'
 
   const headerDateLabel = activeTab === 'monthly'
     ? fmtDateRange(dateRange.start, dateRange.end)

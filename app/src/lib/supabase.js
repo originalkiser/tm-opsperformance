@@ -1,3 +1,4 @@
+import { viewFetch } from '../utils/managerViewPolicy'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -14,5 +15,6 @@ if (!supabaseUrl || !supabasePublicKey) {
 
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
-  supabasePublicKey || 'placeholder-key'
+  supabasePublicKey || 'placeholder-key',
+  { global: { fetch: viewFetch } }
 )

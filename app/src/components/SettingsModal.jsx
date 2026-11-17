@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function SettingsModal({ onClose }) {
-  const { profile } = useAuth()
+  const { managerPreview, profile } = useAuth()
   const [newPw, setNewPw]     = useState('')
   const [confirm, setConfirm] = useState('')
   const [pwStatus, setPwStatus] = useState(null) // null | 'saving' | 'done' | 'error'
@@ -62,7 +62,7 @@ export default function SettingsModal({ onClose }) {
                 </button>
               </div>
             ) : (
-              <form onSubmit={submitPw} className="space-y-3">
+              <form onSubmit={submitPw} className="space-y-3"><fieldset disabled={managerPreview}>
                 <div>
                   <label className="block text-xs font-brand font-semibold text-gray-500 mb-1 uppercase tracking-wide">
                     New Password
@@ -95,7 +95,7 @@ export default function SettingsModal({ onClose }) {
                 >
                   {pwStatus === 'saving' ? 'Saving…' : 'Update Password'}
                 </button>
-              </form>
+              </fieldset></form>
             )}
           </div>
         </div>

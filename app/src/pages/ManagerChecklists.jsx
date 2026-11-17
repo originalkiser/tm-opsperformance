@@ -5,7 +5,7 @@ import ChecklistAccessForm from '../components/ChecklistAccessForm'
 import ChecklistQrAdmin from '../components/ChecklistQrAdmin'
 import ChecklistOpenWork from '../components/ChecklistOpenWork'
 import ChecklistAdmin from '../components/ChecklistAdmin'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { supabase, supabasePublicKey } from '../lib/supabase'
 import { checklistPeriod, completionStatus, localChecklistDate, checklistTimestamp } from '../utils/checklistRules'
 import { createChecklistTransport, findChecklistOccurrence } from '../utils/checklistAccess'
@@ -15,8 +15,8 @@ const displayOrder = ['opening', 'midday', 'closing', 'weekly', 'weekly_pm']
 const auditKeys = ['monthly_site_assessment', 'quarterly_safety_audit']
 
 export default function ManagerChecklists() {
-  const { user, profile, locations } = useAuth()
-  const authorized = !!user && profile?.is_active === true && !profile.deleted_at && ['admin', 'store', 'area_manager'].includes(profile.role)
+  const { user, profile, locations, managerPreview } = useAuth()
+  const authorized = !!user && profile?.is_active === true && !profile.deleted_at && ['admin', 'store'].includes(profile.role)
   const admin = authorized && profile.role === 'admin'
   const [templates, setTemplates] = useState([]), [rows, setRows] = useState([])
   const [site, setSite] = useState(locations[0]?.id || ''), [date, setDate] = useState(''), [form, setForm] = useState(null)
@@ -35,10 +35,11 @@ export default function ManagerChecklists() {
     setError(''); setExisting(null); setBusy(true)
     try {
       const start = date ? checklistPeriod({ cadence: 'weekly' }, date) : '9999-01-01'
+      const readRows = () => { const query = supabase.from('checklist_submissions').select('*'); return managerPreview ? query.eq('location_id', site) : query }
       const results = await Promise.all([
         supabase.from('checklist_templates').select('*'),
-        supabase.from('checklist_submissions').select('*').in('template_key', displayOrder).gte('period_date', start).lte('period_date', date || start).order('created_at'),
-        supabase.from('checklist_submissions').select('*').in('template_key', auditKeys)
+        readRows().in('template_key', displayOrder).gte('period_date', start).lte('period_date', date || start).order('created_at'),
+        readRows().in('template_key', auditKeys)
           .gte('period_date', date ? checklistPeriod({ cadence: 'quarterly' }, date) : start).lte('period_date', date || start).order('created_at'),
       ])
       if (current !== request.current) return
@@ -60,6 +61,7 @@ export default function ManagerChecklists() {
     const current = request.current
     setBusy(true); setError(''); setExisting(null)
     try {
+      if (!record && managerPreview) record = { id: `preview:${template.key}:${site}`, template_key: template.key, location_id: site, period_date: checklistPeriod(template, date), status: 'draft', created_by: user.id, updated_at: new Date().toISOString(), revision: 0, answers: {}, manager_name: '', template_snapshot: { ...template, timezone: selected?.timezone }, preview_only: true }
       if (!record) {
         const result = await supabase.rpc('save_checklist', { p_template: template.key, p_location: site, p_date: checklistPeriod(template, date) })
         if (result.error) throw result.error
@@ -87,7 +89,7 @@ export default function ManagerChecklists() {
       <p className="tm-checklists-notice rounded p-3">MonitorQA remains the official checklist system. Checklists are available, not mandatory. No automatic assignments or reminders. Online connection required.</p>
       {error && <p role="alert" className="text-red-600 dark:text-red-300">{error}</p>}
       {existing && <div className="border rounded p-3"><p>{existing.template_snapshot.name} · {existing.period_date} · {existing.status}</p><button disabled={busy} className="min-h-12 px-4 border rounded" onClick={() => open(null, existing)}>Reopen Existing Checklist</button></div>}
-      {form ? <ChecklistAccessForm key={form.id} initial={form} user={user} admin={admin} locationLabel={locations.find(location => location.id === form.location_id)?.site_code} onSaved={saved => setRows(previous => [...previous.filter(row => row.id !== saved.id), saved])} onClose={() => { setForm(null); load() }} /> : <>
+      {form ? <ChecklistAccessForm previewReadOnly={managerPreview} key={form.id} initial={form} user={user} admin={admin} locationLabel={locations.find(location => location.id === form.location_id)?.site_code} onSaved={saved => setRows(previous => [...previous.filter(row => row.id !== saved.id), saved])} onClose={() => { setForm(null); load() }} /> : <>
         <div className="tm-checklists-filters flex flex-wrap gap-4">
           <label>Location<select aria-label="Checklist location" disabled={busy} value={site} onChange={e => setSite(e.target.value)} className="block p-3 border rounded bg-white dark:bg-tm-dark-surface">
             {!scope.length && <option value="">No assigned locations</option>}{scope.map(location => <option key={location.id} value={location.id}>{location.site_code}</option>)}</select></label>

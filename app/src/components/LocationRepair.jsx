@@ -1,4 +1,4 @@
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 
 export default function LocationRepair() {
   const { profile, locations, loading, locationError, repairingLocation, locationRepairMessage, reloadMyLocation } = useAuth()

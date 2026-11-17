@@ -1,6 +1,7 @@
+import PreviewReadOnly from '../components/PreviewReadOnly'
 import '../styles/operationsColors.css'
 import { useEffect, useRef, useState } from 'react'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import NavBar from '../components/NavBar'
 import HistoricalEmployeeMappings from '../components/HistoricalEmployeeMappings'
@@ -12,7 +13,7 @@ export default function Employees() {
   const { user, profile, locations = [] } = useAuth()
   const [selected, setSelected] = useState('')
   const [view, setView] = useState('roster')
-  const allowed = ['admin', 'area_manager', 'store'].includes(profile?.role)
+  const allowed = ['admin', 'store'].includes(profile?.role)
     && profile?.is_active === true && !profile?.deleted_at
   const locationId = locations.some(row => row.id === selected) ? selected : locations[0]?.id || ''
   return <div className="tm-bold-page tm-operations-page tm-employees-page min-h-screen bg-tm-cream dark:bg-tm-dark-bg text-gray-800 dark:text-tm-dark-text">
@@ -30,8 +31,8 @@ export default function Employees() {
               <button className={control} aria-pressed={view === 'history'} onClick={() => setView('history')}>Historical name mapping</button>
             </nav>}
             {view === 'history' && ['admin', 'store'].includes(profile.role)
-              ? <HistoricalEmployeeMappings locationId={locationId} isAdmin={profile.role === 'admin'} />
-              : <Roster locationId={locationId} isAdmin={profile.role === 'admin'} />}</div>
+              ? <PreviewReadOnly><HistoricalEmployeeMappings locationId={locationId} isAdmin={profile.role === 'admin'} /></PreviewReadOnly>
+              : <PreviewReadOnly><Roster locationId={locationId} isAdmin={profile.role === 'admin'} /></PreviewReadOnly>}</div>
           : <p>No location is assigned. Ask Admin to check your access.</p>}
       </>}
     </main>

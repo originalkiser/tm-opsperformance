@@ -1,3 +1,4 @@
+import { withViewWrite } from './managerViewPolicy.js'
 import { categoryFolder, resourceLabels } from './resourceCatalog.js'
 export const RESOURCE_BUCKET = 'resource-pdfs'
 export const PDF_LIMIT = 50 * 1024 * 1024
@@ -59,7 +60,7 @@ export async function downloadResource(client, row, userId, signal) {
 }
 
 // The upload remains reserved in the index on failure, allowing explicit resume or cancel.
-export async function uploadResource(client, file, row, publicKey, onProgress, signal, UploadClass) {
+async function transferResource(client, file, row, publicKey, onProgress, signal, UploadClass) {
   const info = await validatePdf(file), pending = row.pending_upload
   if (!pending || pending.sha256 !== info.sha256 || pending.size !== info.size) throw new Error('Reselect the exact PDF used for this pending upload, or cancel it.')
   const session = await client.auth.getSession(), userId = session.data?.session?.user?.id
@@ -95,3 +96,5 @@ export async function uploadResource(client, file, row, publicKey, onProgress, s
     }).catch(finish)
   })
 }
+
+export const uploadResource = (...args) => withViewWrite(() => transferResource(...args))

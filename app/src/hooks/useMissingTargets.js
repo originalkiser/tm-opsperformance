@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { findMissingTargets } from '../utils/targetsNotifications'
 
 // Locations this viewer could plausibly be reminded about: their assigned
@@ -11,7 +11,7 @@ export function useMissingTargets() {
   const [missing, setMissing] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const canSetTargets = profile?.role === 'admin' || profile?.role === 'area_manager'
+  const canSetTargets = profile?.role === 'admin'
   const trackedLocations = canSetTargets ? locations.filter(l => l.show_budget_tracking) : []
   const trackedIds = trackedLocations.map(l => l.id)
 
@@ -28,5 +28,5 @@ export function useMissingTargets() {
 
   useEffect(() => { refetch() }, [refetch])
 
-  return { missing, loading, trackedLocations, refetch }
+  return { missing: canSetTargets ? missing : [], loading: canSetTargets ? loading : false, trackedLocations, refetch }
 }

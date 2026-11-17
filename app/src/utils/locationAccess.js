@@ -4,16 +4,12 @@ export async function fetchLocationAccess(client, userId) {
     .select('*, locations(*)').eq('id', userId).single()
   if (error) throw error
   if (!profile) throw new Error('Your account could not be loaded. Ask an Admin to check your account.')
+  if (!['admin', 'store'].includes(profile.role)) throw new Error('Your account role is no longer supported. Ask an Admin to review it.')
   let locations = []
   if (profile.role === 'admin') {
     const result = await client.from('locations').select('*').order('site_code')
     if (result.error) throw result.error
     locations = result.data || []
-  } else if (profile.role === 'area_manager') {
-    const result = await client.from('manager_locations').select('locations(*)').eq('manager_id', userId)
-    if (result.error) throw result.error
-    if (result.data?.some(row => !row.locations)) throw new Error('An assigned location is unavailable. Ask an Admin to check your access.')
-    locations = (result.data || []).map(row => row.locations)
   } else if (profile.role === 'store' && profile.location_id) {
     if (!profile.locations || profile.locations.id !== profile.location_id) {
       throw new Error('Your assigned location is unavailable. Ask an Admin to check your access.')
@@ -56,7 +52,7 @@ export function resolveEntryLocation(locations, savedId) {
 }
 
 export function entryLocationOptions(profile, locations, market) {
-  const canFilter = ['admin', 'area_manager'].includes(profile?.role)
+  const canFilter = profile?.role === 'admin'
   return canFilter && market && locations.some(site => site.market === market)
     ? locations.filter(site => site.market === market) : locations
 }

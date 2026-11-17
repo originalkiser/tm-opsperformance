@@ -1,6 +1,6 @@
 import '../styles/operationsColors.css'
 import { useState, useMemo } from 'react'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import NavBar from '../components/NavBar'
 import OwnershipScorecardSection from '../components/OwnershipScorecardSection'
 import BudgetTargetsTable from '../components/BudgetTargetsTable'
@@ -8,7 +8,7 @@ import EditAuditLog from '../components/EditAuditLog'
 
 export default function AmEntry() {
   const { profile, locations: allLocations } = useAuth()
-  // Area managers: their assigned sites (already scoped by useAuth). Admins:
+  // Admins:
   // every site — useAuth already returns the full network for admin, so no
   // special-casing is needed here for "sites they aren't assigned to."
   const locations = useMemo(

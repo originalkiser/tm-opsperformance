@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 
 // A request can fail after navigation unmounts its Daily Log. Keep the failure
 // visible outside that table, scoped to the signed-in user and business date.

@@ -9,7 +9,7 @@
 // POST { downtime_log_id, dry_run? }  (caller must be signed in)
 //   → { ok: true, submission_id }                        sent (or was already sent)
 //   → { ok: true, in_progress: true }                    another attempt is mid-flight
-//   → { ok: true, dry_run: true, fields: [[k, v], ...] } admin/AM only; nothing is sent
+//   → { ok: true, dry_run: true, fields: [[k, v], ...] } Admin only; nothing is sent
 //   → { ok: false, error }                               recorded on the row as 'failed'
 
 // NOTE: the platform's verify_jwt check is off for this function (see supabase/config.toml),
@@ -60,17 +60,13 @@ Deno.serve(async (req) => {
   const { data: prof } = await admin.from('user_profiles').select('role, location_id').eq('id', user.id).maybeSingle()
   let allowed = false
   if (prof?.role === 'admin') allowed = true
-  else if (prof?.role === 'area_manager') {
-    const { data: link } = await admin.from('manager_locations').select('location_id')
-      .eq('manager_id', user.id).eq('location_id', log.location_id).maybeSingle()
-    allowed = !!link
-  } else if (prof?.role === 'store') allowed = prof.location_id === log.location_id
+  else if (prof?.role === 'store') allowed = prof.location_id === log.location_id
   if (!allowed) return json({ ok: false, error: 'Forbidden' }, 403)
 
   if (log.status !== 'resolved' || !log.ended_at) {
     return json({ ok: false, error: 'This downtime has not been resolved yet' }, 400)
   }
-  if (dryRun && !['admin', 'area_manager'].includes(prof?.role)) {
+  if (dryRun && prof?.role !== 'admin') {
     return json({ ok: false, error: 'Forbidden' }, 403)
   }
 

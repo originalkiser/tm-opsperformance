@@ -3,7 +3,7 @@ import { fetchEmployeeLogs } from '../utils/employeePerformance.js'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import NavBar from '../components/NavBar'
 import TmLoader from '../components/TmLoader'
@@ -251,7 +251,7 @@ export default function Reports() {
   // Budget-Tracking / Ownership-Tools scoped location lists
   const budgetLocations    = locations.filter(l => l.show_budget_tracking)
   const ownershipLocations = locations.filter(l => l.show_ownership_tools)
-  const canManageTargets   = profile?.role === 'admin' || profile?.role === 'area_manager'
+  const canManageTargets   = profile?.role === 'admin'
 
   const marketLocations = selectedMarkets === null
     ? locations

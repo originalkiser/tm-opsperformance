@@ -1,3 +1,4 @@
+import { viewFetch } from '../utils/managerViewPolicy'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -269,7 +270,7 @@ function DetailModal({ record, locMap, location, globalHours, isAdmin, onClose, 
       try {
         const { data: cfg } = await supabase.from('app_settings').select('value').eq('key', 'jotform').maybeSingle()
         if (cfg?.value?.api_key) {
-          await fetch(`https://api.jotform.com/submission/${record.jotform_submission_id}?apiKey=${cfg.value.api_key}`, { method: 'DELETE' })
+          await viewFetch(`https://api.jotform.com/submission/${record.jotform_submission_id}?apiKey=${cfg.value.api_key}`, { method: 'DELETE' })
         }
       } catch {}
     }

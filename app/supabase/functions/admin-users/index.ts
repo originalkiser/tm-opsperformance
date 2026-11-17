@@ -7,8 +7,7 @@
 //
 // POST { action, ... }  (caller must be signed in)
 //   create          { email, name? }          admin only        → { ok, temp_password }
-//   reset_password  { user_id }               admin, or an area manager for a STORE user
-//                                             at one of their assigned locations
+//   reset_password  { user_id }               admin only
 //                                                               → { ok, temp_password }
 //   change_email    { user_id, new_email }    admin only        → { ok }
 //   delete          { user_id }               admin only; the user must already be in
@@ -72,7 +71,6 @@ Deno.serve(async (req) => {
     .select('role, is_active').eq('id', user.id).maybeSingle()
   if (!caller || caller.is_active === false) return json({ ok: false, error: 'Forbidden' }, 403)
   const isAdmin   = caller.role === 'admin'
-  const isAreaMgr = caller.role === 'area_manager'
 
   try {
     switch (action) {
@@ -94,18 +92,7 @@ Deno.serve(async (req) => {
         const userId = String(body.user_id ?? '')
         if (!userId) return json({ ok: false, error: 'user_id is required' }, 400)
 
-        if (!isAdmin) {
-          // Area managers: only store users at one of their assigned locations.
-          if (!isAreaMgr) return json({ ok: false, error: 'Forbidden' }, 403)
-          const { data: target } = await admin.from('user_profiles')
-            .select('role, location_id').eq('id', userId).maybeSingle()
-          if (!target || target.role !== 'store' || !target.location_id) {
-            return json({ ok: false, error: 'Forbidden' }, 403)
-          }
-          const { data: link } = await admin.from('manager_locations').select('location_id')
-            .eq('manager_id', user.id).eq('location_id', target.location_id).maybeSingle()
-          if (!link) return json({ ok: false, error: 'Forbidden' }, 403)
-        }
+        if (!isAdmin) return json({ ok: false, error: 'Forbidden' }, 403)
 
         const tempPassword = generatePassword()
         const { error } = await admin.auth.admin.updateUserById(userId, { password: tempPassword })

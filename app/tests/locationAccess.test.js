@@ -35,13 +35,13 @@ test('genuine missing assignment is empty; inaccessible or mismatched assignment
   }
 })
 
-test('Admin and Area Manager keep their existing query scopes', async () => {
+test('Admin keeps its location scope; retired Area Manager fails closed', async () => {
   const admin = api({ role: 'admin' })
   assert.deepEqual((await fetchLocationAccess(admin.client, 'admin')).locations, [own, other])
   assert.equal(admin.calls[1].table, 'locations')
   const manager = api({ role: 'area_manager' }, { mappings: [{ locations: own }] })
-  assert.deepEqual((await fetchLocationAccess(manager.client, 'manager')).locations, [own])
-  assert.deepEqual(manager.calls[1], { table: 'manager_locations', filters: [['manager_id', 'manager']] })
+  await assert.rejects(fetchLocationAccess(manager.client, 'manager'), /role is no longer supported/)
+  assert.equal(manager.calls.length, 1)
 })
 
 test('query errors and rejected requests propagate rather than masquerading as missing assignments', async () => {
@@ -49,7 +49,7 @@ test('query errors and rejected requests propagate rather than masquerading as m
     const { client } = api({ role }, { profileError: { code: 'offline' } })
     await assert.rejects(fetchLocationAccess(client, 'user'), e => e.code === 'offline')
   }
-  for (const role of ['admin', 'area_manager']) {
+  for (const role of ['admin']) {
     const { client } = api({ role }, { locationError: { code: '42501' } })
     await assert.rejects(fetchLocationAccess(client, 'user'), e => e.code === '42501')
   }

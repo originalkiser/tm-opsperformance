@@ -1,8 +1,9 @@
+import ManagerViewSwitch from './ManagerViewSwitch'
 import HelpPanel from './HelpPanel'
 import { useState } from 'react'
 import tmLogo from '../assets/TM-Logo 1-1.png'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
+import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { useDarkModeCtx } from '../contexts/DarkModeContext'
 import SettingsModal from './SettingsModal'
 import TargetsBell from './TargetsBell'
@@ -41,7 +42,7 @@ export default function NavBar() {
     ? 'bg-tm-teal border-tm-teal text-tm-navy font-bold'
     : 'bg-tm-blue/60 border-tm-teal/30 text-tm-teal hover:bg-tm-blue hover:text-white'}`
   const currentPage = path => pathname === path ? 'page' : undefined
-  const isManager = ['admin', 'area_manager'].includes(profile?.role)
+  const isManager = profile?.role === 'admin'
   const checklistAccess = useChecklistAccess()
   const [showSettings, setShowSettings] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
@@ -98,7 +99,7 @@ export default function NavBar() {
             </Link>
           )}
 
-          {['admin', 'area_manager', 'store'].includes(profile?.role) && (
+          {['admin', 'store'].includes(profile?.role) && (
             <Link to="/employees" className={navClass('/employees')} aria-current={currentPage('/employees')}>Employees</Link>
           )}
 
@@ -160,6 +161,8 @@ export default function NavBar() {
           >
             {dark ? <SunIcon /> : <MoonIcon />}
           </button>
+
+          <ManagerViewSwitch />
 
           {/* Settings cog */}
           <button
