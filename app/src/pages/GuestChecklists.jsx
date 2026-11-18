@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import ChecklistForm from '../components/ChecklistForm'
+import ChecklistWeeklyDue from '../components/ChecklistWeeklyDue'
+import { validateWeeklyPeriods } from '../utils/checklistWeekly'
 import { supabase, supabasePublicKey } from '../lib/supabase'
 import { takeGuestAccess, clearGuestAccess, createChecklistTransport, findChecklistOccurrence } from '../utils/checklistAccess'
 import { checklistPeriod, localChecklistDate } from '../utils/checklistRules'
@@ -9,13 +11,14 @@ import '../styles/boldPages.css'
 const order = ['opening', 'midday', 'closing', 'weekly', 'weekly_pm']
 export default function GuestChecklists() {
   const route = useLocation()
+  const [olderWeek, setOlderWeek] = useState('')
   const [context, setContext] = useState(null), [form, setForm] = useState(null)
   const [existing, setExisting] = useState(null)
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   const transport = useRef(null), generation = useRef(0), alive = useRef(true), working = useRef(false)
   useEffect(() => {
     alive.current = true; generation.current++; working.current = false
-    transport.current = null; setContext(null); setForm(null); setExisting(null); setError(''); setBusy(false)
+    transport.current = null; setContext(null); setOlderWeek(''); setForm(null); setExisting(null); setError(''); setBusy(false)
     try {
       const access = takeGuestAccess(window.location, window.history, sessionStorage)
       if (!access) setError('Scan your store’s checklist QR code to continue. No account login is needed.')
@@ -31,20 +34,21 @@ export default function GuestChecklists() {
       const result = await transport.current.request('context', more ? { offset: context.next_offset } : {})
       if (!alive.current || current !== generation.current) return
       if (!result.location?.id || !Array.isArray(result.templates) || !Array.isArray(result.submissions)) throw new Error('Store checklist state was not confirmed. Scan the code again.')
+      result.weekly_periods = validateWeeklyPeriods(result.weekly_periods)
       setContext(previous => ({ ...result, submissions: more ? [...new Map([...(previous?.submissions || []), ...result.submissions].map(row => [row.id, row])).values()] : result.submissions }))
     } catch (error) {
       if (alive.current && current === generation.current) { setError(error.message); if (error.status === 401 || error.status === 403) { clearGuestAccess(sessionStorage); setContext(null); setForm(null) } }
     } finally { if (current === generation.current) { working.current = false; if (alive.current) setBusy(false) } }
   }
-  async function open(template, record) {
+  async function open(template, record, periodOverride) {
     if (working.current || !transport.current) return
     working.current = true; setBusy(true); setError(''); setExisting(null)
     const current = generation.current, accessTransport = transport.current
     let periodDate
     try {
       // Bind creation and duplicate recovery to the same displayed occurrence.
-      // The server still rejects a guest start if that period is no longer current.
-      if (!record) periodDate = checklistPeriod(template, localChecklistDate(context.location.timezone, new Date(context.server_now)))
+      // The server permits current periods and eligible new-policy weekly late starts.
+      if (!record) periodDate = periodOverride || checklistPeriod(template, localChecklistDate(context.location.timezone, new Date(context.server_now)))
       const result = record ? await accessTransport.load(record.id) : await accessTransport.start({ template_key: template.key, period_date: periodDate })
       if (alive.current && current === generation.current) setForm(result)
     } catch (error) {
@@ -73,16 +77,17 @@ export default function GuestChecklists() {
       {busy && <p role="status">Loading checklist…</p>}
       {form ? <ChecklistForm key={`${form.row.id}:${form.row.working_copy_id || 'original'}`} initial={form.row} initialCapabilities={form.capabilities} initialEvidence={form.evidence} transport={transport.current} locationLabel={context?.location.site_code} onSaved={row => setContext(previous => ({ ...previous, submissions: [...previous.submissions.filter(item => item.id !== row.id), row] }))} onClose={() => { setForm(null); load() }} /> : context && <>
         <div className="flex flex-wrap gap-3 items-center"><p>Store-local date: {today || 'Unavailable'}</p><button disabled={busy} className="min-h-12 px-4 border rounded" onClick={() => load()}>Refresh</button></div>
+        {context.weekly_periods.some(period => period.older) && <label className="block">Older reporting week (late submission allowed)<select aria-label="Older reporting week" className="block min-h-12 border rounded p-2 bg-white dark:bg-tm-dark-surface" value={olderWeek} onChange={event => setOlderWeek(event.target.value)}><option value="">Current and previous weeks</option>{context.weekly_periods.filter(period => period.older).map(period => <option key={period.period_date} value={period.period_date}>{period.period_date}–{period.period_end}</option>)}</select></label>}
         {['daily', 'weekly'].map(cadence => <section key={cadence} className="tm-checklist-group" data-cadence={cadence}>
           <h2 className="tm-checklist-group-heading font-bold">{cadence === 'daily' ? 'Daily checklists' : 'Weekly checklists'}</h2>
-          <div className="tm-checklist-group-body">{[...context.templates].sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key)).filter(template => template.cadence === cadence).map(template => {
-            const period = today ? checklistPeriod(template, today) : ''
+          <div className="tm-checklist-group-body">{[...context.templates].sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key)).filter(template => template.cadence === cadence).flatMap(template => (cadence === 'weekly' ? context.weekly_periods.filter(period => period.recent !== false || period.period_date === olderWeek) : [{ period_date: today ? checklistPeriod(template,today) : '' }]).map(option => {
+            const period = option.period_date
             const record = context.submissions.find(row => row.template_key === template.key && row.period_date === period)
-            return <article key={template.key} className="tm-checklist-card p-4 flex flex-wrap justify-between items-center gap-3"><div><h3 className="font-bold">{template.name}</h3><p>{period} · {record?.status || 'Available'}</p></div><button disabled={busy || !today || record?.status === 'discarding'} className="tm-checklist-action min-h-12 px-4 border rounded" onClick={() => open(template, record)}>{record?.working_copy_id ? 'Resume correction' : record?.status === 'submitted' ? 'View submission' : record?.status === 'draft' ? 'Resume draft' : record?.status === 'discarding' ? 'Admin cleanup pending' : 'Start checklist'}</button></article>
-          })}</div>
+            return <article key={`${template.key}:${period}`} className="tm-checklist-card p-4 flex flex-wrap justify-between items-center gap-3"><div><h3 className="font-bold">{template.name}</h3><p>{period} · {record?.status || 'Available'}</p>{cadence === 'weekly' && <><p>{option.older ? 'Older reporting week' : option.previous ? 'Previous reporting week' : 'Current reporting week'} · {period}–{option.period_end}</p>{option.legacy_carryover && <p>Earlier reporting week · original rules apply</p>}<ChecklistWeeklyDue timing={record?.weekly_timing || option.weekly_timing} timezone={context.location.timezone} /></>}</div><button disabled={busy || !today || record?.status === 'discarding' || (option.legacy_carryover && !record)} className="tm-checklist-action min-h-12 px-4 border rounded" onClick={() => open(template, record, period)}>{record?.working_copy_id ? 'Resume correction' : record?.status === 'submitted' ? 'View submission' : record?.status === 'draft' ? 'Resume draft' : record?.status === 'discarding' ? 'Admin cleanup pending' : option.legacy_carryover ? 'No saved draft for this earlier week' : 'Start checklist'}</button></article>
+          }))}</div>
         </section>)}
         <section className="space-y-3"><h2 className="font-bold text-xl">Unfinished checklists</h2><p>Saved drafts keep their original day or week and can continue on later days.</p>
-          {drafts.length ? <ul className="space-y-2">{drafts.map(row => <li key={row.id} className="border rounded p-3 flex flex-wrap justify-between items-center gap-2"><span>{row.template_snapshot.name} · {row.period_date}{row.working_copy_id ? ' · Correction' : ''}</span><button disabled={busy} className="min-h-11 px-3 border rounded" onClick={() => open(null, row)}>Continue</button></li>)}</ul> : <p>No unfinished checklists.</p>}
+          {drafts.length ? <ul className="space-y-2">{drafts.map(row => <li key={row.id} className="border rounded p-3 flex flex-wrap justify-between items-center gap-2"><span>{row.template_snapshot.name} · {row.period_date}{row.working_copy_id ? ' · Correction' : ''}<ChecklistWeeklyDue timing={row.weekly_timing} timezone={row.template_snapshot.timezone} /></span><button disabled={busy} className="min-h-11 px-3 border rounded" onClick={() => open(null, row)}>Continue</button></li>)}</ul> : <p>No unfinished checklists.</p>}
           {context.has_more && <button disabled={busy} className="min-h-12 px-4 border rounded" onClick={() => load(true)}>Load more saved checklists</button>}
         </section>
       </>}

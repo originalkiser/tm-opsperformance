@@ -1,3 +1,4 @@
+import { legacyWeeklyPeriods } from './helpers/weeklyDeadlineFixture.js'
 import { weeklyPmTemplate as pm } from '../src/utils/weeklyPmTemplate.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -37,7 +38,7 @@ test('Admin and assigned managers see explicit checklist order regardless of ret
  for(const role of ['admin','store']){
   const templates=['closing','weekly','midday','opening'].map(key=>checklistTemplates.find(t=>t.key===key))
   const before=JSON.stringify(templates)
-  const client={async rpc(name){assert.equal(name,'configuration_capabilities');return {data:{can_edit_templates:false}}},from(name){return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:name==='checklist_pilot_access'?[{location_id:'site',is_active:true,enabled_from:'2026-01-01'}]:[]}).then(resolve)}}}}
+  const client={async rpc(name,args){if(name==='checklist_weekly_periods')return {data:legacyWeeklyPeriods(args)};assert.equal(name,'configuration_capabilities');return {data:{can_edit_templates:false}}},from(name){return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:name==='checklist_pilot_access'?[{location_id:'site',is_active:true,enabled_from:'2026-01-01'}]:[]}).then(resolve)}}}}
   const h=locationHelpHarness('pages/ManagerChecklists',{
    ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,
    useAuth:()=>({user:{id:actor},profile:{role,is_active:true,deleted_at:null},locations:[{id:'site',site_code:'1512',timezone:'America/New_York'}]}),supabase:client,
@@ -331,7 +332,7 @@ test('companywide page shows availability without auto-created drafts or derived
   const h=locationHelpHarness('pages/ManagerChecklists',{
    ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,
    useAuth:()=>({user:{id:actor},profile:{role,is_active:true},locations:[{id:'site',site_code:'Fictional Site',timezone:'America/New_York'}]}),
-   supabase:{from(name){calls.push(name);return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:records}).then(resolve)}}},async rpc(name){assert.equal(name,'configuration_capabilities','Availability must not create drafts');return {data:{can_edit_templates:false}}}},
+   supabase:{from(name){calls.push(name);return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:records}).then(resolve)}}},async rpc(name,args){if(name==='checklist_weekly_periods')return {data:legacyWeeklyPeriods(args)};assert.equal(name,'configuration_capabilities','Availability must not create drafts');return {data:{can_edit_templates:false}}}},
    checklistPeriod,completionStatus:(t,d,rows)=>rows.some(r=>r.template_key===t.key)?'Submitted':'Available',localChecklistDate:()=> '2026-11-02',checklistTimestamp,
    Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
   })
@@ -364,7 +365,7 @@ test('only Super Admin capability reveals editor; ordinary Admin retains QR mana
   const Editor=()=>null, Qr=()=>null
   const h=locationHelpHarness('pages/ManagerChecklists',{
    useAuth:()=>({user:{id:actor},profile:{role:'admin',is_active:true},locations:[{id:'site',site_code:'Fictional',timezone:'America/New_York'}]}),
-   supabase:{async rpc(name){assert.equal(name,'configuration_capabilities');return {data:{can_edit_templates:allowed}}},from(name){assert.notEqual(name,'checklist_pilot_access');return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:[]}).then(resolve)}}}},
+   supabase:{async rpc(name,args){if(name==='checklist_weekly_periods')return {data:legacyWeeklyPeriods(args)};assert.equal(name,'configuration_capabilities');return {data:{can_edit_templates:allowed}}},from(name){assert.notEqual(name,'checklist_pilot_access');return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:[]}).then(resolve)}}}},
    checklistPeriod,completionStatus:()=> 'Available',localChecklistDate:()=> '2026-11-02',checklistTimestamp,
    Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:Editor,ChecklistQrAdmin:Qr,ChecklistOpenWork:()=>null,
   })
@@ -432,7 +433,7 @@ test('PM restored draft can submit with inactive branches unanswered and three s
  h.unmount()
 })
 test('PM remains fifth after Weekly Manager Administrative regardless of database order',async()=>{
- const client={from(name){return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?[pm,...checklistTemplates.slice().reverse()]:[]}).then(resolve)}}}}
+ const client={async rpc(name,args){assert.equal(name,'checklist_weekly_periods');return {data:legacyWeeklyPeriods(args)}},from(name){return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?[pm,...checklistTemplates.slice().reverse()]:[]}).then(resolve)}}}}
  const h=locationHelpHarness('pages/ManagerChecklists',{
    ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,
   useAuth:()=>({user:{id:actor},profile:{role:'store',is_active:true},locations:[{id:'site',timezone:'America/New_York'}]}),supabase:client,

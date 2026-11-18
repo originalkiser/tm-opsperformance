@@ -5,6 +5,9 @@ import ChecklistAccessForm from '../components/ChecklistAccessForm'
 import ChecklistQrAdmin from '../components/ChecklistQrAdmin'
 import ChecklistOpenWork from '../components/ChecklistOpenWork'
 import ChecklistAdmin from '../components/ChecklistAdmin'
+import ChecklistWeeklyDue from '../components/ChecklistWeeklyDue'
+import { validateWeeklyPeriods } from '../utils/checklistWeekly'
+import { addChecklistDays } from '../utils/checklistCompliance'
 import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { supabase, supabasePublicKey } from '../lib/supabase'
 import { checklistPeriod, completionStatus, localChecklistDate, checklistTimestamp } from '../utils/checklistRules'
@@ -21,6 +24,7 @@ export default function ManagerChecklists() {
   const [templates, setTemplates] = useState([]), [rows, setRows] = useState([])
   const [site, setSite] = useState(locations[0]?.id || ''), [date, setDate] = useState(''), [form, setForm] = useState(null)
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [showAdmin, setShowAdmin] = useState(false)
+  const [weeklyPeriods, setWeeklyPeriods] = useState([])
   const [configurationAccess, setConfigurationAccess] = useState(null)
   useEffect(() => {
     let current = true
@@ -39,7 +43,7 @@ export default function ManagerChecklists() {
   const scope = locations
   useEffect(() => { setDate(today) }, [site, today])
   async function load() {
-    if (!authorized) { setTemplates([]); setRows([]); setForm(null); return }
+    if (!authorized || !site || !date) { setTemplates([]); setRows([]); setForm(null); return }
     const current = ++request.current
     setError(''); setExisting(null); setBusy(true)
     try {
@@ -50,6 +54,8 @@ export default function ManagerChecklists() {
         readRows().in('template_key', displayOrder).gte('period_date', start).lte('period_date', date || start).order('created_at'),
         readRows().in('template_key', auditKeys)
           .gte('period_date', date ? checklistPeriod({ cadence: 'quarterly' }, date) : start).lte('period_date', date || start).order('created_at'),
+        supabase.rpc('checklist_weekly_periods', { p_location: site, p_date: date }),
+        readRows().in('template_key', ['weekly','weekly_pm']).eq('period_date', addChecklistDays(start,-7)).order('created_at'),
       ])
       if (current !== request.current) return
       const failed = results.find(result => result.error)
@@ -58,21 +64,24 @@ export default function ManagerChecklists() {
         (displayOrder.indexOf(a.key) < 0 ? displayOrder.length : displayOrder.indexOf(a.key)) -
         (displayOrder.indexOf(b.key) < 0 ? displayOrder.length : displayOrder.indexOf(b.key))))
       const auditRows = (results[2].data || []).filter(row => row.period_date === checklistPeriod({ cadence: row.template_key === auditKeys[0] ? 'monthly' : 'quarterly' }, date || start))
-      setRows([...(results[1].data || []), ...auditRows])
+      const periods = validateWeeklyPeriods(results[3].data)
+      setWeeklyPeriods(periods)
+      const previous = new Set(periods.filter(p => p.previous).map(p => p.period_date))
+      setRows([...(results[1].data || []), ...(results[4].data || []).filter(row => previous.has(row.period_date)), ...auditRows])
 
     } catch (error) { if (current === request.current) setError(error.message) } finally { if (current === request.current) setBusy(false) }
   }
-  useEffect(() => { load(); return () => { request.current++ } }, [date, user?.id, authorized])
+  useEffect(() => { load(); return () => { request.current++ } }, [date, site, user?.id, authorized])
   useEffect(() => { if (!admin && scope.length && !scope.some(location => location.id === site)) setSite(scope[0].id) }, [locations, site])
-  async function open(template, record) {
+  async function open(template, record, periodOverride) {
     if (opening.current) return
     opening.current = true
     const current = request.current
     setBusy(true); setError(''); setExisting(null)
     try {
-      if (!record && managerPreview) record = { id: `preview:${template.key}:${site}`, template_key: template.key, location_id: site, period_date: checklistPeriod(template, date), status: 'draft', created_by: user.id, updated_at: new Date().toISOString(), revision: 0, answers: {}, manager_name: '', template_snapshot: { ...template, timezone: selected?.timezone }, preview_only: true }
+      if (!record && managerPreview) record = { id: `preview:${template.key}:${site}`, template_key: template.key, location_id: site, period_date: (periodOverride || checklistPeriod(template, date)), status: 'draft', created_by: user.id, updated_at: new Date().toISOString(), revision: 0, answers: {}, manager_name: '', template_snapshot: { ...template, timezone: selected?.timezone }, preview_only: true }
       if (!record) {
-        const result = await supabase.rpc('save_checklist', { p_template: template.key, p_location: site, p_date: checklistPeriod(template, date) })
+        const result = await supabase.rpc('save_checklist', { p_template: template.key, p_location: site, p_date: (periodOverride || checklistPeriod(template, date)) })
         if (result.error) throw result.error
         record = result.data
       }
@@ -81,7 +90,7 @@ export default function ManagerChecklists() {
       if (current !== request.current) return
       if (!record && error.code === '23505') {
         try {
-          const existing = await findChecklistOccurrence(createChecklistTransport(supabase, supabasePublicKey), { templateKey: template.key, periodDate: checklistPeriod(template, date), locationId: site })
+          const existing = await findChecklistOccurrence(createChecklistTransport(supabase, supabasePublicKey), { templateKey: template.key, periodDate: (periodOverride || checklistPeriod(template, date)), locationId: site })
           if (current === request.current) {
             setExisting(existing)
             setError(existing ? 'This checklist already exists for this reporting period. Reopen the saved checklist to continue or view its submission.' : 'This checklist already exists, but your account cannot reopen it here. Refresh the list or ask Admin to review access.')
@@ -109,19 +118,19 @@ export default function ManagerChecklists() {
         {scope.length === 0 && !admin && <p>No assigned checklist locations are available.</p>}
         {today && date && ['daily', 'weekly', 'management'].filter(cadence => cadence !== 'management' || selected?.exclude_from_reporting !== true).map(cadence => <div role="group" key={cadence} className="tm-checklist-group" data-cadence={cadence} aria-label={cadence === 'daily' ? 'Daily checklists' : cadence === 'weekly' ? 'Weekly checklists' : 'Management Audits'}>
           <div className="tm-checklist-group-heading font-brand font-bold">{cadence === 'daily' ? 'Daily checklists' : cadence === 'weekly' ? 'Weekly checklists' : 'Management Audits'}</div>
-          <div className="tm-checklist-group-body">{templates.filter(template => cadence === 'management' ? auditKeys.includes(template.key) : template.cadence === cadence).map(template => {
-          const period = checklistPeriod(template, date)
+          <div className="tm-checklist-group-body">{templates.filter(template => cadence === 'management' ? auditKeys.includes(template.key) : template.cadence === cadence).flatMap(template => (cadence === 'weekly' ? weeklyPeriods.filter(period => period.recent !== false) : [{ period_date: checklistPeriod(template,date) }]).map(option => {
+          const period = option.period_date
           const records = rows.filter(row => row.location_id === site)
           const record = records.find(row => row.template_key === template.key && row.period_date === period)
-          return scope.some(location => location.id === site) && <section key={template.key} className="tm-checklist-card p-4 flex flex-wrap gap-4 justify-between items-center" data-status={record?.status || 'available'}>
-            <div className="tm-checklist-card-copy"><h2 className="font-bold">{template.name}</h2><p className="tm-checklist-card-meta"><span className="tm-checklist-status">{completionStatus(template, date, records)}</span> · {auditKeys.includes(template.key) ? `${template.cadence === 'monthly' ? 'Monthly' : 'Quarterly'} · ` : ''}{period}{record?.is_pilot ? ' · Historical pilot' : ''}</p></div>
-            <button disabled={busy || date > today} className="tm-checklist-action min-h-12 px-5 rounded border" onClick={() => open(template, record)}>{record?.status === 'submitted' ? 'View submission' : record?.status === 'discarding' ? 'Finish discarding draft' : record ? 'Resume draft' : 'Start checklist'}</button>
+          return scope.some(location => location.id === site) && <section key={`${template.key}:${period}`} className="tm-checklist-card p-4 flex flex-wrap gap-4 justify-between items-center" data-status={record?.status || 'available'}>
+            <div className="tm-checklist-card-copy"><h2 className="font-bold">{template.name}</h2><p className="tm-checklist-card-meta"><span className="tm-checklist-status">{completionStatus(template, period, records)}</span> · {auditKeys.includes(template.key) ? `${template.cadence === 'monthly' ? 'Monthly' : 'Quarterly'} · ` : ''}{period}{record?.is_pilot ? ' · Historical pilot' : ''}</p>{cadence === 'weekly' && <><p className="text-sm">{option.previous ? 'Previous reporting week' : 'Selected reporting week'} · {period}–{option.period_end}</p><ChecklistWeeklyDue timing={option.checklists?.[template.key] || option.weekly_timing} timezone={selected?.timezone} /></>}</div>
+            <button disabled={busy || date > today} className="tm-checklist-action min-h-12 px-5 rounded border" onClick={() => open(template, record, period)}>{record?.status === 'submitted' ? 'View submission' : record?.status === 'discarding' ? 'Finish discarding draft' : record ? 'Resume draft' : 'Start checklist'}</button>
           </section>
-        })}</div></div>)}
+        }))}</div></div>)}
         {site && <ChecklistOpenWork key={site} locationId={site} onOpen={record => open(null, record)} disabled={busy} />}
         {admin && <>
           <h2 className="tm-checklist-review-heading font-bold text-lg">Checklist submission review</h2>
-          <p>Existing records from Monday through the selected site-local date. No missing or overdue obligations are generated.</p>
+          <p>Existing records for the selected period, including available weekly carryover. New-policy weekly due dates are shown above; earlier periods retain their original behavior.</p>
           <ul>{rows.filter(record => !auditKeys.includes(record.template_key)).map(record => <li key={record.id} className="border-b py-3">
             {locations.find(location => location.id === record.location_id)?.site_code} · {record.template_snapshot.name} · {record.period_date} · {record.status}{record.is_pilot ? ' · Historical pilot' : ''}
             <button disabled={busy} className="min-h-12 px-4 underline" onClick={() => open(null, record)}>Review {record.status} · {record.manager_name || 'Unnamed draft'} · {checklistTimestamp(record.submitted_at || record.updated_at, record.template_snapshot.timezone)}</button>

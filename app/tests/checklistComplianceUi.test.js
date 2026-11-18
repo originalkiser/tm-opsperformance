@@ -4,12 +4,12 @@ import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 import * as compliance from '../src/utils/checklistCompliance.js'
 const site = { id: 'a', site_code: '1001', name: 'Fictional North', market: 'North', timezone: 'America/New_York', local_today: '2026-11-11' }
 const snapshot = () => ({ generated_at: '2026-11-11T15:00:00Z', locations: [site, { ...site, id: 'b', site_code: '1002', name: 'Fictional South', market: 'South' }], submissions: ['opening', 'midday', 'closing'].map(template_key => ({ location_id: 'a', template_key, period_date: '2026-11-11', status: 'submitted', is_pilot: false })) })
-function fixture({ slow = false, fail = false, profile = { role: 'admin', is_active: true }, user = { id: 'one' } } = {}) {
+function fixture({ payload = null, slow = false, fail = false, profile = { role: 'admin', is_active: true }, user = { id: 'one' } } = {}) {
   let auth = { user, profile, locations: [site] }
   const calls = [], exports = [], pending = []
   const h = locationHelpHarness('pages/ChecklistCompliance', {
     ...compliance, useAuth: () => auth, Link: () => null, NavBar: () => null, supabase: {}, localChecklistDate: () => '2026-11-11',
-    fetchChecklistCompliance: async (_client, range) => { calls.push(range); if (slow) return new Promise((resolve, reject) => pending.push({ resolve, reject })); if (fail) throw new Error('Report unavailable'); return snapshot() },
+    fetchChecklistCompliance: async (_client, range) => { calls.push(range); if (slow) return new Promise((resolve, reject) => pending.push({ resolve, reject })); if (fail) throw new Error('Report unavailable'); return payload || snapshot() },
     downloadComplianceCsv: (...args) => exports.push(args),
   })
   return { ...h, calls, exports, pending, auth: value => { auth = value; h.render() } }
@@ -104,4 +104,21 @@ test('a removed location filter resets instead of silently hiding refreshed avai
   h.pending[1].resolve({ ...snapshot(), locations: [{ ...site, id: 'b' }], submissions: [] }); await h.flush()
   assert.equal(h.find(node => node.props?.['aria-label'] === 'Location').props.value, '')
   assert.equal(bodyRows(h).length, 1); h.unmount()
+})
+
+test('new weekly UI preserves separate late, overdue and draft filters and shows server zero scores',async()=>{
+ const period='2026-11-09',timing=phase=>({due_at:'2026-11-17T05:00:00Z',due_date:'2026-11-16',phase})
+ const record=(location_id,template_key,status,phase)=>({location_id,template_key,period_date:period,status,is_pilot:false,weekly_timing:timing(phase)})
+ const payload={generated_at:'2026-11-17T06:00:00Z',locations:[{...site,local_today:'2026-11-17'},{...site,id:'b',site_code:'1002',local_today:'2026-11-17'}],submissions:[record('a','weekly','submitted','submitted_on_time'),record('a','weekly_pm','submitted','completed_late'),record('b','weekly','draft','overdue')],weekly_periods:['a','b'].map(location_id=>({location_id,period_date:period,weekly_timing:timing('overdue'),score:0}))}
+ const h=fixture({payload});await h.flush();button(h,'Weekly').props.onClick();await h.flush()
+ assert.equal(bodyRows(h).length,2)
+ assert.ok(h.find(n=>n.type==='span'&&n.props.children==='Completed Late'))
+ assert.ok(h.find(n=>n.type==='span'&&n.props.children==='Submitted on time'))
+ assert.ok(h.find(n=>n.type==='span'&&n.props.children==='Overdue'))
+ assert.ok(h.find(n=>n.type==='span'&&n.props.children==='In progress'))
+ assert.equal(h.all(n=>n.type==='td'&&n.props.children==='0%').length,2)
+ change(h,'Completion status','late');h.render();assert.equal(bodyRows(h).length,1)
+ change(h,'Completion status','overdue');h.render();assert.equal(bodyRows(h).length,1)
+ change(h,'Completion status','progress');h.render();assert.equal(bodyRows(h).length,1)
+ h.unmount()
 })

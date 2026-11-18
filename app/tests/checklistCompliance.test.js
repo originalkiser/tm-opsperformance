@@ -53,7 +53,7 @@ test('RPC is the only read path and retains only the documented summary fields',
   const input = data(); input.submissions = [{ ...submission('opening'), answers: { private: true }, manager_name: 'Must not retain', created_by: 'hidden' }]
   const calls = [], client = { async rpc(name, args) { calls.push({ name, args }); return { data: input } }, from() { throw Error('Raw fallback attempted') } }
   const result = await fetchChecklistCompliance(client, range)
-  assert.deepEqual(calls, [{ name: 'get_checklist_compliance', args: { p_start: range.start, p_end: range.end } }])
+  assert.deepEqual(calls, [{ name: 'get_checklist_compliance', args: { p_start: range.start, p_end: range.end, p_weekly_contract: 1 } }])
   assert.deepEqual(Object.keys(result.submissions[0]).sort(), ['is_pilot', 'location_id', 'period_date', 'status', 'template_key'])
   assert.doesNotMatch(JSON.stringify(result), /Must not retain|answers|created_by/)
   await assert.rejects(fetchChecklistCompliance({ ...client, async rpc() { return { error: { code: '42501' } } } }, range), /could not be loaded/)

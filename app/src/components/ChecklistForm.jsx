@@ -1,3 +1,4 @@
+import ChecklistWeeklyDue from './ChecklistWeeklyDue'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import ChecklistSignature from './ChecklistSignature'
@@ -29,6 +30,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   const dirty = !readonly && (JSON.stringify(answers) !== JSON.stringify(row.answers) || name !== row.manager_name || signatureDirty)
   latestDirty.current = dirty
   const operationalChecklist = ['opening', 'midday', 'closing', 'weekly', 'weekly_pm'].includes(row.template_key)
+  const weeklyTiming = capabilities?.weekly_timing || row.weekly_timing
   const managementAudit = ['monthly_site_assessment', 'quarterly_safety_audit'].includes(row.template_key)
   const auditorSignature = managementAudit || row.template_key === 'weekly_pm'
   const items = row.template_snapshot.definition
@@ -120,14 +122,14 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
       }
     }
     window.addEventListener('focus', refresh)
-    const remaining = new Date(capabilities?.edit_deadline_at).getTime() - new Date(capabilities?.server_now).getTime()
+    const remaining = new Date(capabilities?.edit_deadline_at || capabilities?.weekly_timing?.due_at).getTime() - new Date(capabilities?.server_now).getTime()
     const timer = Number.isFinite(remaining) && remaining > 0 ? setTimeout(() => {
-      setCapabilities(previous => ({ ...previous, can_edit: false, can_begin_edit: false, can_upload: false }))
+      if (capabilities?.edit_deadline_at) setCapabilities(previous => ({ ...previous, can_edit: false, can_begin_edit: false, can_upload: false }))
       refresh()
     }, Math.min(remaining + 50, 2147483647)) : null
     timer?.unref?.()
     return () => { window.removeEventListener('focus', refresh); if (timer !== null) clearTimeout(timer) }
-  }, [transport, row.id, row.working_copy_id, capabilities?.edit_deadline_at, capabilities?.server_now])
+  }, [transport, row.id, row.working_copy_id, capabilities?.edit_deadline_at, capabilities?.weekly_timing?.due_at, capabilities?.server_now])
   const firstInvalid = Object.keys(errors)[0]
   const invalidItem = items.find(item => item.id === firstInvalid)
   const validationMessage = firstInvalid ? `${invalidItem ? invalidItem.text + ': ' : ''}${errors[firstInvalid]}` : ''
@@ -267,7 +269,9 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   return <section className="space-y-3 border rounded-xl p-3 sm:p-4 text-sm sm:text-base bg-white dark:bg-tm-dark-surface" aria-label="Checklist responses">
     <h2 className="text-lg sm:text-xl font-bold">{row.template_snapshot.name} · {row.period_date}</h2>
     <p className="text-xs sm:text-sm break-words">Location: {locationLabel || row.location_id}{transport ? transport.guest ? ' · Store QR access. Names are self-reported.' : ' · Signed-in account access.' : <> · Authenticated account: {actorName} ({row.created_by})</>}</p>
-    {transport && capabilities?.edit_deadline_at && <p className="text-sm">Corrections close: {checklistTimestamp(capabilities.edit_deadline_at, row.template_snapshot.timezone)}. The assigned date or week sets this deadline.</p>}
+    <ChecklistWeeklyDue timing={weeklyTiming} timezone={row.template_snapshot.timezone} />
+    {weeklyTiming && <p className="text-sm">Initial submissions remain allowed after this deadline; those received late are permanently marked Completed Late. Corrections close at this deadline.</p>}
+    {transport && !weeklyTiming && capabilities?.edit_deadline_at && <p className="text-sm">Corrections close: {checklistTimestamp(capabilities.edit_deadline_at, row.template_snapshot.timezone)}. The assigned date or week sets this deadline.</p>}
     {correcting && !capabilities?.can_edit && <p role="alert" className="rounded border border-amber-500 p-3">This is an unfinished correction, not the submitted record. Editing is locked. Refresh the saved checklist to view the official version.</p>}
     {correcting && <p role="status" className="rounded border p-3">Editing a correction. The last submitted version remains official until you submit these changes. Draw fresh required signatures to confirm these corrected answers.</p>}
     {transport && !previewReadOnly && capabilities?.can_begin_edit && !correcting && <button disabled={busy} className="min-h-12 px-4 border rounded" onClick={() => action(async () => { acceptResult(await transport.beginCorrection(row), true); recovery.current = null; setNotice('Correction started. Earlier answers, photos and signatures are preserved.') })}>Make correction</button>}
@@ -334,7 +338,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
       {(!readonly || (previewReadOnly && row.status === 'draft')) && <><button disabled={busy || staleVersion.current || previewReadOnly} className="min-h-11 px-2 sm:px-4 border rounded" onClick={() => action(() => save())}>Save Draft</button>
         <button disabled={busy || staleVersion.current || signatureDirty || !evidenceReady || previewReadOnly} className="min-h-11 px-2 sm:px-4 rounded bg-tm-teal text-tm-navy font-bold" onClick={() => {
           const problems = validateChecklist(items, answers, evidence, name, managementAudit); setErrors(problems)
-          if (!Object.keys(problems).length && window.confirm(managementAudit ? 'Submit this management audit? Corrections close at the end of the assigned site-local month or quarter. Earlier submissions and evidence are preserved.' : transport ? 'Submit this checklist? Daily corrections close at the end of the assigned site-local day; weekly corrections close at midnight Monday after the assigned week. Earlier submissions and evidence are preserved. MonitorQA remains official.' : 'Submit this pilot checklist? Answers, photos and signature will be locked. MonitorQA remains official.')) action(() => save(true))
+          if (!Object.keys(problems).length && window.confirm(managementAudit ? 'Submit this management audit? Corrections close at the end of the assigned site-local month or quarter. Earlier submissions and evidence are preserved.' : weeklyTiming ? 'Submit for this original reporting week? Submissions after the Monday 11:59 p.m. site-local deadline are permanently Completed Late and cannot earn on-time compliance. Corrections close at that deadline. Earlier versions and evidence are preserved.' : transport ? 'Submit this checklist? Daily corrections close at the end of the assigned site-local day; weekly corrections close at midnight Monday after the assigned week. Earlier submissions and evidence are preserved. MonitorQA remains official.' : 'Submit this pilot checklist? Answers, photos and signature will be locked. MonitorQA remains official.')) action(() => save(true))
         }}>Submit</button></>}
       <button disabled={busy} className="min-h-11 px-2 sm:px-4 border rounded" onClick={close}>Close</button>
       </div>

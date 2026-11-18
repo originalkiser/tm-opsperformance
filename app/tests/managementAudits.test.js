@@ -1,3 +1,4 @@
+import { legacyWeeklyPeriods } from './helpers/weeklyDeadlineFixture.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -31,7 +32,7 @@ test('approved optional comments do not block submission; Failed activates requi
 function page(excluded=false){
  const calls=[],records=audits.map(t=>({id:t.key,template_key:t.key,location_id:'site',period_date:checklistPeriod(t,'2026-11-12'),status:'draft',template_snapshot:{...t,timezone:'America/New_York'},manager_name:'Fictional',updated_at:'2026-11-12T12:00:00Z'}))
  const templates=[...checklistTemplates,{key:'weekly_pm',name:'Weekly Preventive Maintenance Checklist',cadence:'weekly'},...audits]
- const client={from(name){const q={name,keys:null,start:null};calls.push(q);return {select(){return this},in(k,v){q.keys=v;return this},gte(k,v){q.start=v;return this},lte(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:records.filter(r=>q.keys?.includes(r.template_key))}).then(resolve)}}},async rpc(name){assert.equal(name,'configuration_capabilities','Page must not auto-create audits');return {data:{can_edit_templates:false}}}}
+ const client={from(name){const q={name,keys:null,start:null};calls.push(q);return {select(){return this},in(k,v){q.keys=v;return this},gte(k,v){q.start=v;return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:records.filter(r=>q.keys?.includes(r.template_key))}).then(resolve)}}},async rpc(name,args){if(name==='checklist_weekly_periods')return {data:legacyWeeklyPeriods(args)};assert.equal(name,'configuration_capabilities','Page must not auto-create audits');return {data:{can_edit_templates:false}}}}
  const h=locationHelpHarness('pages/ManagerChecklists',{useAuth:()=>({user:{id:'auditor'},profile:{role:'admin',is_active:true},locations:[{id:'site',site_code:'QA Fictional',timezone:'America/New_York',exclude_from_reporting:excluded}]}),supabase:client,checklistPeriod,completionStatus:()=> 'Available',localChecklistDate:()=> '2026-11-12',checklistTimestamp,NavBar:()=>null,Link:()=>null,ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,ChecklistAdmin:()=>null})
  return {...h,calls}
 }
