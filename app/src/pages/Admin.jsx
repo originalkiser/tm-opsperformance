@@ -96,32 +96,37 @@ export default function Admin() {
   }
 
   const updateUser = async (userId, updates) => {
-    await supabase.from('user_profiles').update(updates).eq('id', userId)
+    const { error } = await supabase.from('user_profiles').update(updates).eq('id', userId)
+    if (error) window.alert(error.message)
     fetchUsers()
   }
 
   const deactivateUser = async (userId) => {
-    await supabase.from('user_profiles').update({ is_active: false }).eq('id', userId)
+    const { error } = await supabase.from('user_profiles').update({ is_active: false }).eq('id', userId)
+    if (error) window.alert(error.message)
     fetchUsers()
   }
 
   const reactivateUser = async (userId) => {
-    await supabase.from('user_profiles').update({ is_active: true }).eq('id', userId)
+    const { error } = await supabase.from('user_profiles').update({ is_active: true }).eq('id', userId)
+    if (error) window.alert(error.message)
     fetchUsers()
   }
 
   const softDeleteUser = async (userId) => {
-    await supabase.from('user_profiles')
+    const { error } = await supabase.from('user_profiles')
       .update({ deleted_at: new Date().toISOString(), is_active: false })
       .eq('id', userId)
+    if (error) window.alert(error.message)
     fetchUsers()
     if (isAdmin) fetchDeletedUsers()
   }
 
   const restoreUser = async (userId) => {
-    await supabase.from('user_profiles')
+    const { error } = await supabase.from('user_profiles')
       .update({ deleted_at: null, is_active: true })
       .eq('id', userId)
+    if (error) window.alert(error.message)
     fetchDeletedUsers()
     fetchUsers()
   }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import ChecklistSignature from './ChecklistSignature'
 import ChecklistCamera from './ChecklistCamera'
-import { validateChecklist, validateEvidence, checklistTimestamp, isChecklistItemActive } from '../utils/checklistRules'
+import { validateChecklist, validateEvidence, checklistTimestamp, isChecklistItemActive, requiredChecklistPhotos } from '../utils/checklistRules'
 import { downloadChecklistEvidence, checklistUploadRejection } from '../utils/checklistEvidence'
 
 export default function ChecklistForm({ initial, user, locationLabel, onClose, onSaved, admin = false, previewReadOnly = false, transport = null, initialCapabilities = null, initialEvidence = [] }) {
@@ -134,7 +134,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   useEffect(() => {
     if (!firstInvalid) return
     const message = errors[firstInvalid]
-    const targetKey = message.startsWith('Required signature missing.') ? `signature:${firstInvalid}` : message.startsWith('Required photo missing.') ? `photo:${firstInvalid}` : firstInvalid
+    const targetKey = message.startsWith('Required signature missing.') ? `signature:${firstInvalid}` : /^Required photos? missing/.test(message) ? `photo:${firstInvalid}` : firstInvalid
     const target = invalidTargets.current[targetKey] || invalidTargets.current[firstInvalid]
     target?.focus({ preventScroll: true })
     target?.scrollIntoView({ block: 'center' })
@@ -237,10 +237,11 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
     }, true)
   }
   // Keep the existing attachment key so saved evidence and validation stay compatible.
-  const sectionPhoto = row.template_key === 'weekly' ? items.find(item => item.id === 'weekly-9' && item.section === 'Communications Board') : null
+  const sectionPhoto = row.template_key === 'weekly' ? items.find(item => item.id === 'weekly-9') : null
   function photoControl(item, section = false) {
     return <div ref={node => { invalidTargets.current[`photo:${item.id}`] = node }} tabIndex={-1} className="space-y-1 text-sm scroll-mb-48" aria-label={section ? 'Communications Board section photo' : `Photo evidence ${item.id}`}>
-      <p className="font-semibold">{section ? 'One photo required for the Communications Board section.' : 'One photo required for this item.'}</p>
+      <p className="font-semibold">{requiredChecklistPhotos(item, answers[item.id]) === 1 ? (section ? `One photo required for the ${item.section} section.` : 'One photo required for this item.') : `${requiredChecklistPhotos(item, answers[item.id])} photos required for ${section ? 'this section' : 'this item'}.`}</p>
+      {item.photo_min_count != null && <p>{evidence.filter(file => file.kind === 'photo' && file.item_id === item.id).length} saved / {requiredChecklistPhotos(item, answers[item.id])} required</p>}
       {section && item.instruction && <p>{item.instruction}</p>}
       {(!readonly || (previewReadOnly && row.status === 'draft')) && (!transport || capabilities?.can_upload || previewReadOnly) && (operationalChecklist ? <ChecklistCamera itemId={item.id} disabled={busy || staleVersion.current || previewReadOnly} onCapture={file => upload(file, item.id, 'photo')} /> : <label className="block">Add photo
         <input aria-label={`Upload photo ${item.id}`} disabled={busy || staleVersion.current || previewReadOnly} type="file" accept="image/jpeg,image/png,image/webp"
@@ -283,7 +284,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
       {(index === 0 || items[index - 1].section !== item.section) && <div className="mt-4 border-b pb-2 space-y-2">
         <h3 className="text-lg font-bold">{item.section}</h3>
         {sectionPhoto?.section === item.section && <>
-          {(sectionPhoto.photo_required || (sectionPhoto.photo_on_failure && sectionPhoto.failure_values.includes(answers[sectionPhoto.id]?.value))) && photoControl(sectionPhoto, true)}
+          {requiredChecklistPhotos(sectionPhoto, answers[sectionPhoto.id]) > 0 && photoControl(sectionPhoto, true)}
           <EvidenceLinks files={evidence.filter(file => file.item_id === sectionPhoto.id)} onOpen={openEvidence} />
         </>}
       </div>}
@@ -297,7 +298,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
           <input type="radio" name={item.id} value={option} checked={answers[item.id]?.value === option} onChange={() => change(item.id, 'value', option)} className="w-5 h-5 shrink-0" />{option}</label>)}</div>}
         {(item.explanation_required || item.failure_values.includes(answers[item.id]?.value) || answers[item.id]?.value === 'N/A' || answers[item.id]?.explanation) && <label className="block">Explanation / N/A reason
           <textarea className="block w-full border rounded p-3 bg-transparent" maxLength={4000} value={answers[item.id]?.explanation || ''} onChange={event => change(item.id, 'explanation', event.target.value)} /></label>}
-        {(item !== sectionPhoto && (item.photo_required || (item.photo_on_failure && item.failure_values.includes(answers[item.id]?.value)))) && photoControl(item)}
+        {item !== sectionPhoto && requiredChecklistPhotos(item, answers[item.id]) > 0 && photoControl(item)}
         {errors[item.id] && <p role="alert" className="text-red-600 dark:text-red-300">{errors[item.id]}</p>}
       </fieldset>
       {item.signature_required && signatureControl(item)}

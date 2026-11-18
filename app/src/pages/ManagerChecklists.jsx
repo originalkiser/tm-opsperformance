@@ -21,6 +21,15 @@ export default function ManagerChecklists() {
   const [templates, setTemplates] = useState([]), [rows, setRows] = useState([])
   const [site, setSite] = useState(locations[0]?.id || ''), [date, setDate] = useState(''), [form, setForm] = useState(null)
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [showAdmin, setShowAdmin] = useState(false)
+  const [configurationAccess, setConfigurationAccess] = useState(null)
+  useEffect(() => {
+    let current = true
+    setConfigurationAccess(null)
+    if (admin && !managerPreview) supabase.rpc('configuration_capabilities').then(({ data, error }) => {
+      if (current && !error && data?.can_edit_templates === true) setConfigurationAccess(user.id)
+    }).catch(() => { if (current) setConfigurationAccess(null) })
+    return () => { current = false }
+  }, [admin, user?.id, managerPreview])
   const [existing, setExisting] = useState(null)
   const request = useRef(0), opening = useRef(false)
   useEffect(() => { setExisting(null) }, [site, date, user?.id, authorized])
@@ -125,8 +134,8 @@ export default function ManagerChecklists() {
               <button disabled={busy} className="min-h-12 px-4 underline" onClick={() => open(null, record)}>Review {record.status} · {record.manager_name || 'Unnamed draft'} · {checklistTimestamp(record.submitted_at || record.updated_at, record.template_snapshot.timezone)}</button>
             </li>)}</ul>
           </section>}
-          <button className="min-h-12 px-4 border rounded" onClick={() => setShowAdmin(previous => !previous)}>{showAdmin ? 'Hide' : 'Manage'} checklist templates</button>
-          {showAdmin && <><ChecklistQrAdmin location={selected} /><ChecklistAdmin templates={templates} reload={load} /></>}
+          <button className="min-h-12 px-4 border rounded" onClick={() => setShowAdmin(previous => !previous)}>{showAdmin ? 'Hide' : 'Manage'} checklist configuration</button>
+          {showAdmin && <><ChecklistQrAdmin location={selected} />{configurationAccess === user?.id && !managerPreview && <ChecklistAdmin templates={templates} reload={load} />}</>}
         </>}
       </>}
     </main>

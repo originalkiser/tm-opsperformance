@@ -37,7 +37,7 @@ test('Admin and assigned managers see explicit checklist order regardless of ret
  for(const role of ['admin','store']){
   const templates=['closing','weekly','midday','opening'].map(key=>checklistTemplates.find(t=>t.key===key))
   const before=JSON.stringify(templates)
-  const client={from(name){return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:name==='checklist_pilot_access'?[{location_id:'site',is_active:true,enabled_from:'2026-01-01'}]:[]}).then(resolve)}}}}
+  const client={async rpc(name){assert.equal(name,'configuration_capabilities');return {data:{can_edit_templates:false}}},from(name){return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:name==='checklist_pilot_access'?[{location_id:'site',is_active:true,enabled_from:'2026-01-01'}]:[]}).then(resolve)}}}}
   const h=locationHelpHarness('pages/ManagerChecklists',{
    ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,
    useAuth:()=>({user:{id:actor},profile:{role,is_active:true,deleted_at:null},locations:[{id:'site',site_code:'1512',timezone:'America/New_York'}]}),supabase:client,
@@ -331,7 +331,7 @@ test('companywide page shows availability without auto-created drafts or derived
   const h=locationHelpHarness('pages/ManagerChecklists',{
    ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,
    useAuth:()=>({user:{id:actor},profile:{role,is_active:true},locations:[{id:'site',site_code:'Fictional Site',timezone:'America/New_York'}]}),
-   supabase:{from(name){calls.push(name);return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:records}).then(resolve)}}},rpc(){throw new Error('Availability must not create drafts')}},
+   supabase:{from(name){calls.push(name);return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:records}).then(resolve)}}},async rpc(name){assert.equal(name,'configuration_capabilities','Availability must not create drafts');return {data:{can_edit_templates:false}}}},
    checklistPeriod,completionStatus:(t,d,rows)=>rows.some(r=>r.template_key===t.key)?'Submitted':'Available',localChecklistDate:()=> '2026-11-02',checklistTimestamp,
    Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
   })
@@ -359,13 +359,18 @@ test('direct checklist page denies inactive, deleted, unknown and unauthenticate
   await h.flush();assert.equal(h.find(n=>n.props?.role==='alert').props.children,'Active checklist account required.');h.unmount()
  }
 })
-test('Admin management keeps template editing and makes no pilot/user grant queries',async()=>{
- const h=locationHelpHarness('components/ChecklistAdmin',{supabase:{from(){throw new Error('Grant query must be removed')}}},{templates:checklistTemplates,reload(){}})
- await h.flush()
- assert.equal(h.all(n=>n.type==='select').length,0)
- assert.equal(h.all(n=>n.type==='button').length,4)
- button(h,'Mid-Day Checklist').props.onClick();h.render()
- assert.ok(button(h,'Save template'));h.unmount()
+test('only Super Admin capability reveals editor; ordinary Admin retains QR management without grant queries',async()=>{
+ for(const allowed of [false,true]) {
+  const Editor=()=>null, Qr=()=>null
+  const h=locationHelpHarness('pages/ManagerChecklists',{
+   useAuth:()=>({user:{id:actor},profile:{role:'admin',is_active:true},locations:[{id:'site',site_code:'Fictional',timezone:'America/New_York'}]}),
+   supabase:{async rpc(name){assert.equal(name,'configuration_capabilities');return {data:{can_edit_templates:allowed}}},from(name){assert.notEqual(name,'checklist_pilot_access');return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:[]}).then(resolve)}}}},
+   checklistPeriod,completionStatus:()=> 'Available',localChecklistDate:()=> '2026-11-02',checklistTimestamp,
+   Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:Editor,ChecklistQrAdmin:Qr,ChecklistOpenWork:()=>null,
+  })
+  await h.flush();h.find(n=>n.type==='button'&&Array.isArray(n.props.children)&&n.props.children.includes(' checklist configuration')).props.onClick();h.render()
+  assert.equal(!!h.find(n=>n.type===Editor),allowed);assert.ok(h.find(n=>n.type===Qr));h.unmount()
+ }
 })
 
 const pmClean = () => Object.fromEntries(pm.definition.filter(i=>!i.condition).map(i=>[i.id,{value:i.options.find(v=>!i.failure_values.includes(v))}]))
