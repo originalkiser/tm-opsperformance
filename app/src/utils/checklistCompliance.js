@@ -74,7 +74,7 @@ export function buildComplianceRows(data, cadence, range) {
   const templates = complianceTemplates[cadence]
   const statuses = new Map(data.submissions.map(row => [`${row.location_id}:${row.template_key}:${row.period_date}`, row]))
   const periods = []
-  for (let date = range.start; date <= range.end; date = addChecklistDays(date, cadence === 'daily' ? 1 : 7)) periods.push(date)
+  for (let date = cadence === 'weekly' ? mondayOf(range.start) : range.start; date <= range.end; date = addChecklistDays(date, cadence === 'daily' ? 1 : 7)) periods.push(date)
   return [...data.locations].sort((a, b) => a.site_code.localeCompare(b.site_code, undefined, { numeric: true })).flatMap(site => periods.map(period => {
     const end = cadence === 'weekly' ? addChecklistDays(period, 6) : period
     const future = period > site.local_today
@@ -124,4 +124,55 @@ export function downloadComplianceCsv(rows, cadence, range, generatedAt) {
   link.href = url; link.download = `checklist-${cadence}-${range.start}-${range.end}.csv`
   document.body.appendChild(link); link.click(); link.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+// Presets select calendar dates, not elapsed durations. Server local_today anchors
+// displayed ranges; the request spans every site's selection without changing RPC scope.
+export function complianceShortcutRange(shortcut, today) {
+  const monday = mondayOf(today)
+  if (shortcut === 'lw') return { start: addChecklistDays(monday, -7), end: addChecklistDays(monday, -1) }
+  if (shortcut === 'wtd') return { start: monday, end: today }
+  if (shortcut === 'mtd') return { start: `${today.slice(0, 7)}-01`, end: today }
+  throw Error('Choose LW, WTD or MTD.')
+}
+
+export function complianceShortcutRequest(shortcut, sites, now = new Date()) {
+  const ranges = sites.map(site => complianceShortcutRange(shortcut, localChecklistDate(site.timezone, now)))
+  if (!ranges.length) throw Error('Reporting locations are required.')
+  return { start: ranges.map(r => r.start).sort()[0], end: ranges.map(r => r.end).sort().at(-1) }
+}
+
+export function selectedComplianceRows(data, cadence, range, shortcut) {
+  return buildComplianceRows(data, cadence, range).filter(row => {
+    if (!shortcut) return true
+    const localRange = complianceShortcutRange(shortcut, row.site.local_today)
+    return row.period >= (cadence === 'weekly' ? mondayOf(localRange.start) : localRange.start) && row.period <= localRange.end
+  })
+}
+
+// Presentation only: never replace the existing period score or server timing.
+export function compliancePeriodLabel(row) {
+  if (row.score === null) return 'Future'
+  if (row.score === 100) return 'Compliant'
+  if (row.late?.length) return 'Completed Late'
+  if (row.current) return 'Pending'
+  return 'Overdue'
+}
+
+export function groupComplianceLocations(allRows, visibleRows = allRows) {
+  const visible = new Map(), all = new Map()
+  for (const row of allRows) {
+    if (!all.has(row.site.id)) all.set(row.site.id, [])
+    all.get(row.site.id).push(row)
+  }
+  for (const row of visibleRows) {
+    if (!visible.has(row.site.id)) visible.set(row.site.id, [])
+    visible.get(row.site.id).push(row)
+  }
+  return [...all].filter(([id]) => visible.has(id)).map(([id, rows]) => ({
+    site: rows[0].site, rows: visible.get(id), summary: summarizeCompliance(rows),
+    pending: rows.filter(row => compliancePeriodLabel(row) === 'Pending').length,
+    late: rows.filter(row => compliancePeriodLabel(row) === 'Completed Late').length,
+    start: rows[0].period, end: rows.at(-1).end,
+  }))
 }
