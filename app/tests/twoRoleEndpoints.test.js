@@ -8,7 +8,7 @@ function handler(file,role,own=true){
  let fn,resetCalls=0
  const profile={role,is_active:true,location_id:own?'site':'other'}
  const admin={auth:{admin:{async updateUserById(){resetCalls++;return {data:{}}}}},from(table){return {select(){return this},eq(){return this},maybeSingle:async()=>({data:table==='user_profiles'?profile:{id:'log',location_id:'site',status:'resolved',ended_at:'date',jotform_submission_id:'already-sent'}})}}}
- const userClient={auth:{getUser:async()=>({data:{user:{id:'fictional-caller'}}})}}
+ const userClient={auth:{getUser:async()=>({data:{user:{id:'fictional-caller'}}})},rpc:async()=>({data:true})}
  let clients=0
  const source=readFileSync(new URL(`../supabase/functions/${file}/index.ts`,import.meta.url),'utf8').replace(/^import .*\n/gm,'')
  new Function('Deno','createClient','projectKeys','crypto','buildSubmissionFields',transformSync(source,{loader:'ts',format:'cjs'}).code)(
@@ -17,7 +17,7 @@ function handler(file,role,own=true){
 }
 test('account administration remains Admin-only and rejects retired Area Manager',async()=>{
  for(const role of ['admin','store','area_manager']){
-  const h=handler('admin-users',role);const result=await h.call({action:'reset_password',user_id:'fictional-target'});assert.equal(result.status,role==='admin'?200:403);assert.equal(h.resets(),role==='admin'?1:0)
+  const h=handler('admin-users',role);const result=await h.call({action:'reset_password',user_id:'00000000-0000-0000-0000-000000000099'});assert.equal(result.status,role==='admin'?200:403);assert.equal(h.resets(),role==='admin'?1:0)
  }
 })
 test('downtime retains Admin and assigned Store rights; retired role and other-site Store are denied',async()=>{

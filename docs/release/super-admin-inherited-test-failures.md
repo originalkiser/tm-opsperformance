@@ -1,0 +1,51 @@
+# Inherited full-suite failures
+
+Compared implementation `3ba149e` against unchanged main `af7f85d`. Both runs contain exactly the same 47 unique failing names; zero added or removed failures. Timing suffixes and repeated failure-summary entries were removed for comparison. This establishes no new observed full-suite failures; it does not establish that the existing failing behaviors are correct. Focused authorization/checklist checks pass separately.
+
+- Net Members colors follow loss edits through negative, zero and positive; unknown stays neutral
+- Plans Lost cannot adopt a checkpoint inserted by another session after loading
+- Plans Lost preserves another session activity while a local hourly edit is staged
+- Store and Admin can save/correct/reopen loss values on an existing legacy log without touching manual net
+- Undo cannot overwrite another session checkpoint created after our deletion
+- Undo preserves an originally empty string distinctly from NULL
+- Undo while DELETE is in flight restores its original ID, historical name and employee ID
+- blank name paste keeps an unmatched historical name and does not assign employee IDs
+- card hour selector addresses existing split checkpoints without changing their identity
+- card/detailed: backdated edits preserve historical name/ID and formulas; explicit replacement saves name only
+- card/detailed: empty hours stay neutral; recorded zero, negative and positive values keep colors
+- card/simple: backdated edits preserve historical name/ID and formulas; explicit replacement saves name only
+- card/simple: empty hours stay neutral; recorded zero, negative and positive values keep colors
+- company reporting is Store-only and never replaces assigned entry or other-section scope
+- concurrent checkpoint change prevents DELETE and retains activity
+- concurrent numeric update between read and PATCH is reported, never overwritten
+- entering Plans Lost Today first must not block the first 8AM checkpoint save
+- existing blank-name all-zero checkpoint retains its ID and can save without unique conflict
+- existing location/date edit denial still disables losses and rejects writes
+- existing populated blank-name checkpoint remains editable: card/detailed
+- existing populated blank-name checkpoint remains editable: card/simple
+- existing populated blank-name checkpoint remains editable: table/detailed
+- existing populated blank-name checkpoint remains editable: table/simple
+- external deletion rejects a later edit rather than silently recreating history
+- full Undo restoration preserves historical NULL counters and manual derived fields
+- historical recorded negative and zero Net Members remain visible while empty hours stay blank
+- hourly table hides the loss-only anchor and empty hours, preserving running values and totals and immediate loss corrections for both formulas
+- invalid pasted name rejects the whole batch before any mutation
+- lost INSERT response reconciles only its own UUID, then cancels an undone split
+- navigation flushes captured backdated edits without waiting for the debounce
+- new numeric checkpoint can undo a later name selection back to its originally blank name
+- numeric clear/delete followed by undo restores a blank-name checkpoint
+- paste without names preserves historical names and split rows
+- pasting another hour never deletes an untouched all-zero checkpoint
+- rapid edits during pending first INSERT serialize and retain the latest values
+- repeated Undo cannot leave a saved split hidden after rapid activity changes
+- saved split removal followed by undo restores the checkpoint
+- split-hour selection inserts at original location/date without employee ID; repeated saves PATCH
+- table/detailed: backdated edits preserve historical name/ID and formulas; explicit replacement saves name only
+- table/detailed: empty hours stay neutral; recorded zero, negative and positive values keep colors
+- table/simple: backdated edits preserve historical name/ID and formulas; explicit replacement saves name only
+- table/simple: empty hours stay neutral; recorded zero, negative and positive values keep colors
+- two rapid undos after a saved new split must delete the persisted checkpoint
+- undo paste preserves a concurrent recorded name and restores metrics only
+- undo removing a split while its INSERT is pending must not leave an orphan record
+- undoing unrelated metrics cannot restore an earlier name after a concurrent rename
+- valid name paste and undo preserve the exact historical spelling and existing record ID

@@ -31,7 +31,7 @@ test('approved optional comments do not block submission; Failed activates requi
 function page(excluded=false){
  const calls=[],records=audits.map(t=>({id:t.key,template_key:t.key,location_id:'site',period_date:checklistPeriod(t,'2026-11-12'),status:'draft',template_snapshot:{...t,timezone:'America/New_York'},manager_name:'Fictional',updated_at:'2026-11-12T12:00:00Z'}))
  const templates=[...checklistTemplates,{key:'weekly_pm',name:'Weekly Preventive Maintenance Checklist',cadence:'weekly'},...audits]
- const client={from(name){const q={name,keys:null,start:null};calls.push(q);return {select(){return this},in(k,v){q.keys=v;return this},gte(k,v){q.start=v;return this},lte(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:records.filter(r=>q.keys?.includes(r.template_key))}).then(resolve)}}},rpc(){throw Error('Page must not auto-create audits')}}
+ const client={from(name){const q={name,keys:null,start:null};calls.push(q);return {select(){return this},in(k,v){q.keys=v;return this},gte(k,v){q.start=v;return this},lte(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?templates:records.filter(r=>q.keys?.includes(r.template_key))}).then(resolve)}}},async rpc(name){assert.equal(name,'configuration_capabilities','Page must not auto-create audits');return {data:{can_edit_templates:false}}}}
  const h=locationHelpHarness('pages/ManagerChecklists',{useAuth:()=>({user:{id:'auditor'},profile:{role:'admin',is_active:true},locations:[{id:'site',site_code:'QA Fictional',timezone:'America/New_York',exclude_from_reporting:excluded}]}),supabase:client,checklistPeriod,completionStatus:()=> 'Available',localChecklistDate:()=> '2026-11-12',checklistTimestamp,NavBar:()=>null,Link:()=>null,ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,ChecklistAdmin:()=>null})
  return {...h,calls}
 }
@@ -60,8 +60,8 @@ test('optional comments still reject invalid types and over-limit blank input',(
  for(const value of [123,null,' '.repeat(4001)]){answers[comment.id]={value};assert.ok(validateChecklist(t.definition,answers,files,'Fictional',true)[comment.id])}
  answers[comment.id]={value:'   '};assert.deepEqual(validateChecklist(t.definition,answers,files,'Fictional',true),{})
 })
-test('audit template administration describes source-required evidence without claiming unprinted failure explanations',async()=>{
- const h=locationHelpHarness('components/ChecklistAdmin',{supabase:{}},{templates:audits,reload(){}})
- h.find(n=>n.type==='button'&&n.props.children==='Monthly Site Assessment').props.onClick();await h.flush()
- const copy=h.all(n=>n.type==='p').map(text).join('\n');assert.ok(copy.includes('approved audit rules'));assert.equal(copy.includes('Failed/incomplete answers always require explanations.'),false);h.unmount()
+test('audit template preview states only source-required evidence without claiming unprinted failure explanations',async()=>{
+ const h=locationHelpHarness('components/ChecklistTemplatePreview',{}, {name:audits[0].name,definition:audits[0].definition})
+ await h.flush()
+ const copy=h.all(n=>n.type==='p').map(text).join('\n');assert.ok(copy.includes('All conditional follow-ups'));assert.equal(copy.includes('Failed/incomplete answers always require explanations.'),false);h.unmount()
 })

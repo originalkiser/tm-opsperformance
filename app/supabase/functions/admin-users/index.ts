@@ -68,11 +68,19 @@ Deno.serve(async (req) => {
   const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
 
   const { data: caller } = await admin.from('user_profiles')
-    .select('role, is_active').eq('id', user.id).maybeSingle()
-  if (!caller || caller.is_active === false) return json({ ok: false, error: 'Forbidden' }, 403)
+    .select('role, is_active, deleted_at').eq('id', user.id).maybeSingle()
+  if (!caller || caller.is_active !== true || caller.deleted_at) return json({ ok: false, error: 'Forbidden' }, 403)
   const isAdmin   = caller.role === 'admin'
 
   try {
+    if (['reset_password', 'change_email', 'delete'].includes(action)) {
+      if (!isAdmin) return json({ ok: false, error: 'Forbidden' }, 403)
+      const target = String(body.user_id ?? '')
+      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(target)) return json({ ok: false, error: 'Valid user_id is required' }, 400)
+      // The caller's JWT is authoritative. Missing migration/read failures deny mutation.
+      const protection = await userClient.rpc('authorize_admin_user_action', { p_target: target })
+      if (protection.error || protection.data !== true) return json({ ok: false, error: 'This account action is not authorized. A Super Admin may be required.' }, 403)
+    }
     switch (action) {
       case 'create': {
         if (!isAdmin) return json({ ok: false, error: 'Only admins can add users' }, 403)
@@ -109,7 +117,9 @@ Deno.serve(async (req) => {
 
         const { error } = await admin.auth.admin.updateUserById(userId, { email: newEmail })
         if (error) return json({ ok: false, error: error.message })
-        await admin.from('user_profiles').update({ email: newEmail }).eq('id', userId)
+        // Preserve the caller identity for the protected-profile database trigger.
+        const profileUpdate = await userClient.from('user_profiles').update({ email: newEmail }).eq('id', userId)
+        if (profileUpdate.error) return json({ ok: false, error: 'Login email changed, but profile synchronization failed. Reload and review the account before retrying.' }, 409)
         return json({ ok: true })
       }
 
