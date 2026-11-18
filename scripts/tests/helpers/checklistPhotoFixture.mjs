@@ -42,6 +42,7 @@ async function setup({deadlines=true,integrity=true,enforcement=true,pm=true}={}
  if(deadlines) await db.exec(readFileSync(new URL('../../../app/supabase/migrations/20261112222936_management_audits.sql',import.meta.url),'utf8'))
  if(integrity) await db.exec(readFileSync(new URL('../../../app/supabase/migrations/20261116023332_checklist_photo_integrity.sql',import.meta.url),'utf8'))
  if(integrity && enforcement) {await activate(db);if(pm) {await db.exec('reset role');await db.exec(readFileSync(new URL('../../../app/supabase/migrations/20261116031924_opening_trap_door_inspections.sql',import.meta.url),'utf8'))}}
+ if(integrity && process.env.CHECKLIST_WEEKLY_DEADLINE_MIGRATION==='1') await db.exec(readFileSync(new URL('../../../app/supabase/migrations/20261118182305_weekly_submission_deadlines.sql',import.meta.url),'utf8'))
  await db.exec('set role service_role')
  return {db,today}
 }
