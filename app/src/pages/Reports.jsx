@@ -395,6 +395,7 @@ export default function Reports() {
                 )}
               </button>
             ))}
+            <Link to="/sales-reconciliation" className="tm-reports-nav-item flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-tm-blue hover:bg-gray-50 dark:text-tm-teal dark:hover:bg-tm-dark-card">DRB Sales Reconciliation</Link>
             <Link to="/checklist-compliance" title="Checklist Compliance" className="tm-reports-nav-item flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-tm-blue hover:bg-gray-50 dark:text-tm-teal dark:hover:bg-tm-dark-card">
               <span aria-hidden="true">✓</span>{sidebarOpen && <span className="text-xs">Checklist Compliance</span>}
             </Link>
