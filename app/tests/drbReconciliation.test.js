@@ -21,6 +21,7 @@ test('unreviewed, unmapped and incomplete evidence never become eligible',()=>{
  assert.equal(saleBucket(sale),'unresolved');assert.equal(saleBucket({...sale,decision:'eligible'}),'eligible')
  for(const change of [{employee_id:null},{identity_confirmed:false},{has_original:false},{has_reviewed:false},{activity:'unknown'}])assert.equal(saleBucket({...sale,decision:'eligible',...change}),'unresolved')
  assert.equal(saleBucket({...sale,decision:'excluded'}),'excluded')
+ assert.equal(saleBucket({...sale,decision:'excluded',has_original:false}),'unresolved')
 })
 const range={start:'2026-11-08',end:'2026-11-14'},sites=[{id:'s',name:'Fictional Site',opportunities_formula:'simple'}]
 const checkpoint=(name,t,n)=>({location_id:'s',log_date:'2026-11-10',time_slot:t,split_index:0,employee_name:name,total_washes:n*10,member_washes:0,basic:n,good:0,better:0,best:0,google_reviews:0})

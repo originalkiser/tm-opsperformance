@@ -75,6 +75,7 @@ export const shortenedIdentifier = value => /^\d{4}$/.test(text(value))
 // Decisions and employee attribution are separate. A shortened reviewed ID is
 // exclusion evidence, never a reconstructed employee ID or an exclusion reason.
 export function saleBucket(sale) {
+  if (!sale.has_original) return 'unresolved'
   if (sale.decision === 'excluded') return 'excluded'
   if (sale.decision === 'eligible' && sale.employee_id && sale.identity_confirmed && sale.has_original && sale.has_reviewed && sale.activity !== 'unknown') return 'eligible'
   return 'unresolved'
