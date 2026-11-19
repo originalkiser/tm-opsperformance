@@ -6,11 +6,12 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as metrics from '../src/utils/budgetMath.js'
 import * as fields from '../src/utils/budgetDailyFields.js'
+import * as wording from '../src/utils/budgetLabels.js'
 const Null=()=>null
 function render(name,component,location, { blank = false, attemptedSave = false } = {}){
  const row={...Object.fromEntries(Object.keys(fields.emptyDailyForm()).map(k=>[k,0])),yesterday_washes:100,yesterday_redemptions:60,yesterday_wash_overrides:10,yesterday_best:6,mtd_washes:1000,mtd_redemptions:600,mtd_wash_overrides:100,mtd_best:60}
  if (blank) for (const key of Object.keys(row)) row[key] = ''
- const bindings={React,useState:React.useState,useEffect:React.useEffect,...metrics,...fields,
+ const bindings={React,useState:React.useState,useEffect:React.useEffect,...metrics,...fields,...wording,useBudgetLabels:()=>({labels:{},error:''}),
  useAuth:()=>({profile:{role:'admin'}}),useBudgetDailyEntry:(id,date,onSaved,site)=>{assert.equal(id,location.id);assert.equal(site,location);return {form:row,entry:row,target:null,dailyGoals:[],set:()=>{},handleSave:()=>{},missing:0,attemptedSave,mtdRevenue:{},historicalRevenue:null}},
  reportedRevenuePace:()=>({pct:null,onTrack:null,reported:{}}),displayCount:x=>String(x??''),BudgetRevenueSummary:Null,BudgetRevenueFields:Null,CashReconciliationSection:Null,TmLoader:Null}
  const source=readFileSync(new URL(`../src/components/${name}.jsx`,import.meta.url),'utf8').replace(/^import[\s\S]*?from ['"][^'"]+['"]\s*;?\n/gm,'')+`\nexport { ${component} };`

@@ -1,3 +1,5 @@
+import useBudgetLabels from '../hooks/useBudgetLabels'
+import { budgetFieldWording, budgetDisplayFields } from '../utils/budgetLabels'
 import CashReconciliationSection from './CashReconciliationSection'
 import BudgetRevenueFields from './BudgetRevenueFields'
 import { reportedRevenuePace } from '../utils/budgetRevenueReporting'
@@ -44,6 +46,7 @@ export function BonusBadge({ tier }) {
 // ── Daily Entry tab ───────────────────────────────────────────────────────────
 
 function DailyEntryTab({ locations, profile, onSaved }) {
+  const { labels, error: wordingError } = useBudgetLabels()
   const [selectedLocId, setSelectedLocId] = useState(() => locations.find(site => site.id === profile?.location_id)?.id || locations[0]?.id || '')
   const [entryDate, setEntryDate] = useState(todayStr)
   const location = locations.find(site => site.id === selectedLocId)
@@ -55,7 +58,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
   const mem = membershipStatus(form.mtd_membership_actual, target?.membership_goal, entryDate)
   const memPace = membershipPace(form.mtd_membership_actual, target?.starting_members, target?.membership_daily_growth, entryDate)
 
-  const baseInputCls = 'w-full border-2 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
+  const baseInputCls = 'min-w-0 w-full border-2 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
   const fieldCls = (key) => {
     if (!isFieldMissing(form, key)) return `${baseInputCls} border-gray-300 dark:border-tm-dark-border focus:ring-tm-teal`
     return attemptedSave
@@ -100,16 +103,17 @@ function DailyEntryTab({ locations, profile, onSaved }) {
       </label>
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       {revenueError && <p role="alert" className="text-sm text-red-600">{revenueError}</p>}
+      {wordingError && <p role="status" className="text-xs text-amber-800 dark:text-amber-300">{wordingError}</p>}
       {saved && <p role="status" className="text-sm text-green-600">Entry saved.</p>}
       <fieldset disabled={saving || !!error}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <h4 className="text-xs font-brand font-bold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-2">Yesterday</h4>
                 <div className="space-y-2">
-                  {budgetCountFields(YESTERDAY_FIELDS, location).map(f => (
+                  {budgetDisplayFields(budgetCountFields(YESTERDAY_FIELDS, location), labels).map(f => (
                     <div key={f.key} className="flex items-center gap-2">
-                      <label className="text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">
-                        {f.label}{f.hint && <span className="block text-[10px] text-gray-400 dark:text-tm-dark-muted italic">{f.hint}</span>}
+                      <label className="break-words text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">
+                        {f.label}{f.hint && <span className="block text-[10px] whitespace-pre-line break-words text-gray-400 dark:text-tm-dark-muted italic">{f.hint}</span>}
                       </label>
                       <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
                     </div>
@@ -123,10 +127,10 @@ function DailyEntryTab({ locations, profile, onSaved }) {
               <div>
                 <h4 className="text-xs font-brand font-bold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-2">Month to Date</h4>
                 <div className="space-y-2">
-                  {budgetCountFields(MTD_FIELDS, location).map(f => (
+                  {budgetDisplayFields(budgetCountFields(MTD_FIELDS, location), labels).map(f => (
                     <div key={f.key} className="flex items-center gap-2">
-                      <label className="text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">
-                        {f.label}{f.hint && <span className="block text-[10px] text-gray-400 dark:text-tm-dark-muted italic">{f.hint}</span>}
+                      <label className="break-words text-xs text-gray-500 dark:text-tm-dark-muted w-36 shrink-0">
+                        {f.label}{f.hint && <span className="block text-[10px] whitespace-pre-line break-words text-gray-400 dark:text-tm-dark-muted italic">{f.hint}</span>}
                       </label>
                       <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
                     </div>
@@ -140,7 +144,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
-  <BudgetRevenueFields entryDate={entryDate} form={form} set={set} fieldCls={fieldCls} />
+  <BudgetRevenueFields labels={labels} entryDate={entryDate} form={form} set={set} fieldCls={fieldCls} />
 </div>
    <CashReconciliationSection attemptedSave={attemptedSave} showExpected={profile?.role === 'admin'} locationId={selectedLocId} timeZone={locations.find(site => site.id === selectedLocId)?.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-100 dark:border-tm-dark-border">
@@ -150,17 +154,20 @@ function DailyEntryTab({ locations, profile, onSaved }) {
           <BudgetRevenueSummary dailyGoals={dailyGoals} locationId={selectedLocId} revenue={mtdRevenue} historical={historicalRevenue} monthlyGoal={target?.revenue_goal} showGoal />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">Current Total Members</label>
-                <input aria-label="Current Total Members" type="number" min="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={fieldCls('mtd_membership_actual')} />
+                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">{budgetFieldWording('mtd_membership_actual', labels).label}</label>
+                <input aria-label={budgetFieldWording('mtd_membership_actual', labels).label} type="number" min="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={fieldCls('mtd_membership_actual')} />
+                {budgetFieldWording('mtd_membership_actual', labels).helper && <p className="mt-1 whitespace-pre-line break-words text-xs">{budgetFieldWording('mtd_membership_actual', labels).helper}</p>}
                 <div className="text-xs text-gray-800 dark:text-gray-100 mt-1">{displayCount(form.mtd_membership_actual)} / {displayCount(target?.membership_goal)} · End-of-Month Member Goal</div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">MTD REVIEWS</label>
-                <input type="number" min="0" value={form.current_reviews} onChange={e => set('current_reviews', e.target.value)} className={fieldCls('current_reviews')} />
+                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">{budgetFieldWording('current_reviews', labels).label}</label>
+                <input aria-label={budgetFieldWording('current_reviews', labels).label} type="number" min="0" value={form.current_reviews} onChange={e => set('current_reviews', e.target.value)} className={fieldCls('current_reviews')} />
+                {budgetFieldWording('current_reviews', labels).helper && <p className="mt-1 whitespace-pre-line break-words text-xs">{budgetFieldWording('current_reviews', labels).helper}</p>}
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">GOOGLE RATING</label>
-                <input type="number" min="0" max="5" step="0.01" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={fieldCls('current_rating')} />
+                <label className="block text-xs font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1">{budgetFieldWording('current_rating', labels).label}</label>
+                <input aria-label={budgetFieldWording('current_rating', labels).label} type="number" min="0" max="5" step="0.01" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={fieldCls('current_rating')} />
+                {budgetFieldWording('current_rating', labels).helper && <p className="mt-1 whitespace-pre-line break-words text-xs">{budgetFieldWording('current_rating', labels).helper}</p>}
               </div>
             </div>
 
