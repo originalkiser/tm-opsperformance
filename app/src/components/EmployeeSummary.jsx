@@ -57,8 +57,9 @@ const IMG_COLS = [
 export default function EmployeeSummary({ rows = [], opportunitiesFormula = 'detailed', locationName, selectedDate, metricThresholds }) {
   const [copyFeedback, setCopyFeedback] = useState(false)
 
-  const namedRows = rows.filter(r => r.employee_name?.trim())
-  const deltaMap  = employeeDeltasByDay(namedRows)
+  // Unnamed rows still establish cumulative checkpoints. The shared helper
+  // skips their attribution without charging that activity to the next person.
+  const deltaMap = employeeDeltasByDay(rows)
 
   const employees = Object.entries(deltaMap)
     .sort(([a], [b]) => a.localeCompare(b))
