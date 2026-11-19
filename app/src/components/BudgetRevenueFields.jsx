@@ -1,24 +1,25 @@
+import { budgetFieldWording } from '../utils/budgetLabels'
 import { useId } from 'react'
 import { REVENUE_FIELDS } from '../utils/budgetDailyFields'
 import { creditCardInputError, calculateCreditCardOnEnter } from '../utils/creditCardCalculator'
 
 // Shared by Manager Site Entry and Admin daily-entry editing.
-export default function BudgetRevenueFields({ form, set, fieldCls, entryDate }) {
+export default function BudgetRevenueFields({ form, set, fieldCls, entryDate, labels = {} }) {
   const prefix = useId()
   const calculatorError = creditCardInputError(form.yesterday_cc_revenue)
   return <>{[...REVENUE_FIELDS, ...(entryDate >= '2026-11-02' ? [{ key: 'mtd_revenue_actual', label: 'REPORTED MTD REVENUE ($)' }] : [])].map(({ key, label }) => {
+    const wording = budgetFieldWording(key, labels)
     const calculator = key === 'yesterday_cc_revenue'
     const id = `${prefix}-${key}`
     return <div key={key} className="min-w-0">
-      <label htmlFor={id} className="block text-xs font-semibold leading-snug break-words text-gray-700 dark:text-gray-200 mb-1">{label}</label>
+      <label htmlFor={id} className="block text-xs font-semibold leading-snug break-words text-gray-700 dark:text-gray-200 mb-1">{wording.label}</label>
       <input id={id} type={calculator ? 'text' : 'number'} min={calculator ? undefined : '0'} step={calculator ? undefined : '0.01'}
         value={form[key] ?? ''} onChange={event => set(key, event.target.value)}
         onKeyDown={calculator ? event => calculateCreditCardOnEnter(event, form[key], result => set(key, result)) : undefined}
         aria-invalid={calculator && !!calculatorError}
-        aria-describedby={calculator ? `${id}-hint${calculatorError ? ` ${id}-error` : ''}` : undefined}
+        aria-describedby={(wording.helper || (calculator && calculatorError)) ? `${wording.helper ? `${id}-hint` : ''}${calculator && calculatorError ? ` ${id}-error` : ''}`.trim() : undefined}
         className={fieldCls(key)} />
-      {key === 'mtd_revenue_actual' && <p className="mt-1 text-xs text-gray-700 dark:text-gray-200">Cumulative revenue through the prior business day. Leave blank to retain the saved report.</p>}
-      {calculator && <p id={`${id}-hint`} className="mt-1 text-xs text-gray-700 dark:text-gray-200">Add amounts with +, then press Enter to calculate.</p>}
+      {wording.helper && <p id={`${id}-hint`} className="mt-1 whitespace-pre-line break-words text-xs text-gray-700 dark:text-gray-200">{wording.helper}</p>}
       {calculator && calculatorError && <p id={`${id}-error`} role="alert" className="mt-1 text-xs text-red-700 dark:text-red-300">{calculatorError}</p>}
     </div>
   })}</>

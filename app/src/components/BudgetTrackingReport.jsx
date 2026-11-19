@@ -1,3 +1,5 @@
+import useBudgetLabels from '../hooks/useBudgetLabels'
+import { budgetFieldWording, budgetDisplayFields } from '../utils/budgetLabels'
 import useBudgetReport from '../hooks/useBudgetReport'
 import { budgetReportPeriod } from '../utils/budgetReportRows'
 import AdminCashOnHandPanel from './AdminCashOnHandPanel'
@@ -34,12 +36,13 @@ function EditIcon() {
 // ── Edit modal — Daily Entry, scoped to one site ──────────────────────────────
 
 function DailyEntryPane({ location }) {
+  const { labels, error: wordingError } = useBudgetLabels()
   const { profile } = useAuth()
   const [entryDate, setEntryDate] = useState(todayStr)
   const { dailyGoals, goalError, form, entry, target, loading, saving, attemptedSave, error, saved, set, missing, revenueError, mtdRevenue, historicalRevenue, handleSave } = useBudgetDailyEntry(location.id, entryDate, undefined, location)
   const rev = error ? { pct: null, onTrack: null, reported: {} } : reportedRevenuePace(mtdRevenue, historicalRevenue, target?.revenue_goal, entryDate, dailyGoals, location.id)
 
-  const baseInputCls = 'w-full border-2 rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
+  const baseInputCls = 'min-w-0 w-full border-2 rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-2 font-brand'
   const fieldCls = (key) => {
     if (!isFieldMissing(form, key)) return `${baseInputCls} border-gray-300 dark:border-tm-dark-border focus:ring-tm-teal`
     return attemptedSave
@@ -66,18 +69,19 @@ function DailyEntryPane({ location }) {
       </label>
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       {revenueError && <p role="alert" className="text-sm text-red-600">{revenueError}</p>}
+      {wordingError && <p role="status" className="text-xs text-amber-800 dark:text-amber-300">{wordingError}</p>}
       {saved && <p role="status" className="text-sm text-green-600">Entry saved.</p>}
       <fieldset disabled={saving || loading || !!error}>
       <div className="grid grid-cols-2 gap-3">
-        {budgetCountFields([...YESTERDAY_FIELDS, ...MTD_FIELDS], location).map(f => (
+        {budgetDisplayFields(budgetCountFields([...YESTERDAY_FIELDS, ...MTD_FIELDS], location), labels).map(f => (
           <div key={f.key}>
             <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">
-              {f.label}{f.hint && <span className="block normal-case italic text-gray-400">{f.hint}</span>}
+              {f.label}{f.hint && <span className="block whitespace-pre-line break-words normal-case italic text-gray-400">{f.hint}</span>}
             </label>
             <input type="number" min="0" aria-label={f.label} value={form[f.key]} onChange={e => set(f.key, e.target.value)} className={fieldCls(f.key)} />
           </div>
         ))}
-        <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"><BudgetRevenueFields entryDate={entryDate} form={form} set={set} fieldCls={fieldCls} /></div>
+        <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"><BudgetRevenueFields labels={labels} entryDate={entryDate} form={form} set={set} fieldCls={fieldCls} /></div>
         <CashReconciliationSection attemptedSave={attemptedSave} showExpected={profile?.role === 'admin'} locationId={location.id} timeZone={location.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
          <div>
 
@@ -86,16 +90,19 @@ function DailyEntryPane({ location }) {
           <div className="mt-2 text-xs text-gray-800 dark:text-gray-100">Revenue %: {pct1(rev.pct)} · Revenue Pace: {rev.onTrack == null ? '—' : rev.onTrack ? 'On Track' : 'Off Track'}{rev.reported.provisional && <span className="block text-amber-800 dark:text-amber-300">Provisional · through {rev.reported.throughDate}</span>}</div>
         </div>
         <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">Current Total Members</label>
-          <input type="number" min="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={fieldCls('mtd_membership_actual')} />
+          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">{budgetFieldWording('mtd_membership_actual', labels).label}</label>
+          <input aria-label={budgetFieldWording('mtd_membership_actual', labels).label} type="number" min="0" value={form.mtd_membership_actual} onChange={e => set('mtd_membership_actual', e.target.value)} className={fieldCls('mtd_membership_actual')} />
+                {budgetFieldWording('mtd_membership_actual', labels).helper && <p className="mt-1 whitespace-pre-line break-words text-xs">{budgetFieldWording('mtd_membership_actual', labels).helper}</p>}
         </div>
         <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">MTD REVIEWS</label>
-          <input type="number" min="0" value={form.current_reviews} onChange={e => set('current_reviews', e.target.value)} className={fieldCls('current_reviews')} />
+          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">{budgetFieldWording('current_reviews', labels).label}</label>
+          <input aria-label={budgetFieldWording('current_reviews', labels).label} type="number" min="0" value={form.current_reviews} onChange={e => set('current_reviews', e.target.value)} className={fieldCls('current_reviews')} />
+                {budgetFieldWording('current_reviews', labels).helper && <p className="mt-1 whitespace-pre-line break-words text-xs">{budgetFieldWording('current_reviews', labels).helper}</p>}
         </div>
               <div>
-          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">GOOGLE RATING</label>
-          <input type="number" min="0" max="5" step="0.01" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={fieldCls('current_rating')} />
+          <label className="block text-[10px] font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-0.5">{budgetFieldWording('current_rating', labels).label}</label>
+          <input aria-label={budgetFieldWording('current_rating', labels).label} type="number" min="0" max="5" step="0.01" value={form.current_rating} onChange={e => set('current_rating', e.target.value)} className={fieldCls('current_rating')} />
+                {budgetFieldWording('current_rating', labels).helper && <p className="mt-1 whitespace-pre-line break-words text-xs">{budgetFieldWording('current_rating', labels).helper}</p>}
         </div>
       </div>
 </fieldset>

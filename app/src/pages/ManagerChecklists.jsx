@@ -5,6 +5,7 @@ import ChecklistAccessForm from '../components/ChecklistAccessForm'
 import ChecklistQrAdmin from '../components/ChecklistQrAdmin'
 import ChecklistOpenWork from '../components/ChecklistOpenWork'
 import ChecklistAdmin from '../components/ChecklistAdmin'
+import BudgetLabelsEditor from '../components/BudgetLabelsEditor'
 import ChecklistWeeklyDue from '../components/ChecklistWeeklyDue'
 import { validateWeeklyPeriods } from '../utils/checklistWeekly'
 import { addChecklistDays } from '../utils/checklistCompliance'
@@ -144,7 +145,7 @@ export default function ManagerChecklists() {
             </li>)}</ul>
           </section>}
           <button className="min-h-12 px-4 border rounded" onClick={() => setShowAdmin(previous => !previous)}>{showAdmin ? 'Hide' : 'Manage'} checklist configuration</button>
-          {showAdmin && <><ChecklistQrAdmin location={selected} />{configurationAccess === user?.id && !managerPreview && <ChecklistAdmin templates={templates} reload={load} />}</>}
+          {showAdmin && <><ChecklistQrAdmin location={selected} />{configurationAccess === user?.id && !managerPreview && <><ChecklistAdmin templates={templates} reload={load} /><BudgetLabelsEditor /></>}</>}
         </>}
       </>}
     </main>
