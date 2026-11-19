@@ -1,10 +1,10 @@
 # DRB employee sales reconciliation — draft release
 
-Status: local implementation and draft migration only. Do not merge/install/release until the identity, source coverage and customer-data decisions below are resolved. No production records or permissions have been changed.
+Status: importer implementation and migration remain draft. The checkpoint fix was independently released through PR #76 (`7f41f304`). See [exact missing source evidence and proposed protections](drb-sales-evidence-needed.md). Do not merge/install/release until the identity, source coverage and customer-data decisions below are resolved. No production records or permissions have been changed.
 
 ## Included
 
-- Employee Summary now passes **all** cumulative checkpoints to `employeeDeltasByDay`, exactly as required for unnamed checkpoints. Unnamed activity is not reassigned to the next named employee. No leaderboard, attribution mapping, qualification or opportunity formulas changed.
+- Independently released in PR #76: Employee Summary now passes **all** cumulative checkpoints to `employeeDeltasByDay`, exactly as required for unnamed checkpoints. Unnamed activity is not reassigned to the next named employee. No leaderboard, attribution mapping, qualification or opportunity formulas changed.
 - Reports → DRB Sales Reconciliation: original transaction XLSX and separately reviewed commission XLSX, values-only validation, preview, import, employee identifier proposal/approval, individual review, customer-match leads, and audit history.
 - Location and employee comparisons show attributed manager-reported sales alongside Gross Membership Sales, Verified Commission-Eligible Sales, Excluded Sales and Unresolved Sales. Reviewed-only records are visibly separate and excluded from gross totals until original evidence exists.
 - Existing Daily Log and Team Sales functions remain the calculation source. POS UUIDs bridge to Daily Log employees **only** through approved historical-name mappings. Equal display names, suffixes and census badge padding never establish identity.
