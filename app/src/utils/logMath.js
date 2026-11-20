@@ -9,7 +9,7 @@ export const FIELDS = [
 // Chronological order for daily_log rows: by time_slot, then by split_index
 // (a "split hour" holds more than one row for the same time_slot — e.g. one
 // employee 8:00-8:15, another 8:15-9:00 — split_index 0 first).
-const chronoCompare = (a, b) =>
+export const chronoCompare = (a, b) =>
   a.time_slot.localeCompare(b.time_slot) || (toInt(a.split_index) - toInt(b.split_index))
 
 /**

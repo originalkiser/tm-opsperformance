@@ -1,3 +1,4 @@
+import { cumulativeLogWarnings, confirmCumulativeLeave } from '../utils/dailyLogValidation.js'
 import DailyLogRevenueGoal from './DailyLogRevenueGoal'
 import { loadDailyLogEmployees, resolvePastedEmployee, dailyLogPersistence } from '../utils/dailyLogEmployees.js'
 import { netMemberStyle, netMembersCls } from '../utils/netMemberColors'
@@ -205,6 +206,8 @@ export default function DailyLogTable({
   metricThresholds,
   downtimeEnabled = false,
 }) {
+  const [validationSaveWarning, setValidationSaveWarning] = useState(false)
+  const cumulativeWarningsRef = useRef([])
   const [lossDraft, setLossDraft] = useState(null)
   const [lossStatus, setLossStatus] = useState('')
   const [lossError, setLossError] = useState('')
@@ -335,10 +338,35 @@ export default function DailyLogTable({
 
   useEffect(() => {
     const warn = event => {
-      if (dirtySet.current.size || pendingWrites.current) { event.preventDefault(); event.returnValue = '' }
+      if (dirtySet.current.size || pendingWrites.current || (canEditRef.current && cumulativeWarningsRef.current.length)) { event.preventDefault(); event.returnValue = '' }
     }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
+  }, [])
+
+  useEffect(() => {
+    let position = { state: window.history?.state, url: window.location?.href }, restoring = false
+    const allowed = () => !canEditRef.current || confirmCumulativeLeave(cumulativeWarningsRef.current, window.confirm.bind(window))
+    const leave = event => { if (!allowed()) event.preventDefault() }
+    const click = event => {
+      const link = event.target.closest('a[href]')
+      const navButton = event.target.closest('nav') && event.target.closest('button')
+      if ((link || navButton && ['Site Entry','My Dashboard','Sign Out'].includes(navButton.textContent.trim())) && !allowed()) { event.preventDefault(); event.stopImmediatePropagation() }
+    }
+    const back = event => {
+      if (restoring) { restoring = false; return }
+      if (!allowed()) {
+        event.stopImmediatePropagation()
+        const delta = position.state?.idx - window.history?.state?.idx
+        if (Number.isFinite(delta) && delta) { restoring = true; window.history.go(delta) }
+        else window.history?.replaceState(position.state, '', position.url)
+      } else position = { state: window.history?.state, url: window.location?.href }
+    }
+    window.addEventListener('daily-log-before-leave', leave)
+    window.addEventListener('popstate', back, true)
+    // Some test/embedded contexts have no document; the browser always does.
+    if (typeof document !== 'undefined') document.addEventListener('click', click, true)
+    return () => { window.removeEventListener('daily-log-before-leave', leave); window.removeEventListener('popstate', back, true); if (typeof document !== 'undefined') document.removeEventListener('click', click, true) }
   }, [])
 
   const fetchEmployees = async () => {
@@ -531,6 +559,8 @@ export default function DailyLogTable({
   const doSave = useCallback(async () => {
     if (!canEditRef.current || !logLoadedRef.current) return false
     try {
+      const warnings = cumulativeLogWarnings(rowsRef.current, { locationId: locationIdRef.current, date: dateRef.current, isCheckpoint: hasHourlyActivity })
+      if (mounted.current) setValidationSaveWarning(warnings.length > 0)
       pendingWrites.current++
       await persistence.current?.flush()
       setSaveError(null)
@@ -1028,6 +1058,17 @@ export default function DailyLogTable({
       (a.row.split_index ?? 0) - (b.row.split_index ?? 0)
     )
 
+  const cumulativeWarnings = cumulativeLogWarnings(rows, { locationId, date: selectedDate, isCheckpoint: row => !removedSplitIndices.has(rows.indexOf(row)) && hasHourlyActivity(row) })
+  cumulativeWarningsRef.current = cumulativeWarnings
+  const warningsFor = (index, field) => cumulativeWarnings.filter(w => w.index === index && w.fields.includes(field))
+  const fieldWarning = (index, field) => {
+    const warnings = warningsFor(index, field)
+    if (!warnings.length) return null
+    const previous = warnings[0].previousIndex == null ? 0 : rows[warnings[0].previousIndex]?.[field]
+    const display = value => value == null || String(value).trim() === '' ? 'blank (saved as 0)' : String(value)
+    return <span id={`cumulative-${index}-${field}`} title={warnings.map(w => w.message).join(' ')} className="block text-xs leading-snug p-1 font-semibold text-amber-950 dark:text-amber-100 whitespace-normal">⚠ Previous {display(previous)} → current {display(rows[index][field])}. {warnings.some(w => w.fields.length === 2) ? 'Member gain exceeds total gain.' : 'Review cumulative count.'} See warning above.</span>
+  }
+
   // Per-hour group bounds/size, and each row's 1-based position within its
   // hour's group (1 = the base row, 2 = the first split, ...) — drives the
   // "+" placement (last row of the group), the group outline, and the
@@ -1107,7 +1148,7 @@ export default function DailyLogTable({
           </button>
           {canEdit && (
             <button
-              onClick={() => { window.location.hash = '/employees' }}
+              onClick={() => { if (!canEdit || confirmCumulativeLeave(cumulativeWarningsRef.current, window.confirm.bind(window))) window.location.hash = '/employees' }}
               className="px-3 py-1.5 rounded-md border border-gray-200 dark:border-tm-dark-border text-gray-600 dark:text-tm-dark-muted bg-white dark:bg-tm-dark-surface hover:border-tm-teal hover:text-tm-blue dark:hover:text-tm-teal transition-colors font-brand text-xs font-semibold"
             >
               ✎ Employees
@@ -1163,6 +1204,18 @@ export default function DailyLogTable({
           {saveError}
         </div>
       )}
+
+      {cumulativeWarnings.length > 0 && <div role="alert" aria-label="Cumulative Daily Log warnings" className="mb-3 rounded-lg border-2 border-amber-600 dark:border-amber-400 bg-amber-50 dark:bg-amber-950 p-3 text-amber-950 dark:text-amber-100">
+        <p className="font-bold">⚠ Cumulative data needs review · {cumulativeWarnings.length} warning{cumulativeWarnings.length === 1 ? '' : 's'}</p>
+        <p className="text-sm">{validationSaveWarning ? 'Save attempted with cumulative warnings. ' : ''}Existing autosave continues; these warnings do not correct values. Review this entry or an earlier checkpoint. Later checkpoints are rechecked automatically.</p>
+        <ul className="mt-2 space-y-2 text-sm">{cumulativeWarnings.map((warning, index) => <li key={index}>
+          <button type="button" className="font-semibold underline" onClick={() => {
+            const row = rows[warning.index]
+            setCardHour((row.split_index ?? 0) > 0 ? `${row.time_slot}:${row.split_index}` : row.time_slot)
+            setTimeout(() => document.getElementById(`daily-log-${viewMode}-${warning.index}-${warning.fields[0]}`)?.focus(), 0)
+          }}>Review {warning.checkpoint}</button>: {warning.message}
+        </li>)}</ul>
+      </div>}
 
       {/* ── Card View ─────────────────────────────────────────────────────────── */}
       {viewMode === 'card' && (
@@ -1224,22 +1277,27 @@ export default function DailyLogTable({
                 <div
                   key={field}
                   data-entry-metric={field}
-                  className={`tm-entry-metric-card border border-gray-100 dark:border-tm-dark-border rounded-xl p-3 shadow-sm ${field === 'net_members' ? netMembersCls(displayNet(cardRow)) : 'bg-white dark:bg-tm-dark-surface'}`}
+                  className={`tm-entry-metric-card border border-gray-100 dark:border-tm-dark-border rounded-xl p-3 shadow-sm ${field === 'net_members' ? netMembersCls(displayNet(cardRow)) : 'bg-white dark:bg-tm-dark-surface'} ${warningsFor(cardSlotIdx, field).length ? '!border-amber-600 dark:!border-amber-400 ring-2 ring-amber-500' : ''}`}
                 >
                   <label className="block text-[10px] font-brand font-semibold text-gray-500 dark:text-tm-dark-muted uppercase tracking-wide mb-1 whitespace-pre-line leading-tight">
                     {def?.label ?? field}
                   </label>
                   <input
+                    id={`daily-log-card-${cardSlotIdx}-${field}`}
+                    aria-label={`${def?.label.replace(/\n/g, ' ')} at ${cardHour}`}
+                    aria-invalid={warningsFor(cardSlotIdx, field).length > 0}
+                    aria-describedby={warningsFor(cardSlotIdx, field).length ? `cumulative-${cardSlotIdx}-${field}` : undefined}
                     type="number"
                     min={field === 'net_members' ? undefined : 0}
                     placeholder={field === 'net_members' ? '—' : '0'}
-                    className={`w-full text-2xl font-semibold bg-transparent border-none outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded transition-colors min-h-[48px] disabled:cursor-default placeholder:text-gray-300 dark:placeholder:text-tm-dark-muted/40 ${field === 'net_members' ? 'text-inherit' : 'text-gray-800 dark:text-tm-dark-text'}`}
+                    className={`w-full text-2xl font-semibold bg-transparent border-none outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded transition-colors min-h-[48px] disabled:cursor-default placeholder:text-gray-300 dark:placeholder:text-tm-dark-muted/40 ${field === 'net_members' ? 'text-inherit' : 'text-gray-800 dark:text-tm-dark-text'} ${warningsFor(cardSlotIdx, field).length ? '!bg-amber-50 !text-amber-950 dark:!bg-amber-950 dark:!text-amber-100' : ''}`}
                     value={field === 'net_members' ? displayNet(cardRow) : cardRow[field]}
                     disabled={!canEdit || !logLoaded || field === 'net_members'}
                     onFocus={handleEditDuringDowntime}
                     onChange={e => update(cardSlotIdx, field, e.target.value)}
                     onBlur={() => saveImmediately(cardSlotIdx)}
                   />
+                  {fieldWarning(cardSlotIdx, field)}
                 </div>
               )
             })}
@@ -1392,13 +1450,17 @@ export default function DailyLogTable({
                       </div>
                     </td>
                     {orderedCols.map((col, colIdx) => (
-                      <td key={col.key} className={`border border-gray-200 dark:border-tm-dark-border px-1 ${topCls} ${bottomCls} ${col.key === 'net_members' ? netMembersCls(displayNet(row)) : ''}`}>
+                      <td key={col.key} className={`border border-gray-200 dark:border-tm-dark-border px-1 ${topCls} ${bottomCls} ${col.key === 'net_members' ? netMembersCls(displayNet(row)) : ''} ${warningsFor(i, col.key).length ? '!bg-amber-100 dark:!bg-amber-950 ring-2 ring-inset ring-amber-600 dark:ring-amber-400' : ''}`}>
                         <input
+                          id={`daily-log-table-${i}-${col.key}`}
+                          aria-label={`${col.label.replace(/\n/g, ' ')} at ${slot?.label}${isSplit ? ` split ${row.split_index}` : ''}`}
+                          aria-invalid={warningsFor(i, col.key).length > 0}
+                          aria-describedby={warningsFor(i, col.key).length ? `cumulative-${i}-${col.key}` : undefined}
                           type="number"
                           min={col.key === 'net_members' ? undefined : 0}
                           data-row={pos}
                           data-col={colIdx}
-                          className={`w-full text-center py-1.5 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded disabled:cursor-default transition-colors ${col.key === 'net_members' ? 'text-inherit' : 'text-gray-800 dark:text-tm-dark-text'}`}
+                          className={`w-full text-center py-1.5 bg-transparent focus:outline-none focus:bg-white dark:focus:bg-tm-dark-card rounded disabled:cursor-default transition-colors ${col.key === 'net_members' ? 'text-inherit' : 'text-gray-800 dark:text-tm-dark-text'} ${warningsFor(i, col.key).length ? '!bg-amber-50 !text-amber-950 dark:!bg-amber-950 dark:!text-amber-100' : ''}`}
                           value={col.key === 'net_members' ? displayNet(row) : row[col.key]}
                           disabled={!canEdit || !logLoaded || col.key === 'net_members'}
                           onFocus={handleEditDuringDowntime}
@@ -1406,6 +1468,7 @@ export default function DailyLogTable({
                           onBlur={() => saveImmediately(i)}
                           onKeyDown={e => handleCellKeyDown(e, pos, colIdx)}
                         />
+                        {fieldWarning(i, col.key)}
                       </td>
                     ))}
                     <td className={`border border-gray-200 dark:border-tm-dark-border px-2 py-1.5 text-center bg-tm-sky/30 dark:bg-tm-teal/10 text-tm-blue dark:text-tm-dark-text font-semibold font-brand ${topCls} ${bottomCls}`}>
