@@ -152,10 +152,12 @@ test('canceling browser Back preserves the draft and restores the prior history 
  assert.equal(h.find(n=>n.type==='input'&&n.props.value==='No').props.checked,true);h.unmount()
 })
 
-test('operational photo requirements expose cameras and no native library input',async()=>{
+test('operational photo requirements expose separate camera and library inputs through the existing upload action',async()=>{
  for(const templateData of [...checklistTemplates,pm]){
   const h=form({templateData});await h.flush()
-  assert.equal(h.all(n=>n.type==='input'&&n.props.type==='file').length,0)
+  const library=h.all(n=>n.type==='input'&&n.props.type==='file')
+  assert.equal(library.length,templateData.definition.filter(i=>i.photo_required).length)
+  assert.ok(library.every(n=>n.props.capture===undefined&&n.props.accept==='image/jpeg,image/png,image/webp'))
   const cameras=h.all(n=>typeof n.props?.onCapture==='function')
   assert.deepEqual(cameras.map(n=>n.props.itemId),templateData.definition.filter(i=>i.photo_required).map(i=>i.id))
   if(cameras.length) {await cameras[0].props.onCapture(new Blob(['invalid'],{type:'image/svg+xml'}));await h.flush();assert.equal(h.calls.length,0)}

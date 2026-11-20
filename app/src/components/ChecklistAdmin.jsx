@@ -44,7 +44,7 @@ export default function ChecklistAdmin({ templates, reload }) {
     {notice && <p role="status">{notice}</p>}
     {state && <>
       <h3 className="font-bold">{state.published.name} · published v{state.published.version} · draft revision {state.draft?.revision ?? 0}</h3>
-      <p className="text-sm">Keep sections grouped and conditional follow-ups after their parent. Response choices, conditional rules, N/A permissions and signatures are protected. New questions use approved types.</p>
+      <p className="text-sm">Keep sections grouped and conditional follow-ups after their parent. Response types, choices, conditional rules and signatures are protected. Allow N/A applies to choice questions; every N/A response requires a brief reason, including non-Critical questions. Required photo counts and signatures still apply. N/A does not trigger failure-only photos or follow-ups. Keep a required photo count when evidence is needed for every response. New questions use approved types.</p>
       <p className="text-sm">Maximum required evidence: {Number.isFinite(photoBudget(items)) ? `${photoBudget(items)}/180` : 'Invalid photo count; enter 0–10'}. The 200-upload limit reserves space for retries and corrections.</p>
       <fieldset disabled={busy} className="space-y-4">
         {items.map((item, index) => <div key={item.id} className="border rounded p-3 space-y-2 dark:border-tm-dark-border">
@@ -55,6 +55,7 @@ export default function ChecklistAdmin({ templates, reload }) {
           <label className="block">Instructions<textarea aria-label={`Instructions ${index + 1}`} maxLength={2000} className={`${control} block w-full`} value={item.instruction || ''} onChange={e => change(index, { instruction: e.target.value })} /></label>
           <div className="flex flex-wrap items-center gap-3">
             <label><input aria-label={`Critical ${index + 1}`} type="checkbox" checked={item.critical} onChange={e => change(index, { critical: e.target.checked })} /> Critical</label>
+            {item.type !== 'text' && <label><input aria-label={`Allow N/A ${index + 1}`} type="checkbox" checked={item.na_allowed === true} onChange={e => change(index, { na_allowed: e.target.checked })} /> Allow N/A</label>}
             <label>Required photos (0–10)<input aria-label={`Required photos ${index + 1}`} className={`${control} w-20 ml-2`} type="number" min="0" max="10" step="1" value={item.photo_min_count ?? (item.photo_required ? 1 : 0)} onChange={e => { const count = Number(e.target.value); change(index, { photo_min_count: count, photo_required: count > 0 }) }} /></label>
             <button className={control} aria-label={`Move question ${index + 1} up`} disabled={index === 0 || items[index - 1].section !== item.section} onClick={() => move(index, -1)}>Move up</button>
             <button className={control} aria-label={`Move question ${index + 1} down`} disabled={index === items.length - 1 || items[index + 1].section !== item.section} onClick={() => move(index, 1)}>Move down</button>

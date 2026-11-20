@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-// This removes the library picker from the normal UI; it is not camera provenance attestation.
+// Dedicated live camera option; the form also offers library selection through the same verified upload path.
 export default function ChecklistCamera({ itemId, disabled, onCapture }) {
   const [open, setOpen] = useState(false), [starting, setStarting] = useState(false), [error, setError] = useState('')
   const video = useRef(null), stream = useRef(null), generation = useRef(0), active = useRef(false)
@@ -22,7 +22,7 @@ export default function ChecklistCamera({ itemId, disabled, onCapture }) {
     if (disabled || starting || open) return
     setError('')
     if (!globalThis.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-      setError('Camera capture is unavailable here. Open TM Ops in an updated iPhone or Android browser with camera access. You can still save an incomplete draft.')
+      setError('Camera capture is unavailable here. Open TM Ops in an updated iPhone or Android browser with camera access. Choose from the photo library below, or save an incomplete draft.')
       return
     }
     setStarting(true)
@@ -32,7 +32,7 @@ export default function ChecklistCamera({ itemId, disabled, onCapture }) {
       if (!active.current || attempt !== generation.current) { result.getTracks().forEach(track => track.stop()); return }
       stream.current = result; setOpen(true)
     } catch {
-      if (active.current && attempt === generation.current) setError('Camera could not open. Allow camera access in your browser settings and try again. You can still save an incomplete draft.')
+      if (active.current && attempt === generation.current) setError('Camera could not open. Allow camera access in your browser settings and try again. Choose from the photo library below, or save an incomplete draft.')
     } finally { if (active.current && attempt === generation.current) setStarting(false) }
   }
   function cancel() { stop(); setOpen(false); setStarting(false); setError('') }
