@@ -246,7 +246,15 @@ export default function ChecklistForm({ initial, user, locationLabel, locationNa
       <p className="font-semibold">{requiredChecklistPhotos(item, answers[item.id]) === 1 ? (section ? `One photo required for the ${item.section} section.` : 'One photo required for this item.') : `${requiredChecklistPhotos(item, answers[item.id])} photos required for ${section ? 'this section' : 'this item'}.`}</p>
       {item.photo_min_count != null && <p>{evidence.filter(file => file.kind === 'photo' && file.item_id === item.id).length} saved / {requiredChecklistPhotos(item, answers[item.id])} required</p>}
       {section && item.instruction && <p>{item.instruction}</p>}
-      {(!readonly || (previewReadOnly && row.status === 'draft')) && (!transport || capabilities?.can_upload || previewReadOnly) && (operationalChecklist ? <ChecklistCamera itemId={item.id} disabled={busy || staleVersion.current || previewReadOnly} onCapture={file => upload(file, item.id, 'photo')} /> : <label className="block">Add photo
+      {(!readonly || (previewReadOnly && row.status === 'draft')) && (!transport || capabilities?.can_upload || previewReadOnly) && (operationalChecklist ? <div className="space-y-3">
+          <ChecklistCamera itemId={item.id} disabled={busy || staleVersion.current || previewReadOnly} onCapture={file => upload(file, item.id, 'photo')} />
+          <label className="block font-semibold">Choose from photo library
+            <input aria-label={`Choose photo from library ${item.id}`} disabled={busy || staleVersion.current || previewReadOnly} type="file" accept="image/jpeg,image/png,image/webp"
+              className="block w-full min-h-11 min-w-0 text-sm file:min-h-11 file:mr-2 file:px-3 file:border file:rounded file:bg-transparent file:text-inherit"
+              onChange={e => { const file = e.target.files?.[0]; if (file) upload(file, item.id, 'photo'); e.target.value = '' }} />
+          </label>
+          <p className="text-xs">JPEG, PNG or WebP, up to 10 MB. Camera and library photos use the same private server verification. Identical photos already submitted at this location are rejected.</p>
+        </div> : <label className="block">Add photo
         <input aria-label={`Upload photo ${item.id}`} disabled={busy || staleVersion.current || previewReadOnly} type="file" accept="image/jpeg,image/png,image/webp"
           className="block w-full min-h-11 min-w-0 text-sm file:min-h-11 file:mr-2 file:px-3 file:border file:rounded file:bg-transparent file:text-inherit"
           onChange={e => { const file = e.target.files?.[0]; if (file) upload(file, item.id, 'photo'); e.target.value = '' }} />
