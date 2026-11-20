@@ -14,7 +14,7 @@ async function open(mode='reviewer'){
   window.profile={id:'fictional',role:mode==='store'?'store':'admin'}
   window.site={id:'s',site_code:'1508',name:'Fictional Site',opportunities_formula:'simple'}
   window.employee={id:'e',location_id:'s',name:'Fictional Employee',is_active:true}
-  window.ledger={sales:[{id:1,location_id:'s',sale_id:'100',log_date:'2026-11-10',item:'Membership',revision:0,decision:'pending',activity:'unknown',identity_confirmed:false,reason:'',employee_id:null,employee_name:null,has_original:true,has_reviewed:true,observations:[{id:1,kind:'original',employee_identifier:'1234567890',customer_name:'Fictional Customer',customer_phone:'5550100000',source_note:'Review prior membership evidence',commission:5},{id:2,kind:'reviewed',employee_identifier:'7890',customer_name:'Fictional Customer',customer_phone:'5550100000',source_note:'Review prior membership evidence',commission:5}]}],mappings:[],audit:[]}
+  window.ledger={sales:[{id:1,location_id:'s',sale_id:'100',log_date:'2026-11-10',item:'Membership',revision:0,decision:'pending',identifier_classification:'retained',employee_key:'0012',review_complete:false,activity:'unknown',identity_confirmed:false,reason:'',employee_id:null,employee_name:null,observations:[{id:1,kind:'weekly',employee_identifier:'200000012',customer_name:'Fictional Customer',customer_phone:'5550100000',source_note:'Review prior membership evidence',commission:5}]}],mappings:[],audit:[]}
   window.fakeRpc=async(name,{action,payload,...args}={})=>{
    window.calls.push({name,action,payload})
    if(name==='approved_employee_name_mappings')return{data:[]}
@@ -48,11 +48,12 @@ try{
  await p.getByRole('button',{name:'Load comparison',exact:true}).click()
  await p.getByText('Employee comparison',{exact:true}).waitFor()
  assert.equal(await p.getByRole('columnheader',{name:'Verified Commission-Eligible Sales',exact:true}).count(),2)
- await p.getByLabel('Mapping location').selectOption('s');await p.getByLabel('Exact 10-digit identifier').fill('1234567890');await p.getByLabel('Roster employee').selectOption('e');await p.getByLabel('Verification reason',{exact:true}).fill('Verified roster crosswalk')
+ await p.getByLabel('Mapping location').selectOption('s');await p.getByLabel('ADP Badge Number (exact)').fill('0200000012');await p.getByLabel('ADP roster evidence/reference').fill('Fictional authoritative ADP roster');await p.getByLabel('Roster employee').selectOption('e');await p.getByLabel('Verification reason',{exact:true}).fill('Verified roster crosswalk')
  await p.getByRole('button',{name:'Propose for selected dates'}).click();await p.getByLabel('Mapping 1 decision reason').fill('Reviewed identifier against roster')
  await p.getByRole('button',{name:'Approve',exact:true}).click()
  await p.locator('summary').filter({hasText:'Sale 100'}).click()
- assert.equal(await p.getByText('Review prior membership evidence',{exact:true}).count(),2)
+ assert.equal(await p.getByText('Review prior membership evidence',{exact:true}).count(),1)
+ assert.equal(await p.getByLabel('Decision',{exact:true}).getByRole('option',{name:'eligible',exact:true}).isDisabled(),true)
  await p.getByRole('button',{name:'Review possible repeat customers'}).click();await p.getByRole('heading',{name:'Possible repeat customers'}).waitFor()
  await p.getByLabel('Activity',{exact:true}).selectOption('replacement');await p.getByLabel('Decision',{exact:true}).selectOption('excluded');await p.getByLabel("I verified this transaction's identity and source evidence.").check();await p.getByLabel('Review reason (required)').fill('Replacing an active membership')
  await p.getByRole('button',{name:'Save review',exact:true}).click()
@@ -65,9 +66,10 @@ try{
  // Values-only fictional XLSX through the real reader/parser.
  const z=new JSZip();z.file('xl/workbook.xml','<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Export" r:id="rId1"/></sheets></workbook>');z.file('xl/_rels/workbook.xml.rels','<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>')
  const cells=rows=>rows.map(row=>'<row>'+row.map(v=>'<c t="inlineStr"><is><t>'+v+'</t></is></c>').join('')+'</row>').join('')
- z.file('xl/worksheets/sheet1.xml','<worksheet><sheetData>'+cells([['SITENUMBER','LOGDATE','SALEID','ITEM_NAME','CUST_ALTPHONE','COMMISSION'],['1508','2026-11-10','102','Membership','1234567890','5']])+'</sheetData></worksheet>')
+ z.file('xl/worksheets/sheet1.xml','<worksheet><sheetData>'+cells([['SITENUMBER','LOGDATE','SALEID','ITEM_NAME','CUST_ALTPHONE','COMMISSION'],['1508','2026-11-10','102','Membership','200000012','5']])+'</sheetData></worksheet>')
  await p.getByLabel('DRB export',{exact:true}).setInputFiles({name:'fictional.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:await z.generateAsync({type:'nodebuffer'})})
  await p.getByRole('button',{name:'Validate and preview'}).click();await p.getByText(/1 transactions · 1 locations/).waitFor();await p.getByRole('button',{name:'Save import',exact:true}).click();await p.getByText(/Import saved/).waitFor()
+ assert.equal(await p.evaluate(()=>window.calls.filter(c=>c.action==='import').every(c=>c.payload.kind==='weekly')),true)
  assert.equal(await p.evaluate(()=>window.calls.some(c=>['import','review_sale','decide_mapping','propose_mapping'].includes(c.action))),true)
  await p.close()
  for(const mode of ['admin','store']){const page=await open(mode);await page.getByRole('alert').waitFor();assert.equal(await page.getByRole('button',{name:'Load comparison'}).count(),0);assert.equal(await page.evaluate(()=>window.calls.some(c=>c.action==='read')),false);await page.close()}

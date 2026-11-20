@@ -13,8 +13,9 @@ const reviewErrors = new Set([
   'Overlapping employee mapping; resolve before approval',
   'Confirm transaction identity before deciding',
   'Reviewed commission evidence and activity classification required',
-  'Original full employee identifier required',
-  'Reviewed identifier changed or shortened; exclusion evidence must not become eligible',
+  'Verified retained employee identifier required',
+  'Sara-excluded identifier cannot become eligible',
+  'Weekly review completion must be verified before eligibility',
   'Exactly one approved employee mapping required',
   'This activity cannot be marked commission eligible',
   'Select at most 93 days', 'Narrow the reporting period to 5,000 transactions',
@@ -33,7 +34,7 @@ export function drbDate(value) {
   return date
 }
 export function parseDrbTransactions(matrix, kind, start, end) {
-  if (!['original', 'reviewed'].includes(kind)) fail('Choose original sales or reviewed commissions.')
+  if (kind !== 'weekly') fail('Choose the single weekly commission export.')
   start = drbDate(start); end = drbDate(end)
   if (start > end) fail('Invalid reporting period.')
   const required = ['SITENUMBER', 'LOGDATE', 'SALEID', 'ITEM_NAME', 'CUST_ALTPHONE', 'COMMISSION']
@@ -51,8 +52,8 @@ export function parseDrbTransactions(matrix, kind, start, end) {
     const key = `${site_code}:${sale_id}`
     if (seen.has(key)) fail('Repeated Site + Sale ID: obtain a line identifier before importing this export.')
     seen.add(key)
-    const employee_identifier = get('CUST_ALTPHONE'), commission = get('COMMISSION')
-    if (employee_identifier && !/^\d{1,20}$/.test(employee_identifier)) fail('Employee identifiers must be exact digit strings; no padding or name matching is applied.')
+    const employee_identifier = String(values[header.indexOf('CUST_ALTPHONE')] ?? ''), commission = get('COMMISSION')
+    if (employee_identifier.length > 40) fail('Alternate Phone exceeds 40 characters. Original values are never padded or rewritten.')
     if (!/^-?\d{1,10}(?:\.\d{1,6})?$/.test(commission)) fail('Invalid commission amount.')
     // Preserve trailing source annotations privately without interpreting their meaning.
     // No filenames, Legal Name or raw workbook upload.
@@ -71,18 +72,31 @@ export async function parseDrbReconciliationFile(file, kind, start, end) {
   const file_hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', buffer))].map(v => v.toString(16).padStart(2, '0')).join('')
   return { ...document, file_hash }
 }
-export const shortenedIdentifier = value => /^\d{4}$/.test(text(value))
-// Decisions and employee attribution are separate. A shortened reviewed ID is
-// exclusion evidence, never a reconstructed employee ID or an exclusion reason.
+// Classify the source value BEFORE deriving a common employee key. Never use
+// Number(), padStart(), or strip the prefix in the immutable observation.
+export function classifyDrbIdentifier(value) {
+  const raw = String(value ?? '')
+  const classification = /^\d{4}$/.test(raw) ? 'excluded'
+    : /^(?:020000|20000)\d{4}$/.test(raw) ? 'retained' : 'unresolved'
+  return { raw, classification, employeeKey: classification === 'unresolved' ? null : raw.slice(-4) }
+}
+export function adpBadgeKey(value) {
+  const raw = String(value ?? '')
+  return /^\d{4,20}$/.test(raw) ? raw.slice(-4) : null
+}
+export const shortenedIdentifier = value => classifyDrbIdentifier(value).classification === 'excluded'
 export function saleBucket(sale) {
-  if (!sale.has_original) return 'unresolved'
-  if (sale.decision === 'excluded') return 'excluded'
-  if (sale.decision === 'eligible' && sale.employee_id && sale.identity_confirmed && sale.has_original && sale.has_reviewed && sale.activity !== 'unknown') return 'eligible'
+  // Classification and attribution are independent. An unmatched four-digit
+  // claim remains excluded, while its employee attribution remains unresolved.
+  if (sale.commission_status === 'excluded' || sale.identifier_classification === 'excluded' || sale.decision === 'excluded') return 'excluded'
+  if (sale.commission_status != null) return ({ eligible: 'eligible', excluded: 'excluded', pending: 'unresolved' })[sale.commission_status] || 'unresolved'
+  if (sale.decision === 'eligible' && sale.identifier_classification === 'retained'
+    && sale.employee_id && sale.review_complete && sale.identity_confirmed && sale.activity !== 'unknown') return 'eligible'
   return 'unresolved'
 }
 export function reconciliationComparison(sales, logs, locations, range, mappings = []) {
   const manager = buildEmployeePerformance(logs, locations, range, mappings).rows
-  const bySite = new Map(locations.map(l => [l.id, { locationId: l.id, name: l.name, reported: null, gross: 0, eligible: 0, excluded: 0, unresolved: 0, reviewedOnly: 0 }]))
+  const bySite = new Map(locations.map(l => [l.id, { locationId: l.id, name: l.name, reported: null, gross: 0, eligible: 0, excluded: 0, unresolved: 0, unresolvedAttribution: 0 }]))
   for (const location of locations) {
     const rows = manager.filter(r => r.locationId === location.id)
     if (rows.length && rows.every(r => r.ms != null)) bySite.get(location.id).reported = rows.reduce((n, r) => n + r.ms, 0)
@@ -91,10 +105,10 @@ export function reconciliationComparison(sales, logs, locations, range, mappings
     if (sale.log_date < range.start || sale.log_date > range.end) continue
     const row = bySite.get(sale.location_id)
     if (!row) continue
-    // Gross = original membership-export records, before commission exclusions.
+    // Gross = single weekly export records before commission exclusions.
     // Refunds/voids remain individually visible; no signed netting is invented.
-    if (!sale.has_original) { row.reviewedOnly++; continue }
     row.gross++; row[saleBucket(sale)]++
+    if (!sale.employee_id) row.unresolvedAttribution++
   }
   return [...bySite.values()]
 }
@@ -104,16 +118,17 @@ export function employeeReconciliation(sales, logs, locations, range, mappings =
   // to a POS roster UUID. Equal display names never establish employee identity.
   const result = manager.map(row => ({ key: row.key, name: row.name, locationId: row.locationId, reported: row.ms,
     employeeId: row.key.includes('::identity:mapped%3a') ? decodeURIComponent(row.key.split('::identity:')[1]).slice(7) : null,
-    gross: 0, eligible: 0, excluded: 0, unresolved: 0 }))
+    gross: 0, eligible: 0, excluded: 0, unresolved: 0, unresolvedAttribution: 0 }))
   for (const sale of sales) {
-    if (!sale.has_original || sale.log_date < range.start || sale.log_date > range.end) continue
+    if (sale.log_date < range.start || sale.log_date > range.end) continue
     let row = result.find(r => r.locationId === sale.location_id && r.employeeId && r.employeeId === sale.employee_id)
     if (!row) {
       const key = `${sale.location_id}:pos:${sale.employee_id || 'unmatched'}`
       row = result.find(r => r.key === key)
-      if (!row) { row = { key, locationId: sale.location_id, employeeId: sale.employee_id, name: sale.employee_name || 'Awaiting employee match', reported: null, gross: 0, eligible: 0, excluded: 0, unresolved: 0 }; result.push(row) }
+      if (!row) { row = { key, locationId: sale.location_id, employeeId: sale.employee_id, name: sale.employee_name || 'Awaiting employee match', reported: null, gross: 0, eligible: 0, excluded: 0, unresolved: 0, unresolvedAttribution: 0 }; result.push(row) }
     }
     row.gross++; row[saleBucket(sale)]++
+    if (!sale.employee_id) row.unresolvedAttribution++
   }
   return result
 }
