@@ -17,3 +17,11 @@ for (const [name,rows] of [
  assert.equal(performance.rows.find(r=>r.name==='Blair').ms,actual.Blair.basic)
  assert.deepEqual(rows.map(r=>r.employee_name),name==='unnamed opening checkpoint'?[null,'Blair']:name==='split checkpoints'?['Alex','','Blair']:['Alex',' ','Blair'])
 })
+
+
+test('Employee Summary displays zero sales with positive opportunities as zero conversion and P-Mix',()=>{
+ const harness=locationHelpHarness('components/EmployeeSummary', {employeeDeltasByDay,dailyNetMembers:()=>0,plansLost:()=>null,fmtNum:String,pmixCls:()=>'',convCls:()=>'',pmixTotalsCls:()=>'',convTotalsCls:()=>''}, {rows:[{...row('Zero','08:00',1),basic:0}],opportunitiesFormula:'simple'})
+ harness.render()
+ const cells=harness.find(n=>n.type==='tbody').props.children.flatMap(n=>Array.isArray(n)?n:[n]).flatMap(n=>n.props.children)
+ assert.equal(cells.filter(n=>n.props.children==='0.0%').length,4)
+})

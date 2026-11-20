@@ -20,7 +20,7 @@ const derive = (d, formula) => {
     opp,
     btr:        toInt(d.better),
     bst:        toInt(d.best),
-    p_mix:      ms  > 0 ? ((toInt(d.better) + toInt(d.best)) / ms  * 100).toFixed(1) + '%' : '',
+    p_mix:      ms  > 0 ? ((toInt(d.better) + toInt(d.best)) / ms  * 100).toFixed(1) + '%' : '0.0%',
     conversion: opp > 0 ? (ms / opp * 100).toFixed(1) + '%'                               : '',
   }
 }
