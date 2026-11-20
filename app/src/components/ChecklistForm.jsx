@@ -1,3 +1,4 @@
+import ChecklistPrintButton from './ChecklistPrintButton'
 import ChecklistWeeklyDue from './ChecklistWeeklyDue'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
@@ -6,7 +7,7 @@ import ChecklistCamera from './ChecklistCamera'
 import { validateChecklist, validateEvidence, checklistTimestamp, isChecklistItemActive, requiredChecklistPhotos } from '../utils/checklistRules'
 import { downloadChecklistEvidence, checklistUploadRejection } from '../utils/checklistEvidence'
 
-export default function ChecklistForm({ initial, user, locationLabel, onClose, onSaved, admin = false, previewReadOnly = false, transport = null, initialCapabilities = null, initialEvidence = [] }) {
+export default function ChecklistForm({ initial, user, locationLabel, locationName, onClose, onSaved, admin = false, previewReadOnly = false, transport = null, initialCapabilities = null, initialEvidence = [] }) {
   const recoveryKey = record => transport ? `tm_checklist_draft_${transport.guest ? transport.recoveryKey : user?.id}_${record.id}_${rowRecoveryId(record)}` : `tm_checklist_draft_${user.id}_${record.id}`
   const cached = record => { try { return JSON.parse(sessionStorage.getItem(recoveryKey(record)) || 'null') } catch { return null } }
   const recovery = useRef(cached(initial))
@@ -269,6 +270,7 @@ export default function ChecklistForm({ initial, user, locationLabel, onClose, o
   return <section className="space-y-3 border rounded-xl p-3 sm:p-4 text-sm sm:text-base bg-white dark:bg-tm-dark-surface" aria-label="Checklist responses">
     <h2 className="text-lg sm:text-xl font-bold">{row.template_snapshot.name} · {row.period_date}</h2>
     <p className="text-xs sm:text-sm break-words">Location: {locationLabel || row.location_id}{transport ? transport.guest ? ' · Store QR access. Names are self-reported.' : ' · Signed-in account access.' : <> · Authenticated account: {actorName} ({row.created_by})</>}</p>
+    <ChecklistPrintButton row={row} transport={transport} locationLabel={locationLabel} locationName={locationName} disabled={busy || !evidenceReady || unavailable.current} />
     <ChecklistWeeklyDue timing={weeklyTiming} timezone={row.template_snapshot.timezone} />
     {weeklyTiming && <p className="text-sm">Initial submissions remain allowed after this deadline; those received late are permanently marked Completed Late. Corrections close at this deadline.</p>}
     {transport && !weeklyTiming && capabilities?.edit_deadline_at && <p className="text-sm">Corrections close: {checklistTimestamp(capabilities.edit_deadline_at, row.template_snapshot.timezone)}. The assigned date or week sets this deadline.</p>}
