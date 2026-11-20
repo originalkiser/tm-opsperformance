@@ -7,11 +7,12 @@ import ChecklistOpenWork from '../components/ChecklistOpenWork'
 import ChecklistAdmin from '../components/ChecklistAdmin'
 import BudgetLabelsEditor from '../components/BudgetLabelsEditor'
 import ChecklistWeeklyDue from '../components/ChecklistWeeklyDue'
+import ChecklistSubmissionReview from '../components/ChecklistSubmissionReview'
 import { validateWeeklyPeriods } from '../utils/checklistWeekly'
 import { addChecklistDays } from '../utils/checklistCompliance'
 import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { supabase, supabasePublicKey } from '../lib/supabase'
-import { checklistPeriod, completionStatus, localChecklistDate, checklistTimestamp } from '../utils/checklistRules'
+import { checklistPeriod, completionStatus, localChecklistDate } from '../utils/checklistRules'
 import { createChecklistTransport, findChecklistOccurrence } from '../utils/checklistAccess'
 import '../styles/boldPages.css'
 
@@ -132,17 +133,11 @@ export default function ManagerChecklists() {
         {admin && <>
           <h2 className="tm-checklist-review-heading font-bold text-lg">Checklist submission review</h2>
           <p>Existing records for the selected period, including available weekly carryover. New-policy weekly due dates are shown above; earlier periods retain their original behavior.</p>
-          <ul>{rows.filter(record => !auditKeys.includes(record.template_key)).map(record => <li key={record.id} className="border-b py-3">
-            {locations.find(location => location.id === record.location_id)?.site_code} · {record.template_snapshot.name} · {record.period_date} · {record.status}{record.is_pilot ? ' · Historical pilot' : ''}
-            <button disabled={busy} className="min-h-12 px-4 underline" onClick={() => open(null, record)}>Review {record.status} · {record.manager_name || 'Unnamed draft'} · {checklistTimestamp(record.submitted_at || record.updated_at, record.template_snapshot.timezone)}</button>
-          </li>)}</ul>
+          <ChecklistSubmissionReview key={`operational:${site}:${date}:${user.id}:${managerPreview}`} label="Operational checklist submissions" records={rows.filter(record => !auditKeys.includes(record.template_key))} locations={locations} busy={busy} onOpen={record => open(null, record)} />
           {rows.some(record => auditKeys.includes(record.template_key)) && <section aria-label="Management audit submission review">
             <h2 className="tm-checklist-review-heading font-bold text-lg">Management audit submission review</h2>
             <p>Saved audits for the selected calendar month and quarter.</p>
-            <ul>{rows.filter(record => auditKeys.includes(record.template_key)).map(record => <li key={record.id} className="border-b py-3">
-              {locations.find(location => location.id === record.location_id)?.site_code} · {record.template_snapshot.name} · {record.period_date} · {record.status}
-              <button disabled={busy} className="min-h-12 px-4 underline" onClick={() => open(null, record)}>Review {record.status} · {record.manager_name || 'Unnamed draft'} · {checklistTimestamp(record.submitted_at || record.updated_at, record.template_snapshot.timezone)}</button>
-            </li>)}</ul>
+            <ChecklistSubmissionReview key={`audits:${site}:${date}:${user.id}:${managerPreview}`} label="Management audit submissions" records={rows.filter(record => auditKeys.includes(record.template_key))} locations={locations} busy={busy} onOpen={record => open(null, record)} />
           </section>}
           <button className="min-h-12 px-4 border rounded" onClick={() => setShowAdmin(previous => !previous)}>{showAdmin ? 'Hide' : 'Manage'} checklist configuration</button>
           {showAdmin && <><ChecklistQrAdmin location={selected} />{configurationAccess === user?.id && !managerPreview && <><ChecklistAdmin templates={templates} reload={load} /><BudgetLabelsEditor /></>}</>}
