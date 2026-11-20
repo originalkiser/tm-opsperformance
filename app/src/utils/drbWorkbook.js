@@ -8,7 +8,6 @@ export async function readDrbWorkbook(buffer) {
   const { default: JSZip } = await import('jszip')
   const { SaxesParser } = await import('saxes')
   const zip = await JSZip.loadAsync(buffer)
-  if (Object.keys(zip.files).some(path => /comments.*\.xml$/i.test(path))) fail('Workbook comments require separate review. Export their reasons into values before importing.')
   let size = 0
   for (const file of Object.values(zip.files)) {
     if (file.dir) continue

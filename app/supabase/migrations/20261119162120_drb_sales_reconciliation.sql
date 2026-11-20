@@ -1,5 +1,5 @@
 -- Prepared only. No production records, existing permissions or reviewer grants changed.
--- Release gate: confirm DRB Site+SaleID identity contract, reviewer scope and PII retention.
+-- Non-customer initial release. Prepared only; verify identity and production security before installation.
 begin;
 set local lock_timeout='3s';
 create schema reconciliation_private;
@@ -13,25 +13,20 @@ create table reconciliation_private.batches (
  id bigint generated always as identity primary key,
  file_hash text not null check(file_hash ~ '^[0-9a-f]{64}$'),
  kind text not null check(kind='weekly'),
- -- No public completion mutation until Sara identity/attestation handling is verified.
+ revision integer not null default 0 check(revision>=0),
  review_completed_by uuid references public.user_profiles(id),
  review_completed_at timestamptz,
  check ((review_completed_by is null) = (review_completed_at is null)),
  content_digest text not null,
  start_date date not null, end_date date not null check(end_date>=start_date),
  actor uuid not null, created_at timestamptz not null default now(),
- unique(file_hash,kind)
+ unique(file_hash,kind), unique(start_date,end_date)
 );
 create table reconciliation_private.sales (
  id bigint generated always as identity primary key,
  location_id uuid not null references public.locations(id),
  sale_id text not null check(sale_id ~ '^\d{1,30}$'),
  log_date date not null, item text not null,
- revision integer not null default 0,
- decision text not null default 'pending' check(decision in ('pending','eligible','excluded')),
- activity text not null default 'unknown' check(activity in ('unknown','new','renewal','reactivation','replacement','refund','void')),
- identity_confirmed boolean not null default false,
- reason text not null default '' check(length(reason)<=1000),
  unique(location_id,sale_id)
 );
 create table reconciliation_private.observations (
@@ -40,9 +35,6 @@ create table reconciliation_private.observations (
  batch_id bigint not null references reconciliation_private.batches(id),
  employee_identifier text not null,
  commission numeric not null,
- customer_name text not null check(length(customer_name)<=200),
- customer_phone text not null check(length(customer_phone)<=100),
- source_note text not null check(length(source_note)<=2000),
  unique(sale_id,batch_id)
 );
 create table reconciliation_private.employee_mappings (
@@ -62,8 +54,6 @@ create table reconciliation_private.audit (
  actor uuid not null, happened_at timestamptz not null default clock_timestamp(),
  action text not null, subject_id bigint not null, previous jsonb, next jsonb
 );
-create index drb_customer_name_lookup on reconciliation_private.observations(lower(btrim(customer_name))) where btrim(customer_name)<>'';
-create index drb_customer_phone_lookup on reconciliation_private.observations(regexp_replace(customer_phone,'[^0-9]','','g'));
 create index drb_sales_log_date on reconciliation_private.sales(log_date,id);
 create index drb_mapping_lookup on reconciliation_private.employee_mappings(location_id,identifier,start_date,end_date) where status='approved';
 -- No direct API path, including service role; only the guarded, fixed-action RPC.
@@ -98,8 +88,8 @@ create function reconciliation_private.api(action text, payload jsonb) returns j
 language plpgsql security definer set search_path='' as $$
 declare
  b reconciliation_private.batches; s reconciliation_private.sales; m reconciliation_private.employee_mappings;
- r jsonb; v_location uuid; v_sale bigint; old jsonb; result jsonb; v_kind text; v_start date; v_end date;
- v_employee uuid; v_identifier text; v_count integer; v_decision text; v_activity text;
+ r jsonb; v_location uuid; old jsonb; result jsonb; v_kind text; v_start date; v_end date; v_digest text;
+ v_employee uuid; v_count integer;
 begin
  if not reconciliation_private.allowed() then raise exception 'Authorized sales reviewer required' using errcode='42501'; end if;
  -- Serialize mutations, including mapping overlap approval and imports. Also
@@ -112,30 +102,35 @@ begin
   perform pg_advisory_xact_lock(724174,1);
   if payload - array['kind','start_date','end_date','rows','file_hash'] <> '{}'::jsonb then raise exception 'Unexpected import fields'; end if;
   v_kind:=payload->>'kind'; v_start:=(payload->>'start_date')::date; v_end:=(payload->>'end_date')::date;
-  if v_kind is null or v_kind<>'weekly' or v_start is null or v_end is null or v_start>v_end
+  if v_kind is null or v_kind<>'weekly' or v_start is null or v_end is null or v_start>v_end or v_end-v_start>6
     or v_start<'2000-01-01' or v_end>'2100-12-31' or coalesce(payload->>'file_hash','') !~ '^[0-9a-f]{64}$'
     or jsonb_typeof(payload->'rows') is distinct from 'array' then raise exception 'Invalid import'; end if;
   if jsonb_array_length(payload->'rows') not between 1 and 20000 or pg_column_size(payload)>12000000 then raise exception 'Import size limit'; end if;
+  select md5(jsonb_agg(x order by x->>'site_code',x->>'sale_id',x::text)::text) into v_digest from jsonb_array_elements(payload->'rows') x;
   select * into b from reconciliation_private.batches where file_hash=payload->>'file_hash' and kind=v_kind;
   if found then
-   if b.start_date<>v_start or b.end_date<>v_end or b.content_digest<>md5((payload->'rows')::text) then raise exception 'Previously imported file has different content or coverage'; end if;
+   if b.start_date<>v_start or b.end_date<>v_end or b.content_digest<>v_digest then raise exception 'Previously imported file has different content or coverage'; end if;
    return jsonb_build_object('batch_id',b.id,'repeat',true);
   end if;
+  select * into b from reconciliation_private.batches where start_date=v_start and end_date=v_end;
+  if found then
+   if b.content_digest=v_digest then return jsonb_build_object('batch_id',b.id,'repeat',true); end if;
+   raise exception 'A different export already exists for this period; resolve it before importing';
+  end if;
+  if exists(select 1 from reconciliation_private.batches ib where ib.start_date<=v_end and ib.end_date>=v_start) then raise exception 'Reporting periods overlap; use the existing reporting period'; end if;
   insert into reconciliation_private.batches(file_hash,kind,content_digest,start_date,end_date,actor)
-   values(payload->>'file_hash',v_kind,md5((payload->'rows')::text),v_start,v_end,auth.uid()) returning * into b;
+   values(payload->>'file_hash',v_kind,v_digest,v_start,v_end,auth.uid()) returning * into b;
   -- Check duplicates before any inserts; do not choose an arbitrary line.
   if exists(select 1 from jsonb_array_elements(payload->'rows') x group by x->>'site_code',x->>'sale_id' having count(*)>1) then
    raise exception 'Repeated Site + Sale ID requires a verified line identifier'; end if;
   for r in select * from jsonb_array_elements(payload->'rows') loop
-   if jsonb_typeof(r) is distinct from 'object' or r - array['site_code','sale_id','log_date','item','employee_identifier','commission','customer_name','customer_phone','source_note'] <> '{}'::jsonb
+   if jsonb_typeof(r) is distinct from 'object' or r - array['site_code','sale_id','log_date','item','employee_identifier','commission'] <> '{}'::jsonb
     or coalesce(r->>'site_code','') !~ '^\d{4}$' or coalesce(r->>'sale_id','') !~ '^\d{1,30}$'
     or length(btrim(coalesce(r->>'item',''))) not between 1 and 200
-    or r->>'employee_identifier' is null or length(r->>'employee_identifier')>40 or coalesce(r->>'commission','') !~ '^-?\d{1,10}(\.\d{1,6})?$'
+    or jsonb_typeof(r->'employee_identifier') is distinct from 'string' or coalesce(r->>'commission','') !~ '^-?\d{1,10}(\.\d{1,6})?$'
     or coalesce(r->>'log_date','') !~ '^\d{4}-\d{2}-\d{2}$'
     or (r->>'log_date')::date not between v_start and v_end
-    or r->>'customer_name' is null or r->>'customer_phone' is null
-    or r->>'source_note' is null or length(r->>'source_note')>2000
-    or length(r->>'customer_name')>200 or length(r->>'customer_phone')>100 then raise exception 'Invalid transaction row'; end if;
+    then raise exception 'Invalid transaction row'; end if;
    select count(*),min(id::text)::uuid into v_count,v_location from public.locations where split_part(site_code,'-',1)=r->>'site_code';
    if v_count<>1 then raise exception 'Site must match exactly one location'; end if;
    insert into reconciliation_private.sales(location_id,sale_id,log_date,item)
@@ -146,19 +141,10 @@ begin
    -- never overwrite raw Alternate Phone values or silently replace decisions.
    if exists(select 1 from reconciliation_private.observations o join reconciliation_private.batches ib on ib.id=o.batch_id
       where o.sale_id=s.id and ib.kind=v_kind and
-      (o.employee_identifier<>coalesce(r->>'employee_identifier','') or o.commission<>(r->>'commission')::numeric
-       or o.customer_name<>r->>'customer_name' or o.customer_phone<>r->>'customer_phone' or o.source_note<>r->>'source_note')) then
+      (o.employee_identifier<>coalesce(r->>'employee_identifier','') or o.commission<>(r->>'commission')::numeric)) then
     raise exception 'Conflicting source observation; no import saved'; end if;
-   insert into reconciliation_private.observations(sale_id,batch_id,employee_identifier,commission,customer_name,customer_phone,source_note)
-    values(s.id,b.id,coalesce(r->>'employee_identifier',''),(r->>'commission')::numeric,r->>'customer_name',r->>'customer_phone',r->>'source_note');
-   -- Adding new evidence after a decision invalidates the decision until reviewed.
-   -- An overlapping exact observation does not invalidate an existing review.
-   if s.decision<>'pending' and not exists(select 1 from reconciliation_private.observations o join reconciliation_private.batches ib on ib.id=o.batch_id
-     where o.sale_id=s.id and ib.kind=v_kind and ib.id<>b.id) then
-    old:=to_jsonb(s);
-    update reconciliation_private.sales set decision='pending',revision=revision+1,reason='New source evidence requires review' where id=s.id returning * into s;
-    insert into reconciliation_private.audit(actor,action,subject_id,previous,next) values(auth.uid(),'new_evidence',s.id,old,to_jsonb(s));
-   end if;
+   insert into reconciliation_private.observations(sale_id,batch_id,employee_identifier,commission)
+    values(s.id,b.id,coalesce(r->>'employee_identifier',''),(r->>'commission')::numeric);
   end loop;
   insert into reconciliation_private.audit(actor,action,subject_id,next) values(auth.uid(),'import',b.id,jsonb_build_object('kind',v_kind,'rows',jsonb_array_length(payload->'rows')));
   return jsonb_build_object('batch_id',b.id,'repeat',false);
@@ -179,60 +165,20 @@ begin
   if payload->>'status'='approved' and exists(select 1 from reconciliation_private.employee_mappings x where x.id<>m.id and x.identifier=m.identifier and (x.location_id=m.location_id or x.employee_id<>m.employee_id) and x.status='approved' and x.start_date<=m.end_date and x.end_date>=m.start_date) then raise exception 'Overlapping employee mapping; resolve before approval'; end if;
   old:=to_jsonb(m);
   update reconciliation_private.employee_mappings set status=payload->>'status',reason=btrim(payload->>'reason'),revision=revision+1 where id=m.id returning * into m;
-  -- Revoke eligibility when an attribution approval is withdrawn. Keep the old
-  -- decision in audit; no record can silently move commissions to another person.
-  if old->>'status'='approved' and m.status<>'approved' then
-   for s in select x.* from reconciliation_private.sales x where x.location_id=m.location_id and x.log_date between m.start_date and m.end_date and x.decision='eligible'
-    and exists(select 1 from reconciliation_private.observations o join reconciliation_private.batches ib on ib.id=o.batch_id where o.sale_id=x.id and reconciliation_private.employee_key(o.employee_identifier)=m.identifier) for update loop
-     update reconciliation_private.sales set decision='pending',reason='Employee mapping approval withdrawn',revision=revision+1 where id=s.id;
-     insert into reconciliation_private.audit(actor,action,subject_id,previous,next) values(auth.uid(),'mapping_withdrawn',s.id,to_jsonb(s),jsonb_build_object('decision','pending'));
-   end loop;
-  end if;
+  -- Eligibility is derived from current approved attribution and completed source;
+  -- withdrawal immediately returns affected retained records to unresolved.
   insert into reconciliation_private.audit(actor,action,subject_id,previous,next) values(auth.uid(),'decide_mapping',m.id,old,to_jsonb(m));
   return to_jsonb(m);
- elsif action='review_sale' then
+ elsif action='complete_review' then
   perform pg_advisory_xact_lock(724174,1);
-  if payload - array['id','revision','decision','activity','identity_confirmed','reason'] <> '{}'::jsonb then raise exception 'Unexpected review fields'; end if;
-  v_decision:=payload->>'decision'; v_activity:=payload->>'activity';
-  if coalesce(v_decision,'') not in ('pending','eligible','excluded') or coalesce(v_activity,'') not in ('unknown','new','renewal','reactivation','replacement','refund','void') or length(btrim(coalesce(payload->>'reason',''))) not between 1 and 1000 then raise exception 'Review decision and reason required'; end if;
-  select * into strict s from reconciliation_private.sales where id=(payload->>'id')::bigint for update;
-  if (payload->>'revision')::integer is distinct from s.revision then raise exception 'Transaction changed; reload'; end if;
-  if v_decision<>'pending' and (payload->>'identity_confirmed')::boolean is distinct from true then raise exception 'Confirm transaction identity before deciding'; end if;
-  if v_decision='eligible' then
-   select o.employee_identifier into v_identifier from reconciliation_private.observations o where o.sale_id=s.id order by o.id limit 1;
-   if reconciliation_private.identifier_classification(v_identifier)='excluded' then raise exception 'Sara-excluded identifier cannot become eligible'; end if;
-   if coalesce(reconciliation_private.identifier_classification(v_identifier),'unresolved')<>'retained' then raise exception 'Verified retained employee identifier required'; end if;
-   if not exists(select 1 from reconciliation_private.observations o join reconciliation_private.batches ib on ib.id=o.batch_id where o.sale_id=s.id and ib.review_completed_by is not null and ib.review_completed_at is not null) then raise exception 'Weekly review completion must be verified before eligibility'; end if;
-   if v_activity='unknown' then raise exception 'Reviewed commission evidence and activity classification required'; end if;
-   select count(distinct x.employee_id) into v_count from reconciliation_private.employee_mappings x where x.identifier=reconciliation_private.employee_key(v_identifier) and x.status='approved' and s.log_date between x.start_date and x.end_date;
-   if v_count<>1 or not exists(select 1 from reconciliation_private.employee_mappings x where x.location_id=s.location_id and x.identifier=reconciliation_private.employee_key(v_identifier) and x.status='approved' and s.log_date between x.start_date and x.end_date) then raise exception 'Exactly one approved employee mapping required'; end if;
-   if v_activity in ('refund','void','replacement','renewal') then raise exception 'This activity cannot be marked commission eligible'; end if;
-  end if;
-  old:=to_jsonb(s);
-  update reconciliation_private.sales set decision=v_decision,activity=v_activity,identity_confirmed=coalesce((payload->>'identity_confirmed')::boolean,false),reason=btrim(payload->>'reason'),revision=revision+1 where id=s.id returning * into s;
-  insert into reconciliation_private.audit(actor,action,subject_id,previous,next) values(auth.uid(),'review_sale',s.id,old,to_jsonb(s));
-  return to_jsonb(s);
- elsif action='customer_matches' then
-  -- Search the private ledger across reporting windows. Matching names are only
-  -- review leads; never employee identity or a commission decision.
-  if payload - array['id'] <> '{}'::jsonb then raise exception 'Unexpected customer lookup fields'; end if;
-  select * into strict s from reconciliation_private.sales where id=(payload->>'id')::bigint;
-  select coalesce(jsonb_agg(to_jsonb(q)),'[]'::jsonb) into result from (
-   select distinct other.id,other.location_id,other.sale_id,other.log_date,other.activity,other.decision,
-    exists(select 1 from reconciliation_private.observations a join reconciliation_private.observations z
-     on regexp_replace(a.customer_phone,'[^0-9]','','g')=regexp_replace(z.customer_phone,'[^0-9]','','g')
-     where a.sale_id=s.id and z.sale_id=other.id and length(regexp_replace(a.customer_phone,'[^0-9]','','g'))>=7) phone_match,
-    exists(select 1 from reconciliation_private.observations a join reconciliation_private.observations z
-     on lower(btrim(a.customer_name))=lower(btrim(z.customer_name))
-     where a.sale_id=s.id and z.sale_id=other.id and btrim(a.customer_name)<>'') name_match
-   from reconciliation_private.sales other where other.id<>s.id and exists(
-    select 1 from reconciliation_private.observations a join reconciliation_private.observations z on
-     (length(regexp_replace(a.customer_phone,'[^0-9]','','g'))>=7 and regexp_replace(a.customer_phone,'[^0-9]','','g')=regexp_replace(z.customer_phone,'[^0-9]','','g'))
-     or (btrim(a.customer_name)<>'' and lower(btrim(a.customer_name))=lower(btrim(z.customer_name)))
-    where a.sale_id=s.id and z.sale_id=other.id)
-   order by other.log_date desc,other.id limit 101
-  ) q;
-  return jsonb_build_object('matches',result,'truncated',jsonb_array_length(result)>100);
+  if payload - array['batch_id','revision','confirm_reviewed'] <> '{}'::jsonb or payload->'confirm_reviewed' is distinct from 'true'::jsonb then raise exception 'Confirm Sara has completed this reporting period'; end if;
+  select * into strict b from reconciliation_private.batches where id=(payload->>'batch_id')::bigint for update;
+  if (payload->>'revision')::integer is distinct from b.revision then raise exception 'Imported period changed; reload before confirming review'; end if;
+  if b.review_completed_at is not null then return to_jsonb(b); end if;
+  old:=to_jsonb(b);
+  update reconciliation_private.batches set review_completed_by=auth.uid(),review_completed_at=clock_timestamp(),revision=revision+1 where id=b.id returning * into b;
+  insert into reconciliation_private.audit(actor,action,subject_id,previous,next) values(auth.uid(),'complete_review',b.id,old,to_jsonb(b));
+  return to_jsonb(b);
  elsif action='read' then
   v_start:=(payload->>'start')::date; v_end:=(payload->>'end')::date;
   if v_start is null or v_end is null or v_end<v_start or v_end-v_start>92 then raise exception 'Select at most 93 days'; end if;
@@ -241,8 +187,8 @@ begin
    'sales',coalesce((select jsonb_agg(to_jsonb(q) order by q.log_date,q.id) from (
     select sr.*, e.id employee_id,e.name employee_name,
      case when e.id is not null then 'matched' else 'unresolved' end attribution_status,
-     case when reconciliation_private.identifier_classification(origin.employee_identifier)='excluded' or sr.decision='excluded' then 'excluded'
-      when sr.decision='eligible' and e.id is not null and sr.identity_confirmed and sr.activity in ('new','reactivation') and reconciliation_private.identifier_classification(origin.employee_identifier)='retained' and exists(select 1 from reconciliation_private.observations o join reconciliation_private.batches ib on ib.id=o.batch_id where o.sale_id=sr.id and ib.review_completed_at is not null and ib.review_completed_by is not null) then 'eligible' else 'pending' end commission_status,
+     case when reconciliation_private.identifier_classification(origin.employee_identifier)='excluded' then 'excluded'
+      when e.id is not null and reconciliation_private.identifier_classification(origin.employee_identifier)='retained' and exists(select 1 from reconciliation_private.observations o join reconciliation_private.batches ib on ib.id=o.batch_id where o.sale_id=sr.id and ib.review_completed_at is not null and ib.review_completed_by is not null) then 'eligible' else 'pending' end commission_status,
      reconciliation_private.identifier_classification(origin.employee_identifier) identifier_classification,
      reconciliation_private.employee_key(origin.employee_identifier) employee_key,
      exists(select 1 from reconciliation_private.observations o join reconciliation_private.batches ib on ib.id=o.batch_id where o.sale_id=sr.id and ib.review_completed_at is not null and ib.review_completed_by is not null) review_complete,
@@ -254,6 +200,7 @@ begin
     left join public.employees e on e.id=attribution.employee_id and attribution.match_count=1 and exists(select 1 from reconciliation_private.employee_mappings em where em.location_id=sr.location_id and em.employee_id=attribution.employee_id and em.identifier=reconciliation_private.employee_key(origin.employee_identifier) and em.status='approved' and sr.log_date between em.start_date and em.end_date)
     where sr.log_date between v_start and v_end
    ) q),'[]'::jsonb),
+   'batches',coalesce((select jsonb_agg(to_jsonb(ib) order by ib.start_date,ib.id) from reconciliation_private.batches ib where ib.start_date<=v_end and ib.end_date>=v_start),'[]'::jsonb),
    'mappings',coalesce((select jsonb_agg(to_jsonb(em) order by em.id) from reconciliation_private.employee_mappings em where em.start_date<=v_end and em.end_date>=v_start),'[]'::jsonb),
    'audit',coalesce((select jsonb_agg(to_jsonb(a) order by a.id desc) from (select au.id,au.actor,au.happened_at,au.action,au.subject_id,au.previous,au.next from reconciliation_private.audit au order by au.id desc limit 100) a),'[]'::jsonb)
   ) into result;

@@ -5,7 +5,7 @@ const header=['SITENUMBER','LOGDATE','SALEID','ITEM_NAME','CUST_NAME','CUST_MAIN
 const record=['1508','2026-11-10','100','Membership','Fictional Customer','5550100000','0200000012','5','Fictional Employee']
 const parse=(rows,kind='weekly')=>parseDrbTransactions([header,...rows],kind,'2026-11-08','2026-11-14')
 test('weekly columns validated, repeated headers/blank totals handled without employee name inference',()=>{
- const doc=parse([record,header,[],['','','','','','','','100']]);assert.equal(doc.rows.length,1);assert.equal(doc.rows[0].employee_identifier,'0200000012');assert.equal(doc.rows[0].customer_name,'Fictional Customer');assert.equal(doc.rows[0].employee_name,undefined)
+ const doc=parse([record,header,[],['','','','','','','','100'],['Applied filters: reporting period']]);assert.equal(doc.rows.length,1);assert.equal(doc.rows[0].employee_identifier,'0200000012');assert.equal(doc.rows[0].customer_name,undefined);assert.equal(doc.rows[0].employee_name,undefined)
  assert.equal(parse([record],'weekly').kind,'weekly')
  assert.throws(()=>parse([record,record]),/line identifier/)
  assert.throws(()=>parseDrbTransactions([['Site','Count'],['1508','2']],'weekly','2026-11-08','2026-11-14'),/transaction-level/)
@@ -16,19 +16,18 @@ test('missing/date/identifier errors fail closed; suffixes preserved exactly and
  assert.equal(parse([[...record.slice(0,6),'5678',...record.slice(7)]],'weekly').rows[0].employee_identifier,'5678')
  const duplicate=[...header];duplicate.push('SALEID');assert.throws(()=>parseDrbTransactions([duplicate,record],'weekly','2026-11-08','2026-11-14'),/Expected/)
 })
-test('unreviewed, unmapped and incomplete evidence never become eligible',()=>{
- const sale={decision:'pending',identifier_classification:'retained',review_complete:true,employee_id:'e',identity_confirmed:true,activity:'new'}
- assert.equal(saleBucket({...sale,decision:'eligible',commission_status:'pending'}),'unresolved');assert.equal(saleBucket(sale),'unresolved');assert.equal(saleBucket({...sale,decision:'eligible'}),'eligible')
- for(const change of [{employee_id:null},{identity_confirmed:false},{review_complete:false},{identifier_classification:'unresolved'},{activity:'unknown'}])assert.equal(saleBucket({...sale,decision:'eligible',...change}),'unresolved')
- assert.equal(saleBucket({...sale,decision:'excluded'}),'excluded')
- assert.equal(saleBucket({...sale,decision:'pending',identifier_classification:'excluded',employee_id:null}),'excluded')
+test('only authoritative server commission status determines eligibility',()=>{
+ assert.equal(saleBucket({commission_status:'pending',identifier_classification:'retained',review_complete:true,employee_id:'e'}),'unresolved')
+ assert.equal(saleBucket({commission_status:'eligible'}),'eligible')
+ assert.equal(saleBucket({commission_status:'excluded',employee_id:null}),'excluded')
+ assert.equal(saleBucket({review_complete:true,employee_id:'e'}),'unresolved')
 })
 const range={start:'2026-11-08',end:'2026-11-14'},sites=[{id:'s',name:'Fictional Site',opportunities_formula:'simple'}]
 const checkpoint=(name,t,n)=>({location_id:'s',log_date:'2026-11-10',time_slot:t,split_index:0,employee_name:name,total_washes:n*10,member_washes:0,basic:n,good:0,better:0,best:0,google_reviews:0})
 const logs=[checkpoint('Alex','08:00',1),checkpoint('','09:00',2),checkpoint('Blair','10:00',3)]
-const sale=(decision,extra={})=>({location_id:'s',log_date:'2026-11-10',identifier_classification:'retained',review_complete:true,identity_confirmed:true,activity:'new',employee_id:'e',employee_name:'Alex',decision,...extra})
+const sale=(commission_status,extra={})=>({location_id:'s',log_date:'2026-11-10',identifier_classification:'retained',review_complete:true,identity_confirmed:true,activity:'new',employee_id:'e',employee_name:'Alex',commission_status,...extra})
 test('weekly gross and commission buckets stay separate from unresolved employee attribution',()=>{
- const sales=[sale('eligible'),sale('excluded'),sale('pending'),sale('pending',{identifier_classification:'excluded',employee_id:null})],before=JSON.stringify({sales,logs})
+ const sales=[sale('eligible'),sale('excluded'),sale('pending'),sale('excluded',{identifier_classification:'excluded',employee_id:null})],before=JSON.stringify({sales,logs})
  const r=reconciliationComparison(sales,logs,sites,range)[0]
  assert.deepEqual([r.reported,r.gross,r.eligible,r.excluded,r.unresolved,r.unresolvedAttribution],[2,4,1,2,1,1])
  assert.equal(JSON.stringify({sales,logs}),before)
@@ -42,14 +41,15 @@ test('employee comparison only bridges approved historical UUIDs, never same-nam
  const alex=rows.find(r=>r.employeeId==='e');assert.equal(alex.reported,1);assert.equal(alex.gross,1);assert.equal(rows.filter(r=>r.name==='Alex').length,1)
 })
 
-test('source annotations retained verbatim without deriving an eligibility decision',()=>{
- const doc=parse([[...record,'Review prior membership']],'weekly')
- assert.equal(doc.rows[0].source_note,'Review prior membership');assert.equal(doc.rows[0].decision,undefined)
+test('customer fields, Legal Name and annotations discarded before preview or upload',()=>{
+ const doc=parse([[...record,'Fictional secret note']],'weekly')
+ assert.deepEqual(Object.keys(doc.rows[0]).sort(),['site_code','sale_id','log_date','item','employee_identifier','commission'].sort())
+ assert.doesNotMatch(JSON.stringify(doc),/Fictional Customer|5550100000|Fictional Employee|Fictional secret note/)
 })
 
 test('customer data cannot be reflected through arbitrary database error messages',async()=>{
  const {reconciliationError}=await import('../src/utils/drbReconciliation.js')
- assert.equal(reconciliationError({message:'Transaction changed; reload'}),'Transaction changed; reload')
+ assert.equal(reconciliationError({message:'Imported period changed; reload before confirming review'}),'Imported period changed; reload before confirming review')
  assert.doesNotMatch(reconciliationError({message:'Database detail: Fictional Customer 5550100000'}),/Fictional Customer|5550100000/)
 })
 
@@ -63,4 +63,11 @@ test('classify original value first: full formats equivalent, four digits exclud
  assert.equal(parsed.rows[0].employee_identifier,'200000012')
  const spaced=parse([[...record.slice(0,6),' 0012 ',...record.slice(7)]])
  assert.equal(spaced.rows[0].employee_identifier,' 0012 ');assert.equal(classifyDrbIdentifier(spaced.rows[0].employee_identifier).classification,'unresolved')
+})
+
+
+test('unusual and missing claim strings do not block otherwise valid transactions',()=>{
+ const rows=['','unknown',' 0012 ','123','9'.repeat(100)].map((raw,i)=>{const r=[...record];r[2]=String(200+i);r[6]=raw;return r})
+ const doc=parse(rows);assert.equal(doc.rows.length,5)
+ for(let i=0;i<rows.length;i++){assert.equal(doc.rows[i].employee_identifier,rows[i][6]);assert.equal(classifyDrbIdentifier(doc.rows[i].employee_identifier).classification,'unresolved')}
 })

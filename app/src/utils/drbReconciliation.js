@@ -1,8 +1,6 @@
 import { readDrbWorkbook } from './drbWorkbook.js'
 import { buildEmployeePerformance } from './employeePerformance.js'
 
-export const saleActivities = ['unknown', 'new', 'renewal', 'reactivation', 'replacement', 'refund', 'void']
-export const saleDecisions = ['pending', 'eligible', 'excluded']
 const reviewErrors = new Set([
   'Previously imported file has different content or coverage',
   'Repeated Site + Sale ID requires a verified line identifier',
@@ -11,13 +9,10 @@ const reviewErrors = new Set([
   'Site must match exactly one location',
   'Mapping changed; reload', 'Transaction changed; reload',
   'Overlapping employee mapping; resolve before approval',
-  'Confirm transaction identity before deciding',
-  'Reviewed commission evidence and activity classification required',
-  'Verified retained employee identifier required',
-  'Sara-excluded identifier cannot become eligible',
-  'Weekly review completion must be verified before eligibility',
-  'Exactly one approved employee mapping required',
-  'This activity cannot be marked commission eligible',
+  'Imported period changed; reload before confirming review',
+  'Confirm Sara has completed this reporting period',
+  'A different export already exists for this period; resolve it before importing',
+  'Reporting periods overlap; use the existing reporting period',
   'Select at most 93 days', 'Narrow the reporting period to 5,000 transactions',
 ])
 export function reconciliationError(error) {
@@ -36,7 +31,7 @@ export function drbDate(value) {
 export function parseDrbTransactions(matrix, kind, start, end) {
   if (kind !== 'weekly') fail('Choose the single weekly commission export.')
   start = drbDate(start); end = drbDate(end)
-  if (start > end) fail('Invalid reporting period.')
+  if (start > end || (Date.parse(end)-Date.parse(start))/86400000>6) fail('Choose a weekly reporting period of at most seven days.')
   const required = ['SITENUMBER', 'LOGDATE', 'SALEID', 'ITEM_NAME', 'CUST_ALTPHONE', 'COMMISSION']
   const header = matrix[0]?.map(text) || []
   if (required.some(h => header.filter(v => v === h).length !== 1) || new Set(header).size !== header.length) fail('Expected a transaction-level DRB Wash Commissions export, not a General Sales summary.')
@@ -44,6 +39,7 @@ export function parseDrbTransactions(matrix, kind, start, end) {
   const rows = [], seen = new Set()
   for (const values of matrix.slice(1)) {
     const get = key => text(values[header.indexOf(key)])
+    if (get('SITENUMBER').startsWith('Applied filters:') && required.filter(k=>k!=='SITENUMBER').every(k=>!get(k))) continue
     if (required.every(key => get(key) === key)) continue // repeated page header in original DRB export
     if (['SITENUMBER', 'LOGDATE', 'SALEID', 'ITEM_NAME', 'CUST_ALTPHONE'].every(k => !get(k))) continue // blank / commission total
     const site_code = get('SITENUMBER'), sale_id = get('SALEID'), log_date = drbDate(get('LOGDATE'))
@@ -53,15 +49,11 @@ export function parseDrbTransactions(matrix, kind, start, end) {
     if (seen.has(key)) fail('Repeated Site + Sale ID: obtain a line identifier before importing this export.')
     seen.add(key)
     const employee_identifier = String(values[header.indexOf('CUST_ALTPHONE')] ?? ''), commission = get('COMMISSION')
-    if (employee_identifier.length > 40) fail('Alternate Phone exceeds 40 characters. Original values are never padded or rewritten.')
     if (!/^-?\d{1,10}(?:\.\d{1,6})?$/.test(commission)) fail('Invalid commission amount.')
-    // Preserve trailing source annotations privately without interpreting their meaning.
-    // No filenames, Legal Name or raw workbook upload.
-    rows.push({ site_code, sale_id, log_date, item: get('ITEM_NAME'), employee_identifier, commission,
-      customer_name: get('CUST_NAME'), customer_phone: get('CUST_MAINPHONE'),
-      source_note: values.slice(header.length).map(text).filter(Boolean).join('\n') })
+    // Fixed non-customer projection. Never send names, main phones, Legal Name,
+    // annotations or raw workbook bytes to the API or preview state.
+    rows.push({ site_code, sale_id, log_date, item: get('ITEM_NAME'), employee_identifier, commission })
   }
-  if (rows.some(r => r.source_note.length > 2000)) fail('A source annotation exceeds 2,000 characters; review the export before import.')
   if (!rows.length) fail('No transactions found.')
   return { kind, start_date: start, end_date: end, rows }
 }
@@ -86,13 +78,9 @@ export function adpBadgeKey(value) {
 }
 export const shortenedIdentifier = value => classifyDrbIdentifier(value).classification === 'excluded'
 export function saleBucket(sale) {
-  // Classification and attribution are independent. An unmatched four-digit
-  // claim remains excluded, while its employee attribution remains unresolved.
-  if (sale.commission_status === 'excluded' || sale.identifier_classification === 'excluded' || sale.decision === 'excluded') return 'excluded'
-  if (sale.commission_status != null) return ({ eligible: 'eligible', excluded: 'excluded', pending: 'unresolved' })[sale.commission_status] || 'unresolved'
-  if (sale.decision === 'eligible' && sale.identifier_classification === 'retained'
-    && sale.employee_id && sale.review_complete && sale.identity_confirmed && sale.activity !== 'unknown') return 'eligible'
-  return 'unresolved'
+  // The guarded backend is the sole eligibility source; no client inference
+  // from identifier length, mapping presence or completion alone.
+  return ({ eligible: 'eligible', excluded: 'excluded', pending: 'unresolved' })[sale.commission_status] || 'unresolved'
 }
 export function reconciliationComparison(sales, logs, locations, range, mappings = []) {
   const manager = buildEmployeePerformance(logs, locations, range, mappings).rows

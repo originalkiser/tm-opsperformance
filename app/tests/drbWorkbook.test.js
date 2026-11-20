@@ -14,10 +14,10 @@ test('values-only XLSX preserves exact identifiers and converts numeric dates',a
  const bytes=await workbook('<row><c t="inlineStr"><is><t>LOGDATE</t></is></c><c t="inlineStr"><is><t>ID</t></is></c></row><row><c><v>46336</v></c><c t="inlineStr"><is><t>0012345678</t></is></c></row>')
  const rows=await readDrbWorkbook(bytes);assert.match(rows[1][0],/^2026-/);assert.equal(rows[1][1],'0012345678')
 })
-test('formulas, XML entities and comments fail closed rather than losing review evidence',async()=>{
+test('formulas and XML entities fail closed; unrelated comments are ignored',async()=>{
  await assert.rejects(readDrbWorkbook(await workbook('<row><c><f>1+1</f><v>2</v></c></row>')),/formulas/)
  await assert.rejects(readDrbWorkbook(await workbook('<!DOCTYPE sheet><row/>')),/Unsupported/)
- await assert.rejects(readDrbWorkbook(await workbook('<row/>',{'xl/comments1.xml':'<comments/>'})),/comments require separate review/)
+ assert.deepEqual(await readDrbWorkbook(await workbook('<row/>',{'xl/comments1.xml':'<comments/>'})),[[]])
 })
 test('duplicate cell identities and oversized uploads rejected',async()=>{
  await assert.rejects(readDrbWorkbook(await workbook('<row r="1"><c r="A1"><v>1</v></c><c r="A1"><v>2</v></c></row>')),/Duplicate/)

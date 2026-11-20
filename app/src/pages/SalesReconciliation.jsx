@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { fetchEmployeeLogs } from '../utils/employeePerformance.js'
 import { readMappings } from '../utils/historicalEmployeeMappings.js'
 import { readLocationEmployees } from '../utils/employeeIdentity.js'
-import { drbDate, parseDrbReconciliationFile, reconciliationComparison, employeeReconciliation, saleActivities, saleDecisions, saleBucket, shortenedIdentifier, reconciliationError } from '../utils/drbReconciliation.js'
+import { drbDate, parseDrbReconciliationFile, reconciliationComparison, employeeReconciliation, saleBucket, shortenedIdentifier, reconciliationError } from '../utils/drbReconciliation.js'
 
 const input = 'rounded border border-gray-300 bg-white p-2 text-sm dark:bg-tm-dark-surface dark:border-tm-dark-border dark:text-tm-dark-text'
 const button = 'rounded bg-tm-blue px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-tm-teal dark:text-tm-navy'
@@ -23,30 +23,29 @@ function Comparison({ rows, employee = false, sites }) {
     <tbody>{rows.map(r => <tr key={r.key || r.locationId}><td className="p-2 border-b">{sites.find(s => s.id === r.locationId)?.name || r.name}</td>{employee && <td className="p-2 border-b">{r.name}{!r.employeeId && <span className="block text-xs">No approved UUID link to POS</span>}</td>}{['reported','gross','eligible','excluded','unresolved','unresolvedAttribution'].map(k => <td key={k} className="p-2 border-b tabular-nums">{r[k] ?? '—'}</td>)}</tr>)}</tbody>
   </table></div>
 }
-function ReviewSale({ sale, busy, onReview, onMatches }) {
-  const [decision, setDecision] = useState(sale.decision), [activity, setActivity] = useState(sale.activity), [reason, setReason] = useState(''), [confirmed, setConfirmed] = useState(sale.identity_confirmed)
-  return <form onSubmit={e => { e.preventDefault();onReview({ id:sale.id,revision:sale.revision,decision,activity,identity_confirmed:confirmed,reason }) }} className="space-y-3 p-3">
+function SaleDetails({ sale }) {
+  return <div className="space-y-3 p-3">
     <p>{sale.log_date} · {sale.item} · {sale.employee_name || 'Awaiting employee match'} · {saleBucket(sale)}</p>
-    <p role="status">{sale.identifier_classification} · employee key {sale.employee_key || 'unresolved'} · {sale.review_complete ? 'Weekly review completion verified' : 'Pending Sara’s weekly review completion'}</p>
-    <div className="overflow-x-auto"><table className="text-sm"><thead><tr>{['Source','Employee identifier','Customer','Customer phone','Source commission','Source annotation'].map(s=><th className="p-2 text-left" key={s}>{s}</th>)}</tr></thead><tbody>{sale.observations.map(o=><tr key={o.id}><td className="p-2">{o.kind}</td><td className="p-2">{o.employee_identifier || 'Missing'}{shortenedIdentifier(o.employee_identifier) && <span className="block">Sara-excluded commission</span>}</td><td className="p-2">{o.customer_name}</td><td className="p-2">{o.customer_phone}</td><td className="p-2">{o.commission}</td><td className="p-2 whitespace-pre-wrap">{o.source_note}</td></tr>)}</tbody></table></div>
-    <button className={button} type="button" disabled={busy} onClick={()=>onMatches(sale.id)}>Review possible repeat customers</button>
-    <p className="text-xs">Name or phone matches are review leads. They never automatically exclude a sale. Enter the exclusion reason explicitly; a shortened identifier does not identify the reason.</p>
-    <div className="flex flex-wrap gap-3">
-      <label>Activity <select aria-label="Activity" className={input} value={activity} onChange={e=>setActivity(e.target.value)}>{saleActivities.map(s=><option key={s}>{s}</option>)}</select></label>
-      <label>Decision <select aria-label="Decision" className={input} value={decision} onChange={e=>setDecision(e.target.value)}>{saleDecisions.map(s=><option key={s} disabled={s==='eligible' && (!sale.review_complete || sale.identifier_classification!=='retained' || !sale.employee_id)}>{s}</option>)}</select></label>
-    </div>
-    <label className="block"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} /> I verified this transaction's identity and source evidence.</label>
-    <label className="block">Review reason (required)<textarea className={`${input} block w-full`} maxLength={1000} required value={reason} onChange={e=>setReason(e.target.value)} /></label>
-    <p className="text-xs">Previous reason: {sale.reason || 'Not reviewed'}</p>
-    <button disabled={busy} className={button}>Save review</button>
-  </form>
+    <p>{sale.identifier_classification} · employee key {sale.employee_key || 'unresolved'} · {sale.review_complete ? 'Review Complete' : 'Pending reporting-period review confirmation'}</p>
+    <div className="overflow-x-auto"><table className="text-sm"><thead><tr>{['Original employee identifier','Classification','Exported commission'].map(s=><th className="p-2 text-left" key={s}>{s}</th>)}</tr></thead><tbody>{sale.observations.map(o=><tr key={o.id}><td className="p-2">{o.employee_identifier || 'Missing'}</td><td className="p-2">{o.identifier_classification || sale.identifier_classification}{shortenedIdentifier(o.employee_identifier) && ' — Sara-excluded'}</td><td className="p-2">{o.commission}</td></tr>)}</tbody></table></div>
+  </div>
+}
+function PeriodReview({ batch, busy, onComplete }) {
+  const [confirmed,setConfirmed]=useState(false)
+  return <div className="border rounded p-3 space-y-2 dark:border-tm-dark-border">
+    <p className="font-semibold">{batch.start_date} through {batch.end_date}</p>
+    {batch.review_completed_at ? <p>Review Complete · {batch.review_completed_at}</p> : <>
+      <label className="block"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/> Sara has completed review of this export for this reporting period.</label>
+      <button className={button} disabled={busy || !confirmed} onClick={()=>onComplete({batch_id:batch.id,revision:batch.revision,confirm_reviewed:confirmed})}>Review Complete</button>
+    </>}
+  </div>
 }
 export default function SalesReconciliation() {
   const { profile, managerPreview } = useAuth()
   const [access, setAccess] = useState('loading'), [range, setRange] = useState({start:today(),end:today()}), [loadedRange,setLoadedRange]=useState(null)
   const [file,setFile]=useState(null),[preview,setPreview]=useState(null)
   const [state,setState]=useState(null),[sites,setSites]=useState([]),[employees,setEmployees]=useState([]),[logs,setLogs]=useState([]),[aliases,setAliases]=useState([])
-  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[matches,setMatches]=useState(null),[filter,setFilter]=useState('all'),[limit,setLimit]=useState(30)
+  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[filter,setFilter]=useState('all'),[limit,setLimit]=useState(30)
   const [map,setMap]=useState({location_id:'',identifier:'',adp_badge:'',adp_reference:'',employee_id:'',reason:''})
   const epoch = useRef(0)
   useEffect(()=>{ let active=true;setState(null);setPreview(null);setAccess('loading');epoch.current++
@@ -64,15 +63,15 @@ export default function SalesReconciliation() {
     const [roster,daily,mappings]=await Promise.all([
       Promise.all(locations.map(l=>readLocationEmployees(supabase,l.id))),fetchEmployeeLogs(supabase,locations.map(l=>l.id),{start,end}),readMappings(supabase,locations.map(l=>l.id),true)
     ])
-    // Access must still be current before retaining customer information.
+    // Access must still be current before retaining reviewer-only employee data.
     await rpc('status')
     if(version!==epoch.current)return
-    setSites(locations);setEmployees(roster.flat());setLogs(daily);setAliases(mappings);setState(data);setLoadedRange({start,end});setLimit(30);setMatches(null)
+    setSites(locations);setEmployees(roster.flat());setLogs(daily);setAliases(mappings);setState(data);setLoadedRange({start,end});setLimit(30)
   }
   async function run(task) {
     if(busy)return
     const version=epoch.current;setBusy(true);setMessage('')
-    try{await task()}catch(error){if(version===epoch.current){setMessage(error.message);setState(null);setMatches(null)}}finally{if(version===epoch.current)setBusy(false)}
+    try{await task()}catch(error){if(version===epoch.current){setMessage(error.message);setState(null)}}finally{if(version===epoch.current)setBusy(false)}
   }
   async function write(action,payload){await rpc(action,payload);await load();setMessage('Saved. Leaderboard and Daily Logs are unchanged.')}
   let siteRows=[],employeeRows=[],calculationError=''
@@ -82,9 +81,9 @@ export default function SalesReconciliation() {
     <Link to="/reports" className="underline">Reports</Link><h1 className="text-2xl font-bold">DRB Sales Reconciliation</h1>
     {access==='loading'?<p role="status">Checking reviewer access…</p>:access!=='allowed'?<p role="alert">This report requires separately authorized sales reviewer access.</p>:<fieldset disabled={busy} className="space-y-5 min-w-0">
       <p>Compare manager entries with imported membership transactions and reviewed commission evidence. Imported sales do not affect rankings.</p>
-      <div className="flex flex-wrap items-end gap-3"><label>Start <input aria-label="Start" type="date" className={input} value={range.start} onChange={e=>{setRange(r=>({...r,start:e.target.value}));setPreview(null);setState(null);setMatches(null)}}/></label><label>End <input aria-label="End" type="date" className={input} value={range.end} onChange={e=>{setRange(r=>({...r,end:e.target.value}));setPreview(null);setState(null);setMatches(null)}}/></label><button disabled={busy} className={button} onClick={()=>run(load)}>Load comparison</button></div>
+      <div className="flex flex-wrap items-end gap-3"><label>Start <input aria-label="Start" type="date" className={input} value={range.start} onChange={e=>{setRange(r=>({...r,start:e.target.value}));setPreview(null);setState(null)}}/></label><label>End <input aria-label="End" type="date" className={input} value={range.end} onChange={e=>{setRange(r=>({...r,end:e.target.value}));setPreview(null);setState(null)}}/></label><button disabled={busy} className={button} onClick={()=>run(load)}>Load comparison</button></div>
       <section className="rounded border p-4 space-y-3 dark:border-tm-dark-border"><h2 className="font-bold">Import DRB transactions</h2>
-        <p className="text-sm">Choose the export's exact coverage above. Use Wash Commissions transactions with Site and Sale ID. General Sales summaries and census files cannot create verified sales.</p>
+        <p className="text-sm">Choose the export's exact coverage above. Use Wash Commissions transactions with Site and Sale ID. General Sales summaries and census files cannot create verified sales. Customer names, main phone numbers and source notes are discarded before upload.</p>
         <p>Source: single weekly DRB commission export. Preserve Alternate Phone exactly; classify before matching its last four digits.</p>
         <input aria-label="DRB export" type="file" accept=".xlsx" disabled={busy} className="block" onChange={e=>{setFile(e.target.files[0]);setPreview(null)}}/>
         <button disabled={busy||!file} className={button} onClick={()=>run(async()=>{await rpc('status');setPreview(await parseDrbReconciliationFile(file,'weekly',range.start,range.end))})}>Validate and preview</button>
@@ -92,6 +91,7 @@ export default function SalesReconciliation() {
       </section>
       {message&&<p role="status">{message}</p>}{busy&&<p role="status">Working…</p>}
       {state&&<>
+        <section aria-label="Reporting period review" className="space-y-2"><h2 className="font-bold">Reporting period review</h2><p>Only an authorized reviewer can confirm Sara's completed review. Retained sales become Verified Eligible only after this confirmation and a unique approved employee match.</p>{state.batches.map(b=><PeriodReview key={`${b.id}:${b.revision}`} batch={b} busy={busy} onComplete={payload=>run(()=>write('complete_review',payload))}/>)}</section>
         <p className="text-sm">Gross counts each weekly export transaction before commission exclusions. Eligible, excluded and pending sales partition gross totals. Unresolved employee attribution is separate and can include excluded sales. Nine-digit retained IDs are not excluded. Totals reflect imported coverage, not certified completeness. Manager totals leave unnamed activity unattributed; a dash means no verified comparison.</p>
         {calculationError?<p role="alert">{calculationError}</p>:<><Comparison rows={siteRows} sites={sites}/><Comparison rows={employeeRows} employee sites={sites}/></>}
         <section className="border rounded p-4 space-y-3 dark:border-tm-dark-border"><h2 className="font-bold">Employee identifier approval</h2><p className="text-sm">Choose an existing roster UUID. Verify the last four digits against the authoritative ADP badge roster, including inactive and historical employees. Names never establish identity. A key must identify exactly one approved employee for the sale date; conflicting matches remain unresolved. Propose a mapping, then explicitly approve it.</p>
@@ -104,11 +104,11 @@ export default function SalesReconciliation() {
           </form>
           {state.mappings.map(m=><MappingReview key={`${m.id}:${m.revision}`} mapping={m} employee={employees.find(e=>e.id===m.employee_id)} busy={busy} onSave={p=>run(()=>write('decide_mapping',p))}/>)}
         </section>
-        <section className="space-y-2"><h2 className="font-bold">Transaction review</h2><label>Show <select className={input} value={filter} onChange={e=>{setFilter(e.target.value);setLimit(30)}}>{['all','unresolved','eligible','excluded'].map(s=><option key={s}>{s}</option>)}</select></label>
-          {filtered.slice(0,limit).map(s=><details className="border rounded dark:border-tm-dark-border" key={`${s.id}:${s.revision}`}><summary className="cursor-pointer p-3">{sites.find(l=>l.id===s.location_id)?.site_code} · {s.log_date} · Sale {s.sale_id} · {saleBucket(s)} · {s.employee_name || 'Employee unresolved'}</summary><ReviewSale sale={s} busy={busy} onReview={p=>run(()=>write('review_sale',p))} onMatches={id=>run(async()=>setMatches(await rpc('customer_matches',{id})))}/></details>)}
+        <section className="space-y-2"><h2 className="font-bold">Imported transactions</h2><label>Show <select className={input} value={filter} onChange={e=>{setFilter(e.target.value);setLimit(30)}}>{['all','unresolved','eligible','excluded'].map(s=><option key={s}>{s}</option>)}</select></label>
+          {filtered.slice(0,limit).map(s=><details className="border rounded dark:border-tm-dark-border" key={`${s.id}:${s.revision}`}><summary className="cursor-pointer p-3">{sites.find(l=>l.id===s.location_id)?.site_code} · {s.log_date} · Sale {s.sale_id} · {saleBucket(s)} · {s.employee_name || 'Employee unresolved'}</summary><SaleDetails sale={s}/></details>)}
           {filtered.length>limit&&<button className={button} onClick={()=>setLimit(n=>n+30)}>Show 30 more ({filtered.length-limit} remaining)</button>}
         </section>
-        {matches&&<section aria-label="Possible repeat customers" className="border rounded p-4"><h2 className="font-bold">Possible repeat customers</h2><p>These matches require review and do not decide eligibility.</p>{!matches.matches.length&&<p>No matches in imported history. This does not prove the customer has no prior membership.</p>}{matches.matches.map(s=><p key={s.id}>{s.log_date} · Sale {s.sale_id} · {s.phone_match?'Phone match':''} {s.name_match?'Name match':''} · {s.activity} · {s.decision}</p>)}{matches.truncated&&<p>More than 100 matches. Narrow the review using the original reports.</p>}</section>}
+
         <details><summary>Verification audit (latest 100 events)</summary>{state.audit.map(a=><details className="p-2 border-b" key={a.id}><summary>{a.happened_at} · {a.action} · record {a.subject_id} · reviewer {a.actor}</summary><pre className="whitespace-pre-wrap break-all text-xs">{JSON.stringify({previous:a.previous,next:a.next},null,2)}</pre></details>)}</details>
       </>}
     </fieldset>}
