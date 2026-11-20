@@ -25,6 +25,15 @@ export function moveChecklistSection(items, section, direction) {
   ;[groups[index], groups[target]] = [groups[target], groups[index]]
   return groups.flat()
 }
+// The server repeats these checks against trusted published/restored definitions.
+export function questionRemovalReason(key, item, items, baseline = items) {
+  if (items.length <= 1) return 'A checklist must contain at least one question.'
+  const protectedItems = [...baseline, ...items]
+  if (protectedItems.some(i => i.id === item.id && i.signature_required)) return 'This question requires a signature and cannot be removed.'
+  if (protectedItems.some(i => (i.id === item.id && i.condition) || i.condition?.item_id === item.id)) return 'Conditional follow-ups and their parent questions cannot be removed.'
+  if (key === 'weekly' && item.id === 'weekly-9') return 'This communications-board photo question is used by the checklist form and cannot be removed.'
+  return ''
+}
 export async function templateEditorAction(client, action, key, state = null, extra = {}) {
   const request = () => client.rpc('checklist_template_editor', { p_action: action, p_key: key,
     ...(state ? { p_revision: state.draft?.revision ?? 0, p_version: state.published.version } : {}), ...extra })

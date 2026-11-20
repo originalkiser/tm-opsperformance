@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { moveChecklistSection, newChecklistQuestion, photoBudget, questionPresets, templateEditorAction } from '../utils/checklistTemplateEditor'
+import { moveChecklistSection, newChecklistQuestion, photoBudget, questionRemovalReason, questionPresets, templateEditorAction } from '../utils/checklistTemplateEditor'
 import ChecklistTemplatePreview from './ChecklistTemplatePreview'
 
 const control = 'border rounded p-2 bg-white dark:bg-tm-dark-surface dark:border-tm-dark-border disabled:opacity-50 min-h-11'
@@ -36,6 +36,13 @@ export default function ChecklistAdmin({ templates, reload }) {
   const move = (index, direction) => {
     setPreview(null); setItems(old => { const next = [...old]; [next[index], next[index + direction]] = [next[index + direction], next[index]]; return next })
   }
+  const remove = item => {
+    const reason = questionRemovalReason(key, item, items, state?.published.definition)
+    if (reason) { setError(reason); return }
+    if (!window.confirm(`Remove this question from the unpublished template draft?\n\n${item.text}\n\nSave, preview and publish to apply it only to newly started checklists. Previous versions, submissions, active checklists and evidence will remain unchanged.`)) return
+    setPreview(null); setError(''); setNotice('Question removed from unsaved template edits. Save the unpublished draft, then preview before publishing.')
+    setItems(old => old.filter(i => i.id !== item.id))
+  }
   return <section className="space-y-4 border rounded-xl p-4" aria-label="Super Admin checklist editor">
     <h2 className="font-brand font-bold text-xl">Super Admin: checklist templates</h2>
     <p>Saved drafts are unpublished. Publishing affects only newly started checklists. Existing submissions and in-progress snapshots are preserved.</p>
@@ -44,10 +51,10 @@ export default function ChecklistAdmin({ templates, reload }) {
     {notice && <p role="status">{notice}</p>}
     {state && <>
       <h3 className="font-bold">{state.published.name} · published v{state.published.version} · draft revision {state.draft?.revision ?? 0}</h3>
-      <p className="text-sm">Keep sections grouped and conditional follow-ups after their parent. Response types, choices, conditional rules and signatures are protected. Allow N/A applies to choice questions; every N/A response requires a brief reason, including non-Critical questions. Required photo counts and signatures still apply. N/A does not trigger failure-only photos or follow-ups. Keep a required photo count when evidence is needed for every response. New questions use approved types.</p>
+      <p className="text-sm">Keep sections grouped and conditional follow-ups after their parent. Response types, choices, conditional rules and signatures are protected. Allow N/A applies to choice questions; every N/A response requires a brief reason, including non-Critical questions. Required photo counts and signatures still apply. N/A does not trigger failure-only photos or follow-ups. Keep a required photo count when evidence is needed for every response. New questions use approved types. Removing a question changes only the unpublished draft until you preview and publish. Required-signature questions, conditional follow-ups and their parents, and system-dependent questions cannot be removed.</p>
       <p className="text-sm">Maximum required evidence: {Number.isFinite(photoBudget(items)) ? `${photoBudget(items)}/180` : 'Invalid photo count; enter 0–10'}. The 200-upload limit reserves space for retries and corrections.</p>
       <fieldset disabled={busy} className="space-y-4">
-        {items.map((item, index) => <div key={item.id} className="border rounded p-3 space-y-2 dark:border-tm-dark-border">
+        {items.map((item, index) => { const removalReason = questionRemovalReason(key, item, items, state.published.definition); return <div key={item.id} className="border rounded p-3 space-y-2 dark:border-tm-dark-border">
           {(index === 0 || items[index - 1].section !== item.section) && <div className="space-y-2"><label className="block font-semibold">Section heading<input aria-label={`Section heading ${index + 1}`} className={`${control} block w-full`} maxLength={200} value={item.section} onChange={e => {
             const section = e.target.value; setPreview(null); setItems(old => old.map(i => i.section === item.section ? { ...i, section } : i))
           }} /></label><div className="flex flex-wrap gap-2">{[-1,1].map(direction => <button key={direction} className={control} disabled={sections.indexOf(item.section) + direction < 0 || sections.indexOf(item.section) + direction >= sections.length} onClick={() => { setPreview(null); setItems(old => moveChecklistSection(old,item.section,direction)) }}>Move section {direction < 0 ? 'up' : 'down'}</button>)}</div></div>}
@@ -59,9 +66,11 @@ export default function ChecklistAdmin({ templates, reload }) {
             <label>Required photos (0–10)<input aria-label={`Required photos ${index + 1}`} className={`${control} w-20 ml-2`} type="number" min="0" max="10" step="1" value={item.photo_min_count ?? (item.photo_required ? 1 : 0)} onChange={e => { const count = Number(e.target.value); change(index, { photo_min_count: count, photo_required: count > 0 }) }} /></label>
             <button className={control} aria-label={`Move question ${index + 1} up`} disabled={index === 0 || items[index - 1].section !== item.section} onClick={() => move(index, -1)}>Move up</button>
             <button className={control} aria-label={`Move question ${index + 1} down`} disabled={index === items.length - 1 || items[index + 1].section !== item.section} onClick={() => move(index, 1)}>Move down</button>
+            <button className={`${control} text-red-700 dark:text-red-300`} aria-label={`Remove question ${index + 1}`} aria-describedby={removalReason ? `removal-${item.id}` : undefined} disabled={!!removalReason} onClick={() => remove(item)}>Remove Question</button>
           </div>
+          {removalReason && <p id={`removal-${item.id}`} className="text-sm text-slate-600 dark:text-tm-dark-muted">{removalReason}</p>}
           <p className="text-sm">{item.type === 'text' ? 'Written response' : item.options.join(' / ')}{item.na_allowed && ' / N/A'}{item.signature_required && ' · Required signature'}{item.photo_on_failure && ' · At least one photo on failure (preserved)'}</p>
-        </div>)}
+        </div>})}
         <div className="flex flex-wrap gap-2"><label>New question type <select aria-label="New question type" className={control} value={type} onChange={e => setType(e.target.value)}>{Object.keys(questionPresets).map(t => <option key={t}>{t}</option>)}</select></label><label>Add to section <select aria-label="Add to section" className={control} value={sections.includes(newSection) ? newSection : sections.at(-1) || ''} onChange={e => setNewSection(e.target.value)}>{sections.map(s => <option key={s}>{s}</option>)}</select></label><button className={control} onClick={() => { setPreview(null); setItems(old => {
           const section = sections.includes(newSection) ? newSection : old.at(-1)?.section || 'New section'
           const index = old.reduce((last,item,i) => item.section === section ? i : last,-1)
