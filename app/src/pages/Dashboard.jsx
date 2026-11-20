@@ -1,3 +1,4 @@
+import { canLeaveDailyLog } from '../utils/dailyLogValidation.js'
 import PreviewReadOnly from '../components/PreviewReadOnly'
 import '../styles/siteEntryColors.css'
 import LocationRepair from '../components/LocationRepair'
@@ -98,6 +99,7 @@ export default function Dashboard() {
   }, [dateRange])
 
   const handleDateRangeChange = (newRange) => {
+    if (!canLeaveDailyLog()) return
     setDateRange(newRange)
     // Clamp selectedDate to new range
     const today = todayStr()
@@ -111,6 +113,7 @@ export default function Dashboard() {
   }
 
   const handleSelectedDateChange = (date) => {
+    if (date !== selectedDate && !canLeaveDailyLog()) return
     setSelectedDate(date)
     localStorage.setItem('tm_selected_date', date)
   }
@@ -177,6 +180,7 @@ export default function Dashboard() {
             <select
               value={selectedMarket}
               onChange={e => {
+                if (!canLeaveDailyLog()) return
                 setSelectedMarket(e.target.value)
                 localStorage.setItem('tm_market_filter', e.target.value)
               }}
@@ -191,7 +195,7 @@ export default function Dashboard() {
             <LocationSelector
               locations={filteredLocations}
               value={selectedLocationId}
-              onChange={setSelectedLocationId}
+              onChange={value => { if (value === selectedLocationId || canLeaveDailyLog()) setSelectedLocationId(value) }}
             />
           )}
 
@@ -259,7 +263,7 @@ export default function Dashboard() {
                   key={key}
                   data-entry-view={key}
                   aria-pressed={activeTab === key}
-                  onClick={() => setActiveTab(key)}
+                  onClick={() => { if (key === activeTab || canLeaveDailyLog()) setActiveTab(key) }}
                   title={status === 'overdue' ? 'Overdue — by 10am local' : status === 'pending' ? 'Pending — by 10am local' : undefined}
                   className={`px-6 py-3 text-sm font-brand font-semibold transition-colors border-b-2 flex items-center gap-1.5 ${
                     activeTab === key
