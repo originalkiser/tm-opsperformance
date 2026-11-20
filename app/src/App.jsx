@@ -10,6 +10,7 @@ import Admin from './pages/Admin'
 import Employees from './pages/Employees'
 import Insights from './pages/Insights'
 import Reports from './pages/Reports'
+import SalesReconciliation from './pages/SalesReconciliation'
 import AmEntry from './pages/AmEntry'
 import ManagerChecklists from './pages/ManagerChecklists'
 import ChecklistCompliance from './pages/ChecklistCompliance'
@@ -87,6 +88,7 @@ function AccountApp() {
               element={<ProtectedRoute><ManagerRoute><AmEntry /></ManagerRoute></ProtectedRoute>}
             />
             <Route path="/employees" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
+            <Route path="/sales-reconciliation" element={<ProtectedRoute><ManagerRoute><SalesReconciliation /></ManagerRoute></ProtectedRoute>} />
             <Route path="/checklists" element={<ProtectedRoute><ManagerChecklists /></ProtectedRoute>} />
             <Route path="/checklist-compliance" element={<ProtectedRoute><ChecklistCompliance /></ProtectedRoute>} />
             <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
