@@ -1,4 +1,4 @@
-# Single-file DRB sales reconciliation — release candidate, production hold
+# Single-file DRB sales reconciliation
 
 PR #75 contains the initial single-weekly-export feature. Employee Summary was independently released in PR #76. This feature never updates Daily Logs, employee opportunities, rankings, qualification formulas or historical name mappings.
 
@@ -61,14 +61,22 @@ No real source data was imported into any database. No production account, permi
 
 ## Production preflight and shortest release
 
-The established Supabase connector was used for the read-only production schema/RPC collision preflight and security advisor on November 20. **Both returned permission denied.** This is a genuine security/compatibility verification blocker, not a successful production check. No new CLI login or desktop control was introduced. PR #75 stays draft; no merge, migration or deployment proceeds while this is unverified.
+The connector permission denial was bypassed through the separately authorized, existing authenticated Dashboard browser workflow on November 20. Production compatibility passed: exact column types/PK targets, 13 uniquely resolved DRB sites, existing RLS/mapping RPC, and unused namespace/RPC names. The physical backup dated **2026-11-20 10:55:56 UTC** was confirmed before installation.
 
-Prepared additive migration: `20261119162120_drb_sales_reconciliation.sql`, still uninstalled. It only creates new private objects and the new RPC; existing functions/roles/records are not replaced. The frontend is compatible with an absent backend by denying access to the new report. The old frontend never calls these new functions.
+Migration `20261119162120_drb_sales_reconciliation.sql` was installed **once**, without grants or data imports. SHA-256 of the reviewed artifact: `28a18054862e3e8c7d5eda43c8fd1a174328715ffab5738820782c256a75ef4c`. All five installed function-body hashes match the reviewed source exactly. Six private tables have RLS, no direct anon/authenticated/service-role access, no customer columns, and zero rows. Transaction/period uniqueness constraints are present.
 
-Once existing authorized production access can verify compatibility/security and explicitly authorized reviewer account IDs are established, the shortest safe sequence is:
+Twenty-four production negative checks passed across existing active Admin and Store contexts: all six RPC actions and all six private tables were denied. Anonymous wrapper execution is denied. The pure identifier classifier/key checks passed. No reviewer capability was assigned, even temporarily; no real or fictional production import was performed. Positive reviewer workflow remains covered by the completed local tests until real reviewer accounts are separately approved.
 
-1. Run `docs/sql/drb-reconciliation-preflight-read-only.sql`, inspect the security advisor and confirm the database recovery point. Stop on drift or identity conflicts.
-2. Install the prepared migration once, verify zero reviewer grants and deny-by-default permissions, then grant only the explicitly authorized, uniquely verified active Admin reviewers through the existing workflow. No account role changes or automatic Super Admin grants.
-3. Merge PR #75 normally and verify GitHub Pages and Cloudflare builds plus authorized/unauthorized report access. Do not import real files as a smoke test. Operational reviewers choose the final Sara-reviewed weekly export and attest its period after release.
+Profiles (32), employees (500), seven templates and existing public/checklist/configuration function/permission fingerprints were identical to the preflight. Daily Logs remained live: aggregate checksums changed and row counts increased during the release window. A byte-for-byte unchanged Daily Log dataset is therefore **not claimed**. The reviewed migration has no Daily Log DML, database transaction provenance reports zero Daily Log rows written by its transaction, and Daily Log/opportunity/leaderboard code and shared functions are unchanged. No source records were restored, rewritten or frozen to make checksums agree.
+
+Security Advisor before installation: zero errors, 40 inherited warnings, 16 informational suggestions. Post-install rerun: zero errors, unchanged 40 warnings, 22 informational suggestions. The six added suggestions are the intentional private tables with RLS and no direct-access policies; denied direct access and guarded RPCs were verified. No unrelated warning was changed.
+
+Prepared additive migration: `20261119162120_drb_sales_reconciliation.sql`, installed on November 20. It only creates new private objects and the new RPC; existing functions/roles/records are not replaced. The frontend is compatible with an absent backend by denying access to the new report. The old frontend never calls these new functions.
+
+The authorized release sequence is:
+
+1. Completed: read-only Dashboard preflight, baseline advisor and recovery-point verification.
+2. Completed: install the migration once and verify zero reviewer grants/deny-by-default permissions. Actual reviewer grants remain explicitly deferred; no account-role changes or automatic Super Admin grants.
+3. Merge PR #75 normally and verify both existing pipelines and the live reviewer gate. Do not import real files or create a temporary production reviewer for a smoke test. Operational use starts only after reviewer identities/grants are separately approved.
 
 Recovery: revoke the new RPC/reviewer access and revert the frontend through the existing pipeline. Preserve imported source facts/audit if records exist; do not drop the schema, overwrite history or reconstruct production from repository SQL. No new infrastructure, broad tests or extra preview environments are needed.
