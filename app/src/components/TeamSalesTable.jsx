@@ -22,7 +22,7 @@ const COLS = [
 ]
 const cell = 'border border-gray-200 dark:border-tm-dark-border px-3 py-2 dark:text-tm-dark-text'
 const countLabel = value => value == null ? '—' : fmtNum(value) || '0'
-const ratioLabel = (num, den) => num == null || den == null ? '—' : den > 0 ? `${(num / den * 100).toFixed(1)}%` : num === 0 ? '0.0%' : '—'
+const ratioLabel = (num, den, zeroMix = false) => num == null || den == null ? '—' : den > 0 ? `${(num / den * 100).toFixed(1)}%` : zeroMix && den === 0 && num === 0 ? '0.0%' : '—'
 
 function totals(rows) {
   const sum = key => rows.some(r => r[key] == null) ? null : rows.reduce((n, r) => n + r[key], 0)
@@ -30,7 +30,7 @@ function totals(rows) {
   const ms = sum('ms'), opp = sum('opp')
   return [
     '', rows.some(r => r.ms == null || r.opp == null) ? 'Known attributed subtotal' : 'Totals', '',
-    known('ms'), known('opp'), ratioLabel(ms, opp), ratioLabel(ms == null ? null : known('better') + known('best'), ms), '',
+    known('ms'), known('opp'), ratioLabel(ms, opp), ratioLabel(ms == null ? null : known('better') + known('best'), ms, true), '',
   ]
 }
 
@@ -60,13 +60,13 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
   let performance
   try { performance = buildEmployeePerformance(data, locations, dateRange, mappingState.rows) }
   catch (error) { return <p role="alert">Employee mapping conflict: {error.message} Reload after Admin review.</p> }
-  const { rows: allRows, attributionNotes, cutoffs, qualificationSize, population } = performance
+  const { rows: allRows, attributionNotes, population } = performance
   if (!allRows.length) return <div role="status" className="text-sm text-gray-500 dark:text-tm-dark-muted py-4">No named employee data for this period. {attributionNotes.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.issues.join('; ')}</p>)}</div>
 
   const exportSpec = {
     filename: `team-member-sales_${dateRange.start}_to_${dateRange.end}`,
     title: 'Team Member Sales',
-    subtitle: `${fmtDateRange(dateRange.start, dateRange.end)} · Top 50% by sales OR opportunities; cutoff ties included · employee/site identities`,
+    subtitle: `${fmtDateRange(dateRange.start, dateRange.end)} · All complete, valid employee data qualifies · employee/site identities`,
     columns: [...COLS, { label: 'Data status', type: 'text' }],
     rows: sortEmployeeRows(allRows, sort).map(r => [employeeRankLabel(r), r.name, r.site, r.ms ?? '', r.opp ?? '', r.conversion, r.p_mix, r.score ?? '', r.issues.join('; ') || 'Complete recorded data']),
     totalsRow: [...totals(allRows), ''],
@@ -102,9 +102,9 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
 
   return <div>
     <p className="text-xs mb-2">Approved historical mappings affect attribution only. Unmapped names retain existing reporting rules. <button className="underline" onClick={() => setMappingReload(n => n + 1)}>Refresh mappings</button></p>
-    <p className="text-xs mb-2 text-gray-600 dark:text-gray-300">Total Points = Total Sales + Conversion % + P-Mix %. Qualification: top 50% by sales OR opportunities, including cutoff ties.</p>
-    <p className="text-xs mb-3 text-gray-600 dark:text-gray-300">{population} employee/site identities · Top {qualificationSize} cutoff: {countLabel(cutoffs.sales)} sales or {countLabel(cutoffs.opportunities)} opportunities. Same names at different sites remain separate.</p>
-    {allRows.some(r => r.ms == null || r.opp == null) && <p role="status" className="text-xs mb-3 text-amber-800 dark:text-amber-300">Qualification compares known totals only; missing values cannot establish qualification. An incomplete score has no official rank.</p>}
+    <p className="text-xs mb-2 text-gray-600 dark:text-gray-300">Total Points = Total Sales + Conversion % + P-Mix %. Every employee with complete, valid data and positive opportunities qualifies; there is no sales or opportunity volume cutoff.</p>
+    <p className="text-xs mb-3 text-gray-600 dark:text-gray-300">{population} employee/site identities. Same names at different sites remain separate.</p>
+    {allRows.some(r => !r.qualified) && <p role="status" className="text-xs mb-3 text-amber-800 dark:text-amber-300">Incomplete or invalid data has no score or official rank. See each unranked employee’s data issue for the reason.</p>}
     {attributionNotes.length > 0 && <details className="text-xs mb-3 text-amber-800 dark:text-amber-300">
       <summary className="cursor-pointer">Attribution notes · {attributionNotes.length} site-days</summary>
       {attributionNotes.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.date}: {day.issues.join('; ')}</p>)}

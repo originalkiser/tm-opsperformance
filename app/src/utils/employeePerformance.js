@@ -101,6 +101,7 @@ export function buildEmployeePerformance(data, locations, range, mappings = []) 
     for (const [name, delta] of Object.entries(employeeDeltasByDay(check.rows))) {
       const employee = ensure(locationId, name)
       for (const key of [...COUNTS, 'google_reviews']) employee[key] += delta[key]
+      if (delta.member_washes > delta.total_washes) employee.issues.push(`${date}: Attributed member washes exceed total washes; counts are inconsistent`)
     }
     for (const [name, fields] of check.uncertain) {
       const employee = ensure(locationId, name)
@@ -115,11 +116,12 @@ export function buildEmployeePerformance(data, locations, range, mappings = []) 
     const ms = ['basic', 'good', 'better', 'best'].some(key => values[key] == null) ? null : sales(values)
     const validFormula = ['simple', 'detailed'].includes(e.formula)
     const opp = !validFormula || values.total_washes == null || values.member_washes == null || (e.formula === 'detailed' && ms == null)
-      ? null : Math.max(0, values.total_washes - values.member_washes + (e.formula === 'detailed' ? ms : 0))
+      ? null : values.total_washes - values.member_washes + (e.formula === 'detailed' ? ms : 0)
     const issues = [...e.issues]
     if (!validFormula) issues.push('Unknown opportunity formula')
-    const rate = ms == null || opp == null ? null : opp > 0 ? ms / opp : ms === 0 ? 0 : null
-    if (ms > 0 && opp === 0) issues.push('Positive sales with zero opportunities; conversion is undefined')
+    const rate = ms == null || opp == null || opp <= 0 ? null : ms / opp
+    if (opp != null && opp <= 0) issues.push('Opportunities must be positive; conversion is undefined')
+    if ([...Object.values(values), ms, opp].some(v => v != null && !Number.isSafeInteger(v))) issues.push('Invalid accumulated count')
     const mix = ms == null ? null : ms > 0 ? (e.better + e.best) / ms : 0
     return { ...e, ...values, ms, opp, gr: e.google_reviews,
       pmixN: mix == null ? null : round(mix * 100), convN: rate == null ? null : round(rate * 100),
@@ -127,25 +129,17 @@ export function buildEmployeePerformance(data, locations, range, mappings = []) 
       rate, mix, partial: e.uncertain.size > 0, issues, eligible: issues.length === 0,
       score: null, rank: null, contributions: null }
   })
-  const qualificationSize = Math.ceil(rows.length / 2)
-  const cutoff = key => {
-    const known = rows.map(r => r[key]).filter(v => v != null).sort((a, b) => b - a)
-    return known.length ? known[Math.min(qualificationSize, known.length) - 1] : null
-  }
-  const cutoffs = { sales: cutoff('ms'), opportunities: cutoff('opp') }
   for (const row of rows) {
-    row.qualified = (row.ms != null && cutoffs.sales != null && row.ms >= cutoffs.sales) ||
-      (row.opp != null && cutoffs.opportunities != null && row.opp >= cutoffs.opportunities)
     row.contributions = { sales: row.ms, conversion: row.convN, pmix: row.pmixN }
-    row.score = Object.values(row.contributions).every(v => v != null)
-      ? round(row.ms + row.convN + row.pmixN) : null
+    row.qualified = row.eligible && Object.values(row.contributions).every(v => Number.isFinite(v))
+    row.score = row.qualified ? round(row.ms + row.convN + row.pmixN) : null
   }
   let previousScore = null, rank = 0
   rows.filter(r => r.qualified && r.score != null).sort((a, b) => b.score - a.score || a.key.localeCompare(b.key)).forEach((r, i) => {
     if (r.score !== previousScore) rank = i + 1
     r.rank = rank; previousScore = r.score
   })
-  return { rows, attributionNotes, cutoffs, population: rows.length, qualificationSize }
+  return { rows, attributionNotes, population: rows.length }
 }
 
 export function sortEmployeeRows(rows, sort) {
@@ -157,7 +151,7 @@ export function sortEmployeeRows(rows, sort) {
     return direction * (a[key] - b[key]) || a.key.localeCompare(b.key)
   })
 }
-export const employeeRankLabel = row => !row.qualified ? 'Not Qualified' : row.rank == null ? 'Qualified · Incomplete data' : String(row.rank)
+export const employeeRankLabel = row => row.rank == null ? 'Unranked · Incomplete or invalid data' : String(row.rank)
 
 // Team Sales needs a complete read before qualification and ranks are meaningful.
 // Advance by actual page size (PostgREST can cap below the requested range).

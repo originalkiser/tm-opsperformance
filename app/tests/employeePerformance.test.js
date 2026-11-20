@@ -17,7 +17,7 @@ test('uncapped points are sales plus displayed conversion and P-Mix percentages 
   for(const r of report.rows) assert.equal(r.score,Math.round((r.ms+parseFloat(r.conversion)+parseFloat(r.p_mix))*10)/10)
   assert.deepEqual(report.rows.map(r=>r.rank),[1,1,3]);assert.equal(employeeRankLabel(casey),'3')
   assert.equal(employeeRankLabel(alex),'1')
-  assert.equal(report.cutoffs.sales,20);assert.equal(report.cutoffs.opportunities,200)
+  assert.equal('cutoffs' in report,false);assert.equal('qualificationSize' in report,false)
 })
 
 test('one unified ranking preserves each site opportunity formula and combines ratios after aggregation',()=>{
@@ -25,32 +25,33 @@ test('one unified ranking preserves each site opportunity formula and combines r
   const [simple,detailed]=report.rows
   assert.equal(simple.opp,200);assert.equal(detailed.opp,300)
   assert.equal(simple.score,130);assert.equal(detailed.score,233.3)
-  assert.equal(simple.qualified,false);assert.equal(detailed.rank,1)
+  assert.equal(simple.qualified,true);assert.equal(simple.rank,2);assert.equal(detailed.rank,1)
   const repeat=build([row('Alex','08:00:00',10,1),row('Alex','08:00:00',90,18,{log_date:'2026-10-21'})]).rows[0]
   assert.equal(repeat.ms,19);assert.equal(repeat.opp,100);assert.equal(repeat.convN,19);assert.equal(repeat.score,138)
 })
 
-test('qualification uses OR, odd populations round up, and both metric cutoff ties are included',()=>{
-  const report=build(independent([['Sales',50,10],['Opportunity',1,1000],['Sales tie A',20,50],['Sales tie B',20,40],['Low',0,0]]))
-  assert.equal(report.qualificationSize,3);assert.deepEqual(report.cutoffs,{sales:20,opportunities:40})
-  assert.deepEqual(report.rows.filter(r=>r.qualified).map(r=>r.name),['Sales','Opportunity','Sales tie A','Sales tie B'])
-  assert.equal(report.rows.at(-1).rank,null)
-  const even=build(independent([['A',10,100],['B',5,50],['C',5,50],['D',1,10]]))
-  assert.equal(even.qualificationSize,2);assert.equal(even.rows.filter(r=>r.qualified).length,3)
+test('all complete valid employees qualify independently of volume or the rest of the population',()=>{
+  const data=independent([['Sales',50,100],['Opportunity',1,1000],['Low',1,2],['Zero',0,1]])
+  const report=build(data)
+  assert.ok(report.rows.every(r=>r.qualified&&r.rank!==null))
+  for(const employee of report.rows) {
+    const alone=build(data.filter(r=>r.employee_name===employee.name)).rows[0]
+    assert.equal(employee.score,alone.score);assert.equal(alone.qualified,true)
+  }
 })
 
-test('ranking uses total points and competition ties across formulas, without rank for nonqualifiers',()=>{
+test('ranking includes low-volume employees and preserves competition ties across formulas',()=>{
   const data=independent([['A',20,200],['B',20,200],['C',10,200],['D',1,1]])
   const report=build(data)
-  assert.deepEqual(report.rows.map(r=>[r.score,r.rank]),[[130,1],[130,1],[115,3],[201,null]])
-  assert.equal(employeeRankLabel(report.rows[3]),'Not Qualified')
+  assert.deepEqual(report.rows.map(r=>[r.score,r.rank]),[[130,2],[130,2],[115,4],[201,1]])
+  assert.equal(employeeRankLabel(report.rows[3]),'1')
   const mixed=build([row('A','08:00:00',200,20),row('B','08:00:00',180,20,{location_id:'d'})])
   assert.deepEqual(mixed.rows.map(r=>r.rank),[1,1])
 })
 
-test('all explicit-zero ties qualify and rank with finite zero points and visible zero rates',()=>{
+test('zero sales with positive opportunities qualifies; zero opportunities never fabricate conversion or points',()=>{
   const report=build(independent([['A',0,0],['B',0,0],['C',0,0]]))
-  for(const r of report.rows){assert.equal(r.score,0);assert.equal(r.rank,1);assert.equal(r.conversion,'0.0%');assert.equal(r.p_mix,'0.0%')}
+  for(const r of report.rows){assert.equal(r.score,null);assert.equal(r.rank,null);assert.equal(r.qualified,false);assert.equal(r.conversion,'—');assert.equal(r.p_mix,'0.0%');assert.match(r.issues.join(' '),/Opportunities must be positive/)}
   const zero=build([row('Zero','08:00:00',100,0)]).rows[0]
   assert.deepEqual(zero.contributions,{sales:0,conversion:0,pmix:0});assert.equal(zero.score,0)
 })
@@ -59,7 +60,7 @@ test('genuinely missing opportunities remain missing even with known sales and q
   const report=build([row('Alex','08:00:00',null,20)])
   const r=report.rows[0]
   assert.equal(r.ms,20);assert.equal(r.opp,null);assert.equal(r.conversion,'—');assert.equal(r.score,null)
-  assert.equal(r.qualified,true);assert.equal(r.rank,null);assert.equal(employeeRankLabel(r),'Qualified · Incomplete data')
+  assert.equal(r.qualified,false);assert.equal(r.rank,null);assert.match(employeeRankLabel(r),/Unranked/)
   assert.deepEqual(r.contributions,{sales:20,conversion:null,pmix:100})
   assert.match(report.attributionNotes[0].issues.join(' '),/Missing cumulative/)
 })
@@ -67,7 +68,7 @@ test('genuinely missing opportunities remain missing even with known sales and q
 test('missing sales are never invented zeros and unknown values cannot establish qualification',()=>{
   const r=build([row('Unknown','08:00:00',null,null,{member_washes:null,basic:null,good:null,better:null})]).rows[0]
   assert.equal(r.ms,null);assert.equal(r.opp,null);assert.equal(r.score,null);assert.equal(r.qualified,false)
-  assert.equal(r.p_mix,'—');assert.equal(employeeRankLabel(r),'Not Qualified')
+  assert.equal(r.p_mix,'—');assert.match(employeeRankLabel(r),/Unranked/)
   const zero=build([row('Zero sales','08:00:00',null,0)]).rows[0]
   assert.equal(zero.contributions.sales,0);assert.equal(zero.contributions.pmix,0);assert.equal(zero.contributions.conversion,null)
 })
@@ -90,7 +91,7 @@ test('cumulative corrections withhold only affected previous contributors, never
   const report=build([row('Alex','08:00:00',200,20),row('Corrector','09:00:00',180,18),row('Blair','13:00:00',200,20)])
   const [alex,corrector,blair]=report.rows
   assert.equal(alex.ms,null);assert.equal(alex.score,null)
-  assert.equal(corrector.ms,0);assert.equal(corrector.score,0)
+  assert.equal(corrector.ms,0);assert.equal(corrector.score,null);assert.equal(corrector.rank,null)
   assert.equal(blair.ms,2);assert.equal(blair.opp,20);assert.equal(blair.score,112)
   assert.ok(report.rows.reduce((n,r)=>n+(r.ms??0),0)<=20)
 })
@@ -131,7 +132,7 @@ test('identical duplicate IDs are counted once; ambiguous checkpoints and confli
 test('selected dates/sites determine eligibility while unknown sites, old days and unnamed activity do not create employees',()=>{
   const data=[...fixture(),row('Other','08:00:00',10,1,{location_id:'d'}),row('Old','08:00:00',10,1,{log_date:'2026-09-30'})]
   const report=build(data,[sites[0]])
-  assert.equal(report.population,3);assert.equal(report.qualificationSize,2)
+  assert.equal(report.population,3)
   assert.ok(report.rows.every(r=>r.locationId==='s'&&r.name!=='Old'))
   const unnamed=build([row('','08:00:00',10,1),row('Alex','14:00:00',20,2)])
   assert.equal(unnamed.population,1);assert.equal(unnamed.rows[0].ms,1);assert.equal(unnamed.rows[0].opp,10)
@@ -201,12 +202,11 @@ test('displayed one-decimal percentage points add exactly and equal displayed to
   assert.ok(fractional.every(r=>r.score===134.3&&r.rank===1))
 })
 
-test('when fewer than half have known totals, missing totals never become zero qualification evidence',()=>{
+test('missing totals remain unranked regardless of the number of complete employees',()=>{
   const unknown=name=>row(name,'08:00:00',null,null,{member_washes:null,basic:null,good:null,better:null,log_date:'2026-10-'+({B:'02',C:'03',D:'04'}[name])})
   const report=build([row('A','08:00:00',10,1),unknown('B'),unknown('C'),unknown('D')])
-  assert.equal(report.qualificationSize,2);assert.equal(report.rows[0].qualified,true)
+  assert.equal(report.rows[0].qualified,true)
   assert.ok(report.rows.slice(1).every(r=>!r.qualified&&r.score===null&&r.rank===null))
-  assert.deepEqual(report.cutoffs,{sales:1,opportunities:10})
 })
 
 test('repeated corrections stay restricted to prior contributors of the corrected counter',()=>{
@@ -214,4 +214,31 @@ test('repeated corrections stay restricted to prior contributors of the correcte
   assert.equal(report.rows.find(r=>r.name==='Basic seller').score,null)
   for(const name of ['Premium seller','Later seller','Corrector'])assert.notEqual(report.rows.find(r=>r.name===name).score,null)
   assert.ok(report.rows.reduce((sum,r)=>sum+(r.ms??0),0)<=3)
+})
+
+
+test('negative opportunities remain visible as invalid instead of being clipped into a score',()=>{
+ for(const formula of ['simple','detailed']) {
+  const r=build([row('Invalid','08:00:00',10,1,{member_washes:20})],[{...sites[0],opportunities_formula:formula}]).rows[0]
+  assert.equal(r.opp,formula==='simple'?-10:-9)
+  assert.equal(r.conversion,'—');assert.equal(r.score,null);assert.equal(r.rank,null)
+  assert.match(r.issues.join(' '),/Opportunities must be positive/)
+ }
+})
+
+test('invalid required counts cannot qualify even among otherwise valid low-volume employees',()=>{
+ for(const invalid of [-1,1.5,'oops',Infinity,true]) {
+  const r=build([row('Invalid','08:00:00',invalid,0)]).rows[0]
+  assert.equal(r.qualified,false);assert.equal(r.rank,null);assert.equal(r.score,null)
+  assert.ok(r.issues.length)
+ }
+})
+
+
+test('inconsistent daily wash counts remain unranked even if detailed opportunities or period totals are positive',()=>{
+ const data=[row('Invalid','08:00:00',10,20,{member_washes:20}),row('Invalid','08:00:00',100,1,{log_date:'2026-10-21'})]
+ const r=build(data,[{...sites[0],opportunities_formula:'detailed'}]).rows[0]
+ assert.equal(r.ms,21);assert.equal(r.opp,111)
+ assert.equal(r.score,null);assert.equal(r.rank,null)
+ assert.match(r.issues.join(' '),/counts are inconsistent/)
 })

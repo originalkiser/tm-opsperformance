@@ -58,26 +58,26 @@ test('By Site is a presentation change, retaining unified rank/qualification and
   h.unmount()
 })
 
-test('nonqualifiers stay visible with their computed points and no official rank',async()=>{
+test('low-volume employees receive their computed points and official rank',async()=>{
   const h=await table([row('A','08:00:00',200,20),row('B','09:00:00',400,40),row('Low','10:00:00',410,41)])
-  assert.match(h.html(),/Not Qualified/)
-  const low=h.csv().rows.find(r=>r[1]==='Low');assert.equal(low[0],'Not Qualified');assert.equal(low[7],111)
-  h.sort('Rank');assert.equal(h.csv().rows.at(-1)[0],'Not Qualified')
+  assert.doesNotMatch(h.html(),/Not Qualified|Top 50%|cutoff ties|Top 2 cutoff/)
+  const low=h.csv().rows.find(r=>r[1]==='Low');assert.equal(low[0],'3');assert.equal(low[7],111)
+  h.sort('Rank');assert.equal(h.csv().rows[0][0],'3')
   h.unmount()
 })
 
 test('missing opportunities retain known sales, missing indicators and incomplete status in UI/export',async()=>{
   const h=await table([row('Alex','08:00:00',null,20)]),html=h.html(),spec=h.csv()
-  assert.match(html,/Qualified · Incomplete data/);assert.match(html,/Missing cumulative/)
+  assert.match(html,/Unranked · Incomplete or invalid data/);assert.match(html,/Missing cumulative/)
   assert.match(html,/Known attributed subtotal/);assert.doesNotMatch(html,/NaN|Infinity/)
   assert.equal(spec.rows[0][3],20);assert.equal(spec.rows[0][4],'');assert.equal(spec.rows[0][5],'—');assert.equal(spec.rows[0][7],'')
   assert.equal(spec.totalsRow[5],'—');assert.equal(spec.totalsRow[6],'100.0%')
   h.unmount()
 })
 
-test('zero sales and zero opportunities are visible zero rates, points and unified rank',async()=>{
-  const h=await table([row('Zero','08:00:00',0,0)]),html=h.html(),r=h.csv().rows[0]
-  assert.deepEqual(r.slice(0,8),['1','Zero','Site',0,0,'0.0%','0.0%',0])
+test('zero sales and positive opportunities are visible zero rates, points and rank',async()=>{
+  const h=await table([row('Zero','08:00:00',1,0)]),html=h.html(),r=h.csv().rows[0]
+  assert.deepEqual(r.slice(0,8),['1','Zero','Site',0,1,'0.0%','0.0%',0])
   assert.match(html,/0\.0%/);assert.doesNotMatch(html,/NaN|Infinity|Not Qualified|Incomplete data/)
   assert.equal(h.csv().totalsRow[5],'0.0%');h.unmount()
 })
@@ -94,7 +94,7 @@ test('correction ambiguity does not fabricate totals or rank and unaffected empl
 test('all export buttons use the same aligned table specification and selected reporting period',async()=>{
   const h=await table(),spec=h.csv()
   assert.equal(spec.filename,'team-member-sales_2026-10-01_to_2026-10-22')
-  assert.match(spec.subtitle,/cutoff ties included/)
+  assert.match(spec.subtitle,/All complete, valid employee data qualifies/)
   assert.equal(h.find(n=>n.type===Export).props.items.length,3)
   assert.deepEqual(h.export(0),spec);assert.deepEqual(h.export(1),spec)
   assert.ok(spec.rows.every(r=>r.length===spec.columns.length));assert.equal(spec.totalsRow.length,spec.columns.length)
@@ -163,4 +163,17 @@ test('mapping read failure or missing RPC withholds scores rather than hiding ap
   assert.doesNotMatch(failed.html(),/130\.0/);failed.unmount()
   const absent=await table(fixture(),true,locations,{readMappings:async()=>{throw Object.assign(new Error('missing table'),{code:'42P01'})}})
   assert.match(absent.html(),/Historical mappings could not be verified/);absent.unmount()
+})
+
+
+test('zero and negative opportunities show unranked reasons and missing conversion in UI and exports',async()=>{
+ for(const total of [0,-1]) {
+  const data=total===0?[row('Invalid','08:00:00',0,0)]:[{...row('Invalid','08:00:00',1,0),member_washes:2}]
+  const h=await table(data),spec=h.csv(),html=h.html()
+  assert.match(html,/Unranked/);assert.match(html,/Opportunities must be positive/)
+  assert.equal(spec.rows[0][5],'—');assert.equal(spec.rows[0][7],'')
+  assert.match(spec.rows[0][8],/Opportunities must be positive/)
+  assert.equal(spec.totalsRow[5],'—');assert.doesNotMatch(html,/NaN|Infinity/)
+  h.unmount()
+ }
 })
