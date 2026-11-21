@@ -60,29 +60,39 @@ test('unique conflict on simultaneous new checkpoint surfaces instead of overwri
 function picker(props={}) {
  const changes=[]
  const h=locationHelpHarness('components/EmployeeSelect',{useId:()=> 'picker'}, {value:'Historic Nick',employees:activeEmployeeOptions(roster,'a'),onChange:v=>changes.push(v),...props})
- const input=()=>h.find(n=>n.type==='input')
- return Object.assign(h,{changes,input,focus(){input().props.onFocus();h.render()},type(value){input().props.onChange({target:{value}});h.render()},key(key){input().props.onKeyDown({key,preventDefault(){}});h.render()}})
+ return Object.assign(h,{changes,select:()=>h.find(n=>n.type==='select'),choose(value){h.find(n=>n.type==='select').props.onChange({target:{value}})}})
 }
-test('typing/Enter without highlighted selection never commits text; Escape/Tab/blur restore historical name',()=>{
- for(const exit of ['Escape','Tab','blur']) {
-  const h=picker();h.render();h.focus();h.type('unknown');h.key('Enter')
-  assert.deepEqual(h.changes,[])
-  if(exit==='blur')h.find(n=>n.type==='div').props.onBlur({currentTarget:{contains:()=>false},relatedTarget:null});else h.key(exit)
-  assert.equal(h.input().props.value,'Historic Nick');assert.deepEqual(h.changes,[])
- }
+test('native dropdown exposes roster choices and commits exact selected spelling',()=>{
+ const h=picker()
+ assert.equal(h.all(n=>n.type==='input').length,0)
+ assert.equal(h.select().props['aria-label'],'Employee name')
+ h.choose('Cam');h.choose('Al');assert.deepEqual(h.changes,['Cam','Al'])
 })
-test('keyboard and pointer selection commit roster name only, exposing combobox/listbox semantics',()=>{
- const h=picker();h.render();h.focus();h.type('ca');h.key('ArrowDown')
- assert.equal(h.input().props['aria-activedescendant'],'picker-0')
- h.key('Enter');assert.deepEqual(h.changes,['Cam'])
- const p=picker();p.render();p.focus();p.find(n=>n.props.role==='option'&&n.props.children==='Al').props.onClick();assert.deepEqual(p.changes,['Al'])
+test('invalid, free-text, empty and inactive attempts cannot change a historical name',()=>{
+ const h=picker({employees:roster.filter(e=>e.location_id==='a')})
+ for(const name of ['Unknown',' CAM ','','Old','Historic Nick'])h.choose(name)
+ assert.deepEqual(h.changes,[]);assert.equal(h.select().props.value,'Historic Nick')
+ assert.ok(!h.all(n=>n.type==='option').some(n=>n.props.value==='Old'))
+ assert.equal(h.find(n=>n.type==='option'&&n.props.value==='Historic Nick').props.disabled,true)
 })
-test('loading/error/empty roster never exposes selectable names and offers Employees guidance',()=>{
- for(const props of [{loading:true},{error:'offline'},{employees:[]}]) {
-  const h=picker(props);h.render();h.focus();h.key('ArrowDown');h.key('Enter')
-  assert.deepEqual(h.changes,[]);assert.equal(h.all(n=>n.props.role==='option').length,0)
+test('loading/error/empty/disabled roster blocks selection and keeps Employees guidance',()=>{
+ for(const props of [{loading:true},{error:'offline'},{employees:[]},{disabled:true}]) {
+  const h=picker(props);h.choose('Cam');assert.deepEqual(h.changes,[])
   assert.ok(h.find(n=>n.type==='a'&&n.props.href==='#/employees'))
  }
+})
+test('location switching removes prior choices and retains the recorded name',()=>{
+ const h=picker();h.choose('Cam')
+ h.props({value:'Historic Nick',employees:activeEmployeeOptions(roster,'b'),onChange:v=>h.changes.push(v)})
+ h.choose('Cam');h.choose('Other');assert.deepEqual(h.changes,['Cam','Other'])
+ assert.equal(h.select().props.value,'Historic Nick')
+ assert.ok(!h.all(n=>n.type==='option').some(n=>n.props.value==='Cam'))
+})
+test('refresh retries the roster without submitting a name',()=>{
+ let refreshes=0
+ const h=picker({error:'offline',onRefresh:()=>refreshes++})
+ h.find(n=>n.type==='button').props.onClick()
+ assert.equal(refreshes,1);assert.deepEqual(h.changes,[])
 })
 test('all Daily Log entry paths use roster picker and guarded writer; no roster writes or free-text auto-add remain',()=>{
  const src=readFileSync(new URL('../src/components/DailyLogTable.jsx',import.meta.url),'utf8')
