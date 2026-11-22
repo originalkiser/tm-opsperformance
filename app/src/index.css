@@ -46,3 +46,86 @@ input[type='number'] {
     @apply min-h-11 px-4 py-2 rounded-lg bg-tm-blue text-white dark:bg-tm-teal dark:text-tm-navy font-brand text-sm font-semibold hover:bg-tm-navy dark:hover:bg-tm-sky transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tm-teal focus-visible:ring-offset-2 dark:focus-visible:ring-offset-tm-dark-bg;
   }
 }
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --tm-canvas: theme('colors.tm-cream');
+    --tm-surface: #fff;
+    --tm-text: theme('colors.tm-navy');
+    --tm-muted: #475569;
+    --tm-border: #64748b;
+    --tm-primary: theme('colors.tm-blue');
+    --tm-primary-text: #fff;
+    --tm-focus: #0755b2;
+    --tm-error: #991b1b;
+    --tm-error-bg: #fef2f2;
+  }
+  :root.dark {
+    color-scheme: dark;
+    --tm-canvas: theme('colors.tm-dark-bg');
+    --tm-surface: theme('colors.tm-dark-surface');
+    --tm-text: theme('colors.tm-dark-text');
+    --tm-muted: #a9bfd6;
+    --tm-border: #7a9bbf;
+    --tm-primary: theme('colors.tm-teal');
+    --tm-primary-text: theme('colors.tm-navy');
+    --tm-focus: #9de4ff;
+    --tm-error: #fecaca;
+    --tm-error-bg: #451a1a;
+  }
+  :root {
+    @apply font-sans;
+    background-color: var(--tm-canvas);
+  }
+  :where(a, button, input, select, textarea, summary):focus-visible {
+    outline: 2px solid var(--tm-focus);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .tm-login {
+    background: radial-gradient(ellipse at top, #d4eeed, var(--tm-canvas) 65%);
+  }
+  .dark .tm-login {
+    background: radial-gradient(ellipse at top, #1a3350, var(--tm-canvas) 65%);
+  }
+  .tm-shared-panel, .tm-field {
+    background-color: var(--tm-surface);
+    color: var(--tm-text);
+    border-color: var(--tm-border);
+  }
+  .tm-field-label {
+    @apply mb-1 block text-sm font-semibold;
+    color: var(--tm-muted);
+  }
+  .tm-field {
+    @apply min-h-11 w-full rounded-lg border px-3 py-2 text-base;
+  }
+  .tm-primary {
+    @apply min-h-11 rounded-lg px-4 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-60;
+    background-color: var(--tm-primary);
+    color: var(--tm-primary-text);
+  }
+  .tm-primary:not(:disabled):hover {
+    filter: brightness(0.9);
+  }
+  .tm-form-error {
+    @apply rounded-lg px-3 py-2 text-sm;
+    background-color: var(--tm-error-bg);
+    color: var(--tm-error);
+  }
+  .tm-navy-controls {
+    --tm-focus: #9de4ff;
+  }
+  .tm-focus:focus-visible {
+    outline: 3px solid var(--tm-focus);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { transition: none; }
+  .tm-loader__line { animation: none; }
+}
