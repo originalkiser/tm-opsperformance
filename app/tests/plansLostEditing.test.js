@@ -126,7 +126,7 @@ for (const view of ['table', 'card']) {
      return {value:input.props.value, color:card.props.className}
     }
     const input=h.find(n=>n.type==='input' && n.props['data-row']===hour-8 && n.props.min===undefined)
-    const cell=h.find(n=>n.type==='td' && n.props.children?.type==='input' && n.props.children.props['data-row']===hour-8 && n.props.children.props.min===undefined)
+    const cell=h.find(n=>n.type==='td' && React.Children.toArray(n.props.children).some(child => child.type === 'input' && child.props['data-row'] === hour - 8 && child.props.min === undefined))
     return {value:input.props.value,color:cell.props.className}
    }
    for(const hour of [8,13,20]) {

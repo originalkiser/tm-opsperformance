@@ -218,15 +218,16 @@ test('leaving during an evidence request aborts it and never creates an orphaned
 
 test('weekly section camera sits outside questions and preserves attachment item keys',async()=>{
  const weekly=checklistTemplates.find(t=>t.key==='weekly'),h=form({templateData:weekly});await h.flush()
- assert.equal(h.all(n=>n.type==='input'&&n.props.type==='file').length,0)
+ const libraryLabels = ['Choose photo from library weekly-9', 'Choose photo from library weekly-13']
+ assert.deepEqual(h.all(n=>n.type==='input'&&n.props.type==='file').map(n=>n.props['aria-label']), libraryLabels)
  const cameras=h.all(n=>typeof n.props?.onCapture==='function')
  assert.deepEqual(cameras.map(n=>n.props.itemId),['weekly-9','weekly-13'])
- const containsCamera=node=>Array.isArray(node)?node.some(containsCamera):!!node&&typeof node==='object'&&(node.props?.itemId==='weekly-9'||containsCamera(node.props?.children))
+ const containsCamera=node=>Array.isArray(node)?node.some(containsCamera):!!node&&typeof node==='object'&&(node.props?.itemId==='weekly-9'||node.props?.['aria-label']===libraryLabels[0]||containsCamera(node.props?.children))
  assert.ok(h.find(n=>n.props?.['aria-label']==='Communications Board section photo'))
  assert.ok(h.all(n=>n.type==='fieldset').every(n=>!containsCamera(n)))
  assert.ok(button(h,'Save Draft'));h.unmount()
  const review=form({templateData:weekly,submitted:true});await review.flush()
- assert.equal(review.all(n=>typeof n.props?.onCapture==='function').length,0);review.unmount()
+ assert.equal(review.all(n=>typeof n.props?.onCapture==='function' || n.type==='input'&&n.props.type==='file').length,0);review.unmount()
 })
 
 test('answers use local recovery only; server saves are explicit and discard requires confirmation',async()=>{
@@ -330,23 +331,26 @@ test('unknown Storage errors, still-editable drafts and failed state reads keep 
 
 test('companywide page shows availability without auto-created drafts or derived overdue rows; Admin reviews historical records',async()=>{
  for(const role of ['admin','store']) {
+  const Review = () => null
   const calls=[],records=[{id:'historic',location_id:'site',template_key:'midday',period_date:'2026-11-02',status:'submitted',is_pilot:true,manager_name:'Fictional Manager',submitted_at:'2026-11-02T12:00:00Z',template_snapshot:{name:'Mid-Day Checklist',timezone:'America/New_York'}}]
   const h=locationHelpHarness('pages/ManagerChecklists',{
-   ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,
+   ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,ChecklistSubmissionReview:Review,
    useAuth:()=>({user:{id:actor},profile:{role,is_active:true},locations:[{id:'site',site_code:'Fictional Site',timezone:'America/New_York'}]}),
-   supabase:{from(name){calls.push(name);return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:records}).then(resolve)}}},async rpc(name,args){if(name==='checklist_weekly_periods')return {data:legacyWeeklyPeriods(args)};assert.equal(name,'configuration_capabilities','Availability must not create drafts');return {data:{can_edit_templates:false}}}},
+   supabase:{from(name){calls.push(name);return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:records}).then(resolve)}}},async rpc(name,args){calls.push(name);if(name==='checklist_weekly_periods')return {data:legacyWeeklyPeriods(args)};assert.equal(name,'configuration_capabilities','Availability must not create drafts');return {data:{can_edit_templates:false}}}},
    checklistPeriod,completionStatus:(t,d,rows)=>rows.some(r=>r.template_key===t.key)?'Submitted':'Available',localChecklistDate:()=> '2026-11-02',checklistTimestamp,
    Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:()=>null,
   })
   await h.flush()
   assert.equal(h.all(n=>n.type==='section').length,4)
   assert.equal(calls.includes('checklist_pilot_access'),false)
-  assert.equal(h.all(n=>n.type==='li').length,role==='admin'?1:0)
+  assert.equal(calls.includes('save_checklist'),false)
+  const review = h.find(n=>n.type===Review)
+  assert.equal(!!review, role==='admin')
   assert.ok(h.find(n=>n.type==='button'&&n.props.children==='View submission'))
   assert.equal(h.all(n=>n.type==='button'&&String(n.props.children).includes('pilot access')).length,0)
   if(role==='admin') {
-   const review=h.find(n=>n.type==='button'&&Array.isArray(n.props.children)&&n.props.children[0]==='Review ')
-   await review.props.onClick();h.render()
+   assert.deepEqual(review.props.records.map(record=>record.id), ['historic'])
+   await review.props.onOpen(review.props.records[0]);h.render()
    assert.equal(h.find(n=>n.props?.initial?.id==='historic').props.initial.is_pilot,true)
   }
   h.unmount()
@@ -364,15 +368,15 @@ test('direct checklist page denies inactive, deleted, unknown and unauthenticate
 })
 test('only Super Admin capability reveals editor; ordinary Admin retains QR management without grant queries',async()=>{
  for(const allowed of [false,true]) {
-  const Editor=()=>null, Qr=()=>null
+  const Editor=()=>null, Qr=()=>null, BudgetLabels=()=>null
   const h=locationHelpHarness('pages/ManagerChecklists',{
    useAuth:()=>({user:{id:actor},profile:{role:'admin',is_active:true},locations:[{id:'site',site_code:'Fictional',timezone:'America/New_York'}]}),
    supabase:{async rpc(name,args){if(name==='checklist_weekly_periods')return {data:legacyWeeklyPeriods(args)};assert.equal(name,'configuration_capabilities');return {data:{can_edit_templates:allowed}}},from(name){assert.notEqual(name,'checklist_pilot_access');return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:[]}).then(resolve)}}}},
    checklistPeriod,completionStatus:()=> 'Available',localChecklistDate:()=> '2026-11-02',checklistTimestamp,
-   Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:Editor,ChecklistQrAdmin:Qr,ChecklistOpenWork:()=>null,
+   Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:Editor,BudgetLabelsEditor:BudgetLabels,ChecklistQrAdmin:Qr,ChecklistOpenWork:()=>null,
   })
   await h.flush();h.find(n=>n.type==='button'&&Array.isArray(n.props.children)&&n.props.children.includes(' checklist configuration')).props.onClick();h.render()
-  assert.equal(!!h.find(n=>n.type===Editor),allowed);assert.ok(h.find(n=>n.type===Qr));h.unmount()
+  assert.equal(!!h.find(n=>n.type===Editor),allowed);assert.equal(!!h.find(n=>n.type===BudgetLabels),allowed);assert.ok(h.find(n=>n.type===Qr));h.unmount()
  }
 })
 

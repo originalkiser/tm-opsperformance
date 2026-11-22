@@ -81,7 +81,7 @@ test('sorting uses selected numeric column and direction',()=>{
  assert(html.indexOf('Fictional West')<html.indexOf('Fictional East'))
 })
 
-test('company reporting is Store-only and never replaces assigned entry or other-section scope', () => {
+test('company reporting is Store-only and never replaces assigned entry or other-section scope', async () => {
  const insights=readFileSync(new URL('../src/pages/Insights.jsx',import.meta.url),'utf8')
  assert.match(insights, /companyRead = profile\?\.role === 'store'/)
  assert.match(insights, /reportingLocations = companyRead \? companyLocations : locations/)
@@ -91,7 +91,12 @@ test('company reporting is Store-only and never replaces assigned entry or other
  const auth=readFileSync(new URL('../src/contexts/AuthContext.jsx',import.meta.url),'utf8')
  assert.doesNotMatch(auth, /loadCompanyReportingLocations|companyLocations|dashboard_mtd_performance/)
  const access=readFileSync(new URL('../src/utils/locationAccess.js',import.meta.url),'utf8')
- assert.match(access, /profile\.role === 'area_manager'/)
+ const { fetchLocationAccess } = await import('../src/utils/locationAccess.js')
+ const client = { from(table) {
+   assert.equal(table, 'user_profiles')
+   return { select() { return this }, eq() { return this }, async single() { return { data: { role: 'area_manager' } } } }
+ } }
+ await assert.rejects(fetchLocationAccess(client, 'retired-user'), /role is no longer supported/)
  assert.doesNotMatch(access, /loadCompanyReportingLocations|companyLocations|dashboard_mtd_performance/)
  const entry=readFileSync(new URL('../src/pages/Dashboard.jsx',import.meta.url),'utf8')
  assert.doesNotMatch(entry, /tm_reporting_market_filter|companyLocations/)
