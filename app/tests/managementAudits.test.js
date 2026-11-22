@@ -1,3 +1,4 @@
+import { managementAudits, managementAuditUrl, managementAuditScore, managementAuditScoreText } from '../src/utils/managementAudits.js'
 import { legacyWeeklyPeriods } from './helpers/weeklyDeadlineFixture.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -65,4 +66,92 @@ test('audit template preview states only source-required evidence without claimi
  const h=locationHelpHarness('components/ChecklistTemplatePreview',{}, {name:audits[0].name,definition:audits[0].definition})
  await h.flush()
  const copy=h.all(n=>n.type==='p').map(text).join('\n');assert.ok(copy.includes('All conditional follow-ups'));assert.equal(copy.includes('Failed/incomplete answers always require explanations.'),false);h.unmount()
+})
+
+test('audit N/A is optional only when enabled; Failed still requires its follow-up and signature', () => {
+ const choice = { id: 'q', type: 'passfail', options: ['Passed', 'Failed'], na_allowed: true, failure_values: ['Failed'], critical: true, photo_required: true }
+ const followup = { id: 'follow', type: 'text', failure_values: [], condition: { item_id: 'q', value: 'Failed' } }
+ const na = { q: { value: 'N/A' } }
+ const files = [{ id: 'signature', kind: 'signature', item_id: null }, { id: 'photo', kind: 'photo', item_id: 'q' }]
+ assert.deepEqual(validateChecklist([choice, followup], na, files, 'Auditor', true), {})
+ assert.match(validateChecklist([choice], na, files, 'Auditor')[choice.id], /explanation/)
+ assert.match(validateChecklist([{ ...choice, na_allowed: false }], na, files, 'Auditor', true)[choice.id], /Choose/)
+ assert.match(validateChecklist([choice, followup], na, [], 'Auditor', true)[choice.id], /photo/)
+ const failed = validateChecklist([choice, followup], { q: { value: 'Failed' } }, [], 'Auditor', true)
+ assert.match(failed.q, /explanation/)
+ assert.ok(failed.follow && failed._signature)
+})
+
+test('audit scores use immutable saved choices and ignore unanswered, inactive, and written responses', () => {
+ const item = id => ({ id, type: 'passfail', options: ['Passed', 'Failed'], na_allowed: true })
+ const row = {
+  status: 'submitted', template_key: 'monthly_site_assessment',
+  template_snapshot: { definition: ['pass', 'fail', 'na', 'blank'].map(item).concat(
+   { ...item('inactive'), condition: { item_id: 'pass', value: 'Failed' } },
+   { id: 'comment', type: 'text', options: [] }) },
+  answers: { pass: { value: 'Passed' }, fail: { value: 'Failed' }, na: { value: 'N/A' },
+   inactive: { value: 'Passed' }, comment: { value: 'Passed' }, removed: { value: 'Passed' } },
+ }
+ assert.deepEqual(managementAuditScore(row), { passed: 1, failed: 1, na: 1, percentage: '50.0' })
+ assert.deepEqual(managementAuditScore({ ...row, answers: { na: row.answers.na } }), { passed: 0, failed: 0, na: 1, percentage: null })
+ assert.equal(managementAuditScore({ ...row, template_key: 'weekly' }), null)
+ assert.equal(managementAuditScore({ ...row, working_copy_id: 'correction' }), null)
+ assert.equal(managementAuditScore({ ...row, status: 'draft' }), null)
+ assert.match(managementAuditScoreText({ ...row, answers: {} }), /Audit score: N\/A/)
+})
+
+test('QR destinations are signed-in audit routes with no store grant, location or guest token', () => {
+ for (const audit of managementAudits) {
+  const url = managementAuditUrl('https://app.invalid/repo/?old=value#/guest-checklists?token=fictional', audit)
+  assert.equal(url, 'https://app.invalid/repo/#' + audit.path)
+ }
+})
+
+test('the audit QR workflow waits for an authorized location and opens only its own audit', async () => {
+ for (const audit of managementAudits) {
+  const template = audits.find(t => t.key === audit.key)
+  const sites = [{ id: 'allowed', site_code: '100', timezone: 'UTC' }, { id: 'excluded', site_code: '200', exclude_from_reporting: true }]
+  const calls = [], Form = () => null
+  const supabase = {
+   from(table) {
+    assert.ok(['checklist_templates', 'checklist_submissions'].includes(table))
+    const query = { select() { return this }, eq(key, value) { calls.push([table, key, value]); return this },
+     async maybeSingle() { return { data: template } },
+     then(resolve) { return Promise.resolve({ data: [] }).then(resolve) } }
+    return query
+   },
+   async rpc(name, args) {
+    calls.push([name, args])
+    return { data: { id: 'draft', template_key: audit.key, location_id: 'allowed' } }
+   },
+  }
+  const binding = role => ({ useAuth: () => ({ user: role ? { id: 'auditor' } : null, profile: { role, is_active: true }, locations: sites }),
+   supabase, checklistPeriod, completionStatus: () => 'Available', localChecklistDate: timezone => timezone ? '2026-11-12' : '',
+   Link: () => null, NavBar: () => null, ChecklistAccessForm: Form })
+  const h = locationHelpHarness('pages/ManagerChecklists', binding('store'), { audit })
+  await h.flush()
+  const select = () => h.find(n => n.props['aria-label'] === 'Checklist location')
+  const start = () => h.find(n => n.type === 'button' && n.props.children === 'Start audit')
+  assert.equal(select().props.value, '')
+  assert.equal(h.find(n => n.type === 'option' && n.props.value === 'excluded'), undefined)
+  assert.deepEqual(calls, [])
+  select().props.onChange({ target: { value: 'excluded' } }); await h.flush()
+  assert.equal(start(), undefined)
+  assert.deepEqual(calls, [])
+  select().props.onChange({ target: { value: 'allowed' } }); await h.flush()
+  assert.ok(calls.some(([table, key, value]) => table === 'checklist_submissions' && key === 'template_key' && value === audit.key))
+  assert.ok(calls.some(([table, key, value]) => table === 'checklist_submissions' && key === 'location_id' && value === 'allowed'))
+  assert.ok(!calls.some(([name]) => name === 'save_checklist'))
+  await start().props.onClick(); await h.flush()
+  assert.deepEqual(calls.at(-1), ['save_checklist', { p_template: audit.key, p_location: 'allowed', p_date: checklistPeriod(template, '2026-11-12') }])
+  assert.equal(h.find(n => n.type === Form).props.initial.template_key, audit.key)
+  h.unmount()
+
+  calls.length = 0
+  const guest = locationHelpHarness('pages/ManagerChecklists', binding(null), { audit })
+  await guest.flush()
+  assert.ok(guest.find(n => n.props.role === 'alert'))
+  assert.deepEqual(calls, [])
+  guest.unmount()
+ }
 })

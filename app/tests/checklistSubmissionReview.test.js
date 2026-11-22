@@ -1,13 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
+import { managementAuditScoreText } from '../src/utils/managementAudits.js'
 import { checklistTimestamp } from '../src/utils/checklistRules.js'
 const locations = [{ id:'a',site_code:'1001',name:'Fictional North' },{ id:'b',site_code:'1002',name:'Fictional South' }]
 const record = (id,location_id,status) => ({ id,location_id,status,period_date:'2026-11-16',manager_name:status==='submitted'?'Fictional Manager':'',updated_at:'2026-11-17T12:00:00Z',template_snapshot:{name:'Weekly PM',timezone:'America/New_York'} })
 const records = [record('b1','b','draft'),record('a1','a','submitted'),record('b2','b','submitted'),record('a2','a','discarding')]
 const text = node => Array.isArray(node)?node.map(text).join(''):node&&typeof node==='object'?text(node.props?.children):String(node??'')
 const buttons = h => h.all(n=>n.type==='button')
-function fixture(props={}) { const opened=[]; const h=locationHelpHarness('components/ChecklistSubmissionReview',{checklistTimestamp},{label:'Operational checklist submissions',records,locations,busy:false,onOpen:r=>opened.push(r),...props});return {...h,opened} }
+function fixture(props={}) { const opened=[]; const h=locationHelpHarness('components/ChecklistSubmissionReview',{checklistTimestamp, managementAuditScoreText},{label:'Operational checklist submissions',records,locations,busy:false,onOpen:r=>opened.push(r),...props});return {...h,opened} }
 test('one collapsed row per encountered location; totals count only submitted status',()=>{
  const h=fixture();const summaries=buttons(h).filter(n=>'aria-expanded'in n.props)
  assert.equal(summaries.length,2);assert.ok(summaries.every(n=>n.props['aria-expanded']===false))
@@ -46,4 +47,15 @@ test('page keeps operational/audit records separate and review UI Admin-only',as
   if(role==='admin'){assert.deepEqual(sections[0].props.records.map(r=>r.id),['op']);assert.deepEqual(sections[1].props.records.map(r=>r.id),['audit']);await sections[0].props.onOpen(saved[0]);await h.flush();assert.equal(h.find(n=>n.props?.initial===saved[0])?.props.initial,saved[0])}
   assert.ok(calls.every(name=>['configuration_capabilities','checklist_weekly_periods'].includes(name)));h.unmount()
  }
+})
+
+test('management review shows scores only for completed audit records', () => {
+ const audit = { ...records[1], template_key: 'quarterly_safety_audit', answers: { q: { value: 'Passed' } },
+  template_snapshot: { ...records[1].template_snapshot, definition: [{ id: 'q', type: 'passfail', options: ['Passed', 'Failed'] }] } }
+ const h = fixture({ showAuditScores: true, records: [audit, { ...audit, id: 'draft', status: 'draft' }] })
+ buttons(h).find(node => text(node) === 'Expand All').props.onClick()
+ const items = h.all(node => node.type === 'li')
+ assert.match(text(items[0]), /Audit score: 100\.0% · Passed: 1 · Failed: 0 · N\/A: 0/)
+ assert.doesNotMatch(text(items[1]), /Audit score/)
+ h.unmount()
 })

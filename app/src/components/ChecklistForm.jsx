@@ -1,3 +1,4 @@
+import { managementAuditScoreText } from '../utils/managementAudits.js'
 import ChecklistPrintButton from './ChecklistPrintButton'
 import ChecklistWeeklyDue from './ChecklistWeeklyDue'
 import { useEffect, useRef, useState } from 'react'
@@ -278,6 +279,7 @@ export default function ChecklistForm({ initial, user, locationLabel, locationNa
   return <section className="space-y-3 border rounded-xl p-3 sm:p-4 text-sm sm:text-base bg-white dark:bg-tm-dark-surface" aria-label="Checklist responses">
     <h2 className="text-lg sm:text-xl font-bold">{row.template_snapshot.name} · {row.period_date}</h2>
     <p className="text-xs sm:text-sm break-words">Location: {locationLabel || row.location_id}{transport ? transport.guest ? ' · Store QR access. Names are self-reported.' : ' · Signed-in account access.' : <> · Authenticated account: {actorName} ({row.created_by})</>}</p>
+    {managementAudit && row.status === 'submitted' && !correcting && <p className="font-semibold">{managementAuditScoreText(row)}</p>}
     <ChecklistPrintButton row={row} transport={transport} locationLabel={locationLabel} locationName={locationName} disabled={busy || !evidenceReady || unavailable.current} />
     <ChecklistWeeklyDue timing={weeklyTiming} timezone={row.template_snapshot.timezone} />
     {weeklyTiming && <p className="text-sm">Initial submissions remain allowed after this deadline; those received late are permanently marked Completed Late. Corrections close at this deadline.</p>}
@@ -310,7 +312,7 @@ export default function ChecklistForm({ initial, user, locationLabel, locationNa
           <textarea aria-label={`Written response ${item.id}`} className="block w-full border rounded p-3 bg-transparent" maxLength={4000} value={answers[item.id]?.value || ''} onChange={event => change(item.id, 'value', event.target.value)} />
         </label> : <div className="flex flex-wrap gap-2">{[...item.options, ...(item.na_allowed ? ['N/A'] : [])].map(option => <label key={option} className="min-h-11 flex items-center gap-2 border rounded px-3 text-sm cursor-pointer">
           <input type="radio" name={item.id} value={option} checked={answers[item.id]?.value === option} onChange={() => change(item.id, 'value', option)} className="w-5 h-5 shrink-0" />{option}</label>)}</div>}
-        {(item.explanation_required || item.failure_values.includes(answers[item.id]?.value) || answers[item.id]?.value === 'N/A' || answers[item.id]?.explanation) && <label className="block">Explanation / N/A reason
+        {(item.explanation_required || item.failure_values.includes(answers[item.id]?.value) || answers[item.id]?.value === 'N/A' || answers[item.id]?.explanation) && <label className="block">{managementAudit && answers[item.id]?.value === 'N/A' ? 'N/A explanation (optional)' : 'Explanation / N/A reason'}
           <textarea className="block w-full border rounded p-3 bg-transparent" maxLength={4000} value={answers[item.id]?.explanation || ''} onChange={event => change(item.id, 'explanation', event.target.value)} /></label>}
         {item !== sectionPhoto && requiredChecklistPhotos(item, answers[item.id]) > 0 && photoControl(item)}
         {errors[item.id] && <p role="alert" className="text-red-600 dark:text-red-300">{errors[item.id]}</p>}

@@ -1,3 +1,4 @@
+import { managementAuditScoreText } from '../utils/managementAudits.js'
 import { isChecklistItemActive, validateChecklist } from '../utils/checklistRules'
 import { checklistPrintPeriod, printTimestamp } from '../utils/checklistPrint'
 
@@ -21,6 +22,7 @@ figcaption, .meta { font-size: 9pt; } footer { margin-top: 12pt; font-size: 9pt;
 `
 export default function ChecklistPrintDocument({ record, images, locationLabel, locationName }) {
   const { row, evidence } = record, snapshot = row.template_snapshot
+  const score = managementAuditScoreText(row)
   const issues = validateChecklist(snapshot.definition, row.answers, evidence, row.manager_name || '', row.template_key.includes('audit') || row.template_key === 'monthly_site_assessment')
   const photos = files => files.map(file => <figure key={file.id} className={file.kind === 'signature' ? 'signature' : ''}>
     <img src={images.get(file.id)} alt={file.kind === 'signature' ? 'Recorded handwritten signature' : `Inspection photo for ${snapshot.definition.find(i => i.id === file.item_id)?.text || 'checklist'}`} />
@@ -29,6 +31,7 @@ export default function ChecklistPrintDocument({ record, images, locationLabel, 
   return <main>
     <style>{checklistPrintStyles}</style>
     <header><h1>{snapshot.name}</h1><p><strong>Store: {locationLabel || 'Not recorded'}{locationName && locationName !== locationLabel ? ` · ${locationName}` : ''}</strong></p>
+      {score && <p><strong>{score}</strong></p>}
       <p>Reporting period: {checklistPrintPeriod(row)}</p>
       <p>Completed: {printTimestamp(row.submitted_at, snapshot.timezone)}</p>
       <p>Recorded employee / auditor: {row.manager_name || 'Not recorded'}</p>
@@ -38,7 +41,7 @@ export default function ChecklistPrintDocument({ record, images, locationLabel, 
     </header>
     {snapshot.definition.map((item, index) => {
       const answer = row.answers[item.id] || {}, active = isChecklistItemActive(item, row.answers)
-      const failed = active && item.failure_values?.includes(answer.value)
+      const failed = active && (item.failure_values?.includes(answer.value) || (score && item.options?.includes('Failed') && answer.value === 'Failed'))
       return <section className="item" key={item.id}>
         {(index === 0 || snapshot.definition[index - 1].section !== item.section) && <h2>{item.section}</h2>}
         <div className="question"><p><strong>{item.number ?? index - snapshot.definition.findIndex(previous => previous.section === item.section) + 1}. {item.text}</strong>{item.critical && ' · CRITICAL'}{item.required === false && ' · Optional'}</p>

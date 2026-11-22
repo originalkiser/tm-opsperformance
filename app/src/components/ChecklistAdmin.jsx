@@ -11,6 +11,7 @@ export default function ChecklistAdmin({ templates, reload }) {
   const [newSection, setNewSection] = useState('')
   const active = useRef(true), flight = useRef(false), generation = useRef(0)
   useEffect(() => { active.current = true; return () => { active.current = false; generation.current++ } }, [])
+  const managementAudit = ['monthly_site_assessment', 'quarterly_safety_audit'].includes(key)
   const saved = state?.draft?.editing ? state.draft.definition : state?.published.definition
   const dirty = !!state && JSON.stringify(items) !== JSON.stringify(saved)
   const sections = [...new Set(items.map(i => i.section))]
@@ -90,7 +91,7 @@ export default function ChecklistAdmin({ templates, reload }) {
         </div>
         {dirty && <p role="status">Unsaved template changes. Save before previewing or publishing.</p>}
       </fieldset>
-      {preview && <ChecklistTemplatePreview name={preview.name} definition={preview.definition} />}
+      {preview && <ChecklistTemplatePreview managementAudit={managementAudit} name={preview.name} definition={preview.definition} />}
       <details><summary className="cursor-pointer font-semibold">Published versions</summary><ul>{state.versions.map(version => <li key={version.version} className="border-b py-2 space-x-2">v{version.version} · {version.published_at} · {version.note}
         <button disabled={busy} className={control} onClick={() => run(async current => { const value = await templateEditorAction(supabase, 'version', key, null, { p_restore_version: version.version }); if (current()) setOldVersion(value) })}>Review version {version.version}</button>
         <button disabled={busy} className={control} onClick={() => {
@@ -98,9 +99,9 @@ export default function ChecklistAdmin({ templates, reload }) {
           run(async current => { const value = await templateEditorAction(supabase, 'restore', key, state, { p_restore_version: version.version, p_note: `Restore from version ${version.version}` }); if (current()) { accept(value); setNote(`Restore from version ${version.version}`); setNotice('Prior version copied into a draft. Preview and publish to activate it as a new version.') } })
         }}>Restore version {version.version} to draft</button>
       </li>)}</ul></details>
-      {oldVersion && <ChecklistTemplatePreview name={`${oldVersion.name} · version ${oldVersion.version}`} definition={oldVersion.definition} label="Previous template version preview" />}
+      {oldVersion && <ChecklistTemplatePreview managementAudit={managementAudit} name={`${oldVersion.name} · version ${oldVersion.version}`} definition={oldVersion.definition} label="Previous template version preview" />}
       <details><summary className="cursor-pointer font-semibold">Draft revision history</summary><button className={control} disabled={busy} onClick={() => run(async current => { const value = await templateEditorAction(supabase, 'revisions', key); if (current()) setRevisions(value.revisions) })}>Load revision history</button>
-        {revisions?.map(revision => <details key={revision.revision} className="p-2 border-b"><summary>Revision {revision.revision} · {revision.action} · {revision.recorded_at} · {revision.note}</summary><ChecklistTemplatePreview name={`${state.published.name} · revision ${revision.revision}`} definition={revision.definition} /></details>)}
+        {revisions?.map(revision => <details key={revision.revision} className="p-2 border-b"><summary>Revision {revision.revision} · {revision.action} · {revision.recorded_at} · {revision.note}</summary><ChecklistTemplatePreview managementAudit={managementAudit} name={`${state.published.name} · revision ${revision.revision}`} definition={revision.definition} /></details>)}
       </details>
     </>}
     {busy && <p role="status">Working…</p>}

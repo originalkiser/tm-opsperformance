@@ -1,3 +1,4 @@
+import { managementAuditScoreText } from '../utils/managementAudits.js'
 import { useState } from 'react'
 import { checklistTimestamp } from '../utils/checklistRules'
 
@@ -18,7 +19,7 @@ export function groupSubmissionLocations(records, locations) {
   return [...groups.values()]
 }
 
-export default function ChecklistSubmissionReview({ label, records, locations, busy, onOpen }) {
+export default function ChecklistSubmissionReview({ label, records, locations, busy, onOpen, showAuditScores = false }) {
   const [expanded, setExpanded] = useState({})
   const groups = groupSubmissionLocations(records, locations)
   const control = 'min-h-11 rounded-md border border-slate-300 px-3 text-sm font-semibold disabled:opacity-50 dark:border-tm-dark-border'
@@ -36,6 +37,7 @@ export default function ChecklistSubmissionReview({ label, records, locations, b
         {expanded[group.location.id] && <ul aria-label={`${group.location.site_code} records`} className="space-y-2 bg-slate-50 p-3 dark:bg-tm-dark-surface sm:p-4">
           {group.records.map(record => <li key={record.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-tm-dark-border dark:bg-tm-dark-card">
             <p className="break-words">{group.location.site_code} · {record.template_snapshot.name} · {record.period_date} · {record.status}{record.is_pilot ? ' · Historical pilot' : ''}</p>
+            {showAuditScores && record.status === 'submitted' && <p className="mt-1 font-semibold">{managementAuditScoreText(record)}</p>}
             <button disabled={busy} className="min-h-12 max-w-full break-words px-2 py-2 text-left underline disabled:opacity-50" onClick={() => onOpen(record)}>Review {record.status} · {record.manager_name || 'Unnamed draft'} · {checklistTimestamp(record.submitted_at || record.updated_at, record.template_snapshot.timezone)}</button>
           </li>)}
         </ul>}

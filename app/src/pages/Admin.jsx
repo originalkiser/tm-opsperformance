@@ -4,6 +4,7 @@ import AdministrationDirectory from '../components/AdministrationDirectory'
 import AdminCashOnHandPanel from '../components/AdminCashOnHandPanel'
 import BudgetLabelsEditor from '../components/BudgetLabelsEditor'
 import ChecklistAdmin from '../components/ChecklistAdmin'
+import ManagementAuditQrCodes from '../components/ManagementAuditQrCodes'
 import ChecklistQrAdmin from '../components/ChecklistQrAdmin'
 import { adminCategories, availableAdminTools, scopedAdminSite } from '../utils/administration.js'
 import { createEmployeeIfMissing, duplicateEmployeeGroups } from '../utils/employeeIdentity.js'
@@ -695,6 +696,9 @@ export default function Admin() {
         break
       case 'checklist-templates':
         content = <AdministrationTemplates />
+        break
+      case 'management-audit-qr':
+        content = <ManagementAuditQrCodes />
         break
       case 'checklist-qr': {
         const location = locations.find(item => item.id === site) || locations[0]
