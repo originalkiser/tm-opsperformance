@@ -1,3 +1,4 @@
+import '../styles/performanceTable.css'
 import BudgetScoreDetails, { formatBudgetScore } from './BudgetScoreDetails'
 import { displayMoney, displayCount } from '../utils/budgetDisplay'
 import { pct1 } from '../utils/budgetMath'
@@ -57,6 +58,7 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
   const { config, update, reset } = preferences
   const sort = config.sort
   const toggleSort = col => update(previous => ({ ...previous, sort: { col, dir: previous.sort.col === col && previous.sort.dir === 'desc' ? 'asc' : 'desc' } }))
+  const dashboard = tableId === 'dashboard-today' || tableId === 'dashboard-mtd'
   const showNet = netMembers !== undefined
   const allColumns = KPI_COLUMNS.filter(c => (!c.budget || budgetRows) && (c.key !== 'nm' || showNet))
   const columns = visibleColumns(allColumns, config)
@@ -92,6 +94,7 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
   const sortColumn = allColumns.find(c => c.key === sort.col) || allColumns[1] || allColumns[0]
   const sorted = [...displayedRows].sort((a, b) => compareRows(a, b, sortColumn, sort.dir))
   const fullSorted = [...rows].sort((a, b) => compareRows(a, b, sortColumn, sort.dir))
+  const hasReportedData = rows.some(row => !row.missing)
   const incomplete = rows.some(r => r.missing || r.provisional)
   const netIncomplete = showNet && rows.some(r => r.nm === null)
   const maxWashes = Math.max(...rows.map(r => r.tw), 1)
@@ -129,49 +132,76 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
   const exportSpec = buildExport(allColumns, fullSorted, totals, incomplete ? 'Provisional subtotal' : 'Totals', false)
   const visibleExport = buildExport(columns, sorted, filteredTotals, filtered ? filteredLabel : fullLabel, true)
 
-  const cell = (r, key) => {
-    const cls = 'border border-gray-200 dark:border-tm-dark-border px-3 py-2'
-    if (key === 'name') return <td key={key} data-column={key} className={`${cls} sticky left-0 z-10 bg-inherit min-w-[180px] font-medium font-brand dark:text-tm-dark-text`}>{r.name}{daily && <div className="text-[10px] font-normal text-gray-500 dark:text-tm-dark-muted">{r.status?.date} · {r.missing ? 'No Update Yet' : 'Reported'}{!r.missing && <><br />Last Updated: {r.status?.updatedAt ? new Date(r.status.updatedAt).toLocaleTimeString('en-US', { timeZone: r.status.timezone, timeZoneName: 'short' }) : 'Unavailable'}</>}</div>}
-      {!daily && r.missing && <div className="text-[10px] font-normal">MTD unavailable</div>}
+  const cell = (r, { key, label }) => {
+    const cls = 'border border-gray-200 dark:border-tm-dark-border px-3 py-2.5'
+    if (key === 'name') return <td role="cell" key={key} data-column={key} data-label={label} className={`${cls} sticky left-0 z-10 bg-inherit min-w-[180px] font-medium font-brand dark:text-tm-dark-text`}>{r.name}{daily && <div className="text-xs font-normal text-[var(--tm-muted)]">{r.status?.date} · {r.missing ? 'No Update Yet' : 'Reported'}{!r.missing && <><br />Last Updated: {r.status?.updatedAt ? new Date(r.status.updatedAt).toLocaleTimeString('en-US', { timeZone: r.status.timezone, timeZoneName: 'short' }) : 'Unavailable'}</>}</div>}
+      {!daily && r.missing && <div className="text-xs font-normal text-[var(--tm-muted)]">MTD unavailable</div>}
+      {dashboard && !daily && !r.missing && r.provisional && <div className="text-xs font-normal text-[var(--tm-muted)]">Provisional data</div>}
     </td>
-    if (key === 'tw') return <td key={key} data-column={key} className={cls}>{r.missing ? '—' : <MiniBar value={r.tw} max={maxWashes} />}</td>
-    if (key === 'nm') return <td key={key} data-column={key} title={r.netStatus?.message} className={`${cls} text-center font-semibold ${netMembersCls(r.nm)}`}>
+    if (key === 'tw') return <td role="cell" key={key} data-column={key} data-label={label} className={cls}>{r.missing ? '—' : <MiniBar value={r.tw} max={maxWashes} />}</td>
+    if (key === 'nm') return <td role="cell" key={key} data-column={key} data-label={label} title={r.netStatus?.message} className={`${cls} text-center font-semibold ${netMembersCls(r.nm)}`}>
       {r.nm === null ? '—' : r.nm.toLocaleString('en-US')}
-      {r.netStatus?.through && <div className="text-[10px] font-normal max-w-[180px]">Last entry: {new Date(`${r.netStatus.through}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</div>}
+      {r.netStatus?.through && <div className="text-xs font-normal max-w-[180px]">Last entry: {new Date(`${r.netStatus.through}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</div>}
     </td>
     if (key === 'p_mix' || key === 'conversion') {
       const color = r.budget ? REPORT_STATUS_CLS[r.budget.formatting[key === 'p_mix' ? 'mtdPmix' : 'mtdConversion']]
         : r.missing || r.provisional ? 'text-gray-600 dark:text-gray-300' : key === 'p_mix' ? pmixCls(r.p_mix, r.thresholds) : convCls(r.conversion, r.thresholds)
-      return <td key={key} data-column={key} className={`${cls} text-center font-semibold ${color}`}>{r.missing ? '—' : r[key]}</td>
+      return <td role="cell" key={key} data-column={key} data-label={label} className={`${cls} text-center font-semibold ${color}`}>{r.missing ? '—' : r[key]}</td>
     }
-    if (KPI_COLUMNS.find(c => c.key === key)?.budget) return <td key={key} data-column={key} className={`${cls} text-center dark:text-tm-dark-text`}>
+    if (KPI_COLUMNS.find(c => c.key === key)?.budget) return <td role="cell" key={key} data-column={key} data-label={label} className={`${cls} text-center dark:text-tm-dark-text`}>
       {key === 'score' ? <BudgetScoreDetails result={r.budget?.scoringResult} /> : budgetCell(r, key)}
       {key === 'revenue' && r.budget?.rev.reported.source === 'reported MTD' && !r.budget.rev.reported.provisional && r.budget.rev.reported.throughDate && <div className="text-[10px] font-normal">{r.budget.rev.reported.source} · through {r.budget.rev.reported.throughDate}</div>}
       {key === 'revenuePct' && r.budget?.formatting.provisional && <span className="block text-[10px] font-normal">Provisional</span>}
       {key === 'revenuePct' && r.budget?.formatting.stale && <span className="block text-[10px] font-normal">Stale entry</span>}
     </td>
-    return <td key={key} data-column={key} className={`${cls} text-center dark:text-tm-dark-text`}>{r.missing || r[key] == null ? '—' : (fmtNum(r[key]) || '0')}</td>
+    return <td role="cell" key={key} data-column={key} data-label={label} className={`${cls} text-center dark:text-tm-dark-text`}>{r.missing || r[key] == null ? '—' : (fmtNum(r[key]) || '0')}</td>
   }
-  const totalsRow = (summary, label) => <tr key={label} className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
+  const totalsRow = (summary, label) => <tr key={label} role="row" className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">
     {columns.map(c => {
       const key = c.key
       const cls = 'border border-gray-300 dark:border-tm-dark-border px-3 py-2'
-      if (key === 'name') return <td key={key} data-column={key} className={`${cls} sticky left-0 z-10 bg-tm-cream dark:bg-tm-dark-surface font-brand dark:text-tm-dark-text`}>{label}</td>
-      if (key === 'nm') return <td key={key} data-column={key} title={summary.netIncomplete ? 'Provisional Net Members subtotal' : 'Net Members total'} className={`${cls} text-center ${netMembersCls(summary.netTotal)}`}>{summary.netTotal === null ? '—' : summary.netTotal.toLocaleString('en-US')}</td>
-      if (key === 'p_mix' || key === 'conversion') return <td key={key} data-column={key} className={`${cls} text-center ${summary.incomplete ? 'text-gray-600 dark:text-gray-300' : key === 'p_mix' ? pmixTotalsCls(summary.p_mix) : convTotalsCls(summary.conversion)}`}>{summary[key]}</td>
-      return <td key={key} data-column={key} className={`${cls} text-center dark:text-tm-dark-text`}>{c.budget ? '—' : fmtNum(summary[key])}</td>
+      if (key === 'name') return <td role="cell" key={key} data-column={key} data-label={c.label} className={`${cls} sticky left-0 z-10 bg-tm-cream dark:bg-tm-dark-surface font-brand dark:text-tm-dark-text`}>{label}</td>
+      if (key === 'nm') return <td role="cell" key={key} data-column={key} data-label={c.label} title={summary.netIncomplete ? 'Provisional Net Members subtotal' : 'Net Members total'} className={`${cls} text-center ${netMembersCls(summary.netTotal)}`}>{summary.netTotal === null ? '—' : summary.netTotal.toLocaleString('en-US')}</td>
+      if (key === 'p_mix' || key === 'conversion') return <td role="cell" key={key} data-column={key} data-label={c.label} className={`${cls} text-center ${summary.incomplete ? 'text-gray-600 dark:text-gray-300' : key === 'p_mix' ? pmixTotalsCls(summary.p_mix) : convTotalsCls(summary.conversion)}`}>{summary[key]}</td>
+      return <td role="cell" key={key} data-column={key} data-label={c.label} className={`${cls} text-center dark:text-tm-dark-text`}>{c.budget ? '—' : fmtNum(summary[key])}</td>
     })}
   </tr>
 
   return (
-    <div>
+    <div className="tm-performance min-w-0">
+      {dashboard && <div className="mb-4">
+        <p className="mb-2 text-xs font-semibold text-[var(--tm-muted)]">{fullLabel} · {fmtDateRange(dateRange.start, dateRange.end)}</p>
+        <dl className="tm-kpi-summary grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            ['Total Washes', hasReportedData ? (fmtNum(totals.tw) || '0') : '—'],
+            ['Memberships Sold', hasReportedData ? (fmtNum(totals.ms) || '0') : '—'],
+            ['Conversion', hasReportedData ? totals.conversion : '—'],
+            ['P-Mix', hasReportedData ? totals.p_mix : '—'],
+          ].map(([label, value]) => <div key={label} className="tm-performance-panel min-w-0 rounded-lg border px-3 py-2.5">
+            <dt className="text-xs font-medium text-[var(--tm-muted)]">{label}</dt>
+            <dd className="text-lg font-semibold tabular-nums sm:text-xl">{value || '—'}</dd>
+          </div>)}
+        </dl>
+      </div>}
       <BudgetSourceNote source={source} />
       {incomplete && <p className="text-xs mb-2 text-gray-700 dark:text-gray-200">Provisional subtotal: unavailable locations are excluded. {daily ? 'Sites without a reported Daily Log are shown below.' : 'See source details where available.'}</p>}
-      {showNet && <p className="text-xs mb-2 text-gray-500">Net Members values use each location’s last supported date shown below; the subtotal combines those dated values.</p>}
+      {showNet && <p className="text-xs mb-2 text-[var(--tm-muted)]">Net Members values use each location’s last supported date shown below; the subtotal combines those dated values.</p>}
       {netIncomplete && <p className="text-xs mb-2 text-gray-700 dark:text-gray-200">Net Members subtotal excludes unavailable locations; missing snapshots or daily losses are not treated as zero.</p>}
       <KpiTableControls columns={allColumns} config={config} update={update} reset={reset} unsaved={preferences.unsaved} />
       <p role="status" className="text-xs mb-2 dark:text-tm-dark-text">{filtered ? `Filtered: ${displayedRows.length} of ${rows.length} locations. Filtered subtotals and full-data totals are shown separately. Companywide ranks are unchanged.` : `${rows.length} locations. Totals include all locations in the selected site/market scope.`} Sorted by {sortColumn.label} ({sort.dir === 'asc' ? 'ascending' : 'descending'}{!columns.some(c => c.key === sortColumn.key) ? '; hidden column' : ''}).</p>
-      <div className="flex justify-end mb-3">
+      <div className="mb-3 flex flex-wrap items-end justify-end gap-2">
+        <div className="tm-performance-mobile-sort mr-auto flex flex-wrap items-end gap-2">
+          <label className="grid min-w-0 gap-1 text-xs font-semibold">
+            Sort by
+            <select className="tm-performance-panel min-h-11 max-w-full rounded-lg border px-2 text-sm" aria-label={`Sort ${title} by`}
+              value={sortColumn.key} onChange={event => toggleSort(event.target.value)}>
+              {allColumns.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
+          </label>
+          <button type="button" className="tm-performance-panel min-h-11 rounded-lg border px-3 text-sm" onClick={() => toggleSort(sortColumn.key)}>
+            {sort.dir === 'asc' ? 'Ascending' : 'Descending'}
+          </button>
+        </div>
         <ExportMenu items={[
           { label: 'Excel (.xlsx) — all data & columns', run: () => exportXlsx(exportSpec) },
           { label: 'PDF — all data & columns', run: () => exportPdf(exportSpec) },
@@ -181,20 +211,20 @@ export function PerformanceTable({ source, locations, dateRange, title = 'Site P
           { label: 'CSV — visible filtered table', run: () => exportCsv(visibleExport) },
         ]} />
       </div>
-      <div role="region" aria-label={`${title} scrollable table`} tabIndex={0} className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-tm-teal">
-        <table aria-label={title} className={`w-full ${columns.length > 4 ? 'min-w-[800px]' : ''} border-collapse text-xs`}>
-          <thead>
-            <tr className="bg-tm-blue dark:bg-tm-navy text-white">
+      <div role="region" aria-label={`${title} scrollable table`} tabIndex={0} className="tm-performance-scroll overflow-x-auto rounded-lg border focus-visible:outline focus-visible:outline-2 focus-visible:outline-tm-teal">
+        <table role="table" aria-label={title} className={`tm-performance-table w-full ${columns.length > 4 ? 'min-w-[800px]' : ''} border-collapse text-sm tabular-nums`}>
+          <thead role="rowgroup">
+            <tr role="row" className="bg-tm-blue dark:bg-tm-navy text-white">
               {columns.map(c => (
-                <th key={c.key} data-column={c.key} scope="col" aria-sort={sortColumn.key === c.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`${thCls} ${c.align === 'left' ? 'text-left' : 'text-center'} ${c.key === 'name' ? 'sticky left-0 z-20 bg-tm-blue dark:bg-tm-navy' : ''}`}>
+                <th role="columnheader" key={c.key} data-column={c.key} scope="col" aria-label={c.label} aria-sort={sortColumn.key === c.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`${thCls} ${c.align === 'left' ? 'text-left' : 'text-center'} ${c.key === 'name' ? 'sticky left-0 z-20 bg-tm-blue dark:bg-tm-navy' : ''}`}>
                   <button type="button" className="w-full min-h-[40px] text-inherit focus-visible:outline focus-visible:outline-2 focus-visible:outline-tm-teal" onClick={() => toggleSort(c.key)}>{c.label}<SortIcon active={sortColumn.key === c.key} dir={sort.dir} /></button>
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
-            {sorted.map((r, i) => <tr key={r.id} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>{columns.map(c => cell(r, c.key))}</tr>)}
-            {!sorted.length && <tr><td colSpan={columns.length} className="p-4 text-center dark:text-tm-dark-text">No locations match the column filters.</td></tr>}
+          <tbody role="rowgroup">
+            {sorted.map((r, i) => <tr role="row" key={r.id} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>{columns.map(c => cell(r, c))}</tr>)}
+            {!sorted.length && <tr role="row"><td role="cell" colSpan={columns.length} className="p-4 text-center dark:text-tm-dark-text">No locations match the column filters.</td></tr>}
             {filtered && totalsRow(filteredTotals, filteredLabel)}
             {totalsRow(totals, fullLabel)}
           </tbody>

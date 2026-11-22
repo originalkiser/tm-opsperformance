@@ -1,0 +1,95 @@
+.tm-performance {
+  color: var(--tm-text);
+}
+
+.tm-performance-panel,
+.tm-performance-scroll {
+  border-color: var(--tm-border);
+}
+
+.tm-performance-panel {
+  background: var(--tm-surface);
+  color: var(--tm-text);
+}
+
+.tm-performance .tm-performance-mobile-sort {
+  display: none;
+}
+
+.tm-performance-table th[aria-sort='ascending'],
+.tm-performance-table th[aria-sort='descending'] {
+  box-shadow: inset 0 -3px 0 #27b9ae;
+}
+
+.tm-performance-table td:not([data-column='name']),
+.tm-performance-table th:not([data-column='name']) {
+  text-align: right;
+}
+
+@media (max-width: 639px) {
+  .tm-performance .tm-performance-mobile-sort {
+    display: flex;
+  }
+
+  .tm-performance .tm-performance-scroll {
+    overflow: visible;
+    border: 0;
+  }
+
+  .tm-performance .tm-performance-table {
+    display: block;
+    min-width: 0;
+  }
+
+  .tm-performance-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .tm-performance-table thead button {
+    visibility: hidden;
+  }
+
+  .tm-performance-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .tm-performance-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: hidden;
+    border: 1px solid var(--tm-border);
+    border-radius: 0.75rem;
+  }
+
+  .tm-performance-table tbody td {
+    min-width: 0;
+    border-width: 0 0 1px;
+    overflow-wrap: anywhere;
+  }
+
+  .tm-performance-table tbody td:not([data-column]),
+  .tm-performance-table tbody td[data-column='name'] {
+    grid-column: 1 / -1;
+    position: static;
+    background: var(--tm-surface);
+  }
+
+  .tm-performance-table tbody td[data-column]:not([data-column='name']) {
+    text-align: left;
+  }
+
+  .tm-performance-table tbody td[data-column]:not([data-column='name'])::before {
+    content: attr(data-label) / '';
+    display: block;
+    color: var(--tm-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 0.125rem;
+  }
+}

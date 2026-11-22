@@ -129,3 +129,27 @@ input[type='number'] {
   html { transition: none; }
   .tm-loader__line { animation: none; }
 }
+
+@layer components {
+  .tm-nav-item:hover, .tm-nav-summary:hover {
+    background-color: rgb(255 255 255 / 0.12);
+  }
+  .tm-nav-item[aria-current='page'] {
+    background-color: theme('colors.tm-teal');
+    color: theme('colors.tm-navy');
+  }
+  .tm-nav-summary {
+    list-style: none;
+  }
+  .tm-nav-summary::-webkit-details-marker {
+    display: none;
+  }
+  .tm-nav-panel {
+    max-height: calc(100dvh - 4.75rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .tm-nav-panel select {
+    max-width: 100%;
+  }
+}
