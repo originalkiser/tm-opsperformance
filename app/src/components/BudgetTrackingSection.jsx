@@ -146,7 +146,7 @@ function DailyEntryTab({ locations, profile, onSaved }) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
   <BudgetRevenueFields labels={labels} entryDate={entryDate} form={form} set={set} fieldCls={fieldCls} />
 </div>
-   <CashReconciliationSection attemptedSave={attemptedSave} showExpected={profile?.role === 'admin'} locationId={selectedLocId} timeZone={locations.find(site => site.id === selectedLocId)?.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
+   <CashReconciliationSection labels={labels} attemptedSave={attemptedSave} showExpected={profile?.role === 'admin'} locationId={selectedLocId} timeZone={locations.find(site => site.id === selectedLocId)?.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-100 dark:border-tm-dark-border">
               <div>
 

@@ -1,5 +1,7 @@
+import { CASH_COUNT_LABEL } from './cashReconciliation.js'
+
 // Fixed display-only catalog. Never use these values as field identities or rules.
-export const budgetLabelFields = [
+const entryLabelFields = [
   {
     "id": "yesterday-washes",
     "field": "yesterday_washes",
@@ -127,6 +129,26 @@ export const budgetLabelFields = [
     "helper": ""
   }
 ]
+const reconciliationLabelFields = [
+  { id: 'cash-reconciliation-heading', field: 'reconciliationHeading', label: 'Daily Cash Reconciliation',
+    helper: 'Discrepancies may be saved. Count all physical cash before the deposit; do not adjust it to force a balance.' },
+  { id: 'cash-reconciliation-count', field: 'yesterday_cash_counted', label: CASH_COUNT_LABEL, helper: '' },
+  { id: 'cash-reconciliation-revenue', field: 'reconciliationRevenue', label: 'Calculated Cash Revenue', helper: '' },
+  { id: 'cash-reconciliation-hand', field: 'reconciliationHand', label: 'Admin Cash on Hand', helper: '' },
+  { id: 'cash-reconciliation-expected', field: 'reconciliationExpected', label: 'Expected Total Cash on Site', helper: '' },
+  { id: 'cash-reconciliation-deposit', field: 'reconciliationDeposit', label: 'Cash Available for Deposit', helper: '' },
+  { id: 'cash-reconciliation-variance', field: 'reconciliationVariance', label: 'Cash Variance', helper: '' },
+]
+
+export const budgetLabelFields = [...entryLabelFields, ...reconciliationLabelFields]
+const reconciliationIds = new Set(reconciliationLabelFields.map(({ id }) => id))
+
+export function budgetLabelSection(id) {
+  if (reconciliationIds.has(id)) return 'Daily Cash Reconciliation'
+  if (id.endsWith('-revenue') || id === 'mtd-revenue-actual') return 'Revenue'
+  return id.startsWith('yesterday-') ? 'Yesterday' : 'Month to date'
+}
+
 const byField = new Map(budgetLabelFields.map(item => [item.field, item]))
 const byId = new Map(budgetLabelFields.map(item => [item.id, item]))
 export function budgetFieldWording(field, labels = {}) {
@@ -138,12 +160,14 @@ export function budgetDisplayFields(fields, labels) {
   return fields.map(field => { const wording = budgetFieldWording(field.key, labels); return { ...field, label: wording.label, hint: wording.helper } })
 }
 export function parseBudgetLabels(items) {
-  if (!Array.isArray(items) || items.length !== budgetLabelFields.length) throw Error('Budget Tracker wording was incomplete.')
+  // The older RPC returns only the entry catalog until the seed migration is applied.
+  if (!Array.isArray(items) || ![entryLabelFields.length, budgetLabelFields.length].includes(items.length)) throw Error('Budget Tracker wording was incomplete.')
   const labels = {}
   for (const item of items) {
     if (!byId.has(item.id) || labels[item.id] || typeof item.label !== 'string' || !item.label.trim() || [...item.label].length > 100 || typeof item.helper !== 'string' || [...item.helper].length > 400) throw Error('Budget Tracker wording was incomplete.')
     labels[item.id] = { label: item.label, helper: item.helper }
   }
+  if (entryLabelFields.some(({ id }) => !Object.hasOwn(labels, id))) throw Error('Budget Tracker wording was incomplete.')
   return labels
 }
 export async function readBudgetLabels(client) {

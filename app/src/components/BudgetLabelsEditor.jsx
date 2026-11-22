@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { budgetLabelEditorAction } from '../utils/budgetLabels'
+import { budgetLabelEditorAction, budgetLabelSection } from '../utils/budgetLabels'
 
 const control = 'min-h-11 w-full rounded-md border border-slate-300 bg-white p-2 text-sm dark:border-tm-dark-border dark:bg-tm-dark-surface'
 export default function BudgetLabelsEditor() {
@@ -9,6 +9,12 @@ export default function BudgetLabelsEditor() {
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const active = useRef(true), flight = useRef(false), generation = useRef(0)
   const item = state?.items.find(item => item.id === selected)
+  const groupedItems = new Map()
+  for (const entry of state?.items || []) {
+    const section = budgetLabelSection(entry.id)
+    if (!groupedItems.has(section)) groupedItems.set(section, [])
+    groupedItems.get(section).push(entry)
+  }
   const dirty = !!item && (label !== item.label || helper !== item.helper)
   useEffect(() => { active.current = true; return () => { active.current = false; generation.current++ } }, [])
   useEffect(() => {
@@ -45,18 +51,21 @@ export default function BudgetLabelsEditor() {
   return <section aria-label="Super Admin Budget Tracker Labels" className="rounded-xl border p-4 dark:border-tm-dark-border">
     <details onToggle={event => { if (event.currentTarget.open && !state && !flight.current) run('read') }}>
       <summary className="cursor-pointer text-xl font-bold">Budget Tracker Labels</summary>
-      <p className="my-3 text-sm">Edit the wording of approved entry fields. Calculations, field identities, validation and permissions stay fixed. Saved wording also appears in Admin entry corrections.</p>
+      <p className="my-3 text-sm">Edit approved wording by Budget Tracker section. Calculations, field identities, validation and permissions stay fixed. Saved wording also appears in Admin entry corrections.</p>
       {error && <p role="alert" className="my-2 text-red-700 dark:text-red-300">{error}</p>}
       {notice && <p role="status" className="my-2 text-green-800 dark:text-green-300">{notice}</p>}
       {!state && <button disabled={busy} onClick={() => run('read')} className="min-h-11 rounded border px-4">{busy ? 'Loading…' : 'Load labels'}</button>}
+      {state && !groupedItems.has('Daily Cash Reconciliation') && <p className="my-2 text-sm">Daily Cash Reconciliation wording is available after the label catalog update.</p>}
       {state && <fieldset disabled={busy} className="space-y-4 disabled:opacity-60">
-        <label className="block text-sm font-semibold">Entry field<select aria-label="Budget Tracker label field" className={control} value={selected} onChange={event => reload(event.target.value)}>{state.items.map(item => <option key={item.id} value={item.id}>{item.default_label}</option>)}</select></label>
+        <label className="block text-sm font-semibold">Entry field<select aria-label="Budget Tracker label field" className={control} value={selected} onChange={event => reload(event.target.value)}>{[...groupedItems].map(([section, items]) => <optgroup key={section} label={section}>
+          {items.map(item => <option key={item.id} value={item.id}>{item.default_label}</option>)}
+        </optgroup>)}</select></label>
         {item && <>
           <div className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-tm-dark-card"><h3 className="font-semibold">Current wording</h3><p className="break-words">{item.label}</p><p className="whitespace-pre-line break-words text-xs">{item.helper || 'No helper text'}</p></div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-3">
               <label className="block text-sm font-semibold">Replacement label<input aria-label="Replacement label" className={control} maxLength={100} value={label} onChange={event => setLabel(event.target.value)} /></label>
-              <label className="block text-sm font-semibold">Helper / instructional text<textarea aria-label="Helper / instructional text" className={`${control} min-h-24`} maxLength={400} value={helper} onChange={event => setHelper(event.target.value)} /></label>
+              <label className="block text-sm font-semibold">{selected === 'cash-reconciliation-heading' ? 'Section instructions' : 'Helper / instructional text'}<textarea aria-label="Helper / instructional text" className={`${control} min-h-24`} maxLength={400} value={helper} onChange={event => setHelper(event.target.value)} /></label>
             </div>
             <div className="min-w-0 rounded-lg border p-3 dark:border-tm-dark-border"><h3 className="mb-3 text-sm font-semibold">Preview</h3><p className="mb-1 break-words text-xs font-semibold">{label || 'Enter a label'}</p><input aria-label="Wording preview only" readOnly tabIndex={-1} value="" placeholder="Entry value" className={control} /><p className="mt-1 whitespace-pre-line break-words text-xs">{helper}</p></div>
           </div>
