@@ -1,3 +1,4 @@
+import { managementAudits } from './utils/managementAudits.js'
 import NavBar from './components/NavBar'
 import LocationRepair from './components/LocationRepair'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
@@ -22,7 +23,7 @@ import TargetsBanner from './components/TargetsBanner'
 import TmLoader from './components/TmLoader'
 import { useVersionCheck } from './hooks/useVersionCheck'
 
-function ProtectedRoute({ children }) {
+function ProtectedRoute({ children, auditReturn }) {
   const { user, profile, loading, locationError } = useAuth()
   if (locationError || (user && (loading || !profile))) return <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg">
     <NavBar />
@@ -36,7 +37,7 @@ function ProtectedRoute({ children }) {
     )
   }
   if (user && profile && !['admin','store'].includes(profile.role)) return <div><NavBar /><p role="alert">This account role is not supported. Ask an Admin to review your account.</p></div>
-  return user ? children : <Navigate to="/login" replace />
+  return user ? children : <Navigate to="/login" replace state={auditReturn ? { auditReturn } : undefined} />
 }
 
 function AdminRoute({ children }) {
@@ -90,6 +91,8 @@ function AccountApp() {
             <Route path="/employees" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
             <Route path="/sales-reconciliation" element={<ProtectedRoute><ManagerRoute><SalesReconciliation /></ManagerRoute></ProtectedRoute>} />
             <Route path="/checklists" element={<ProtectedRoute><ManagerChecklists /></ProtectedRoute>} />
+            {managementAudits.map(audit => <Route key={audit.key} path={audit.path}
+              element={<ProtectedRoute auditReturn={audit.path}><ManagerChecklists key={audit.key} audit={audit} /></ProtectedRoute>} />)}
             <Route path="/checklist-compliance" element={<ProtectedRoute><ChecklistCompliance /></ProtectedRoute>} />
             <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />

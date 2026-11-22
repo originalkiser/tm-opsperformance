@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { managementAudits } from '../utils/managementAudits.js'
 import { supabase } from '../lib/supabase'
 
 export default function Login() {
@@ -8,6 +9,8 @@ export default function Login() {
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
   const navigate = useNavigate()
+  const { state } = useLocation()
+  const auditReturn = managementAudits.find(audit => audit.path === state?.auditReturn)?.path
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -15,7 +18,7 @@ export default function Login() {
     setError('')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) setError(error.message)
-    else navigate('/')
+    else navigate(auditReturn || '/')
     setLoading(false)
   }
 

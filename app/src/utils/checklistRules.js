@@ -35,7 +35,7 @@ export function validateChecklist(items, answers, evidence = [], name = '', audi
     const answer = answers[item.id] || {}
     const optionalBlank = item.type === 'text' && item.required === false && (answer.value === undefined || (typeof answer.value === 'string' && answer.value.length <= 4000 && !answer.value.trim()))
     if (!optionalBlank && !(item.type === 'text' ? typeof answer.value === 'string' && !!answer.value.trim() && answer.value.length <= 4000 : item.options.includes(answer.value) || (item.na_allowed && answer.value === 'N/A'))) errors[item.id] = 'Choose a response.'
-    else if ((item.explanation_required || item.failure_values.includes(answer.value) || answer.value === 'N/A') && !answer.explanation?.trim()) errors[item.id] = 'A brief explanation is required.'
+    else if ((item.failure_values.includes(answer.value) || (answer.value === 'N/A' ? !auditor : item.explanation_required)) && !answer.explanation?.trim()) errors[item.id] = 'A brief explanation is required.'
     if (item.signature_required && !evidence.some(file => file.kind === 'signature' && file.item_id === item.id)) errors[item.id] = `${errors[item.id] || ''} Required signature missing.`.trim()
     const count = requiredChecklistPhotos(item, answer)
     const valid = new Set(evidence.filter(file => file.item_id === item.id && file.kind === 'photo').map(file => file.id || file.object_path || file)).size

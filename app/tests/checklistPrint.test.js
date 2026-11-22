@@ -1,3 +1,4 @@
+import { managementAuditScoreText } from '../src/utils/managementAudits.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -13,7 +14,7 @@ const photo={id:'p',item_id:'q',kind:'photo',object_path:'PRIVATE_PATH'},signatu
 const record={row,evidence:[photo,signature]}
 const module={exports:{}}
 const source=readFileSync(new URL('../src/components/ChecklistPrintDocument.jsx',import.meta.url),'utf8').replace(/^import .*\n/gm,'')
-new Function('module','exports','React','isChecklistItemActive','validateChecklist','checklistPrintPeriod','printTimestamp',transformSync(source,{loader:'jsx',format:'cjs'}).code)(module,module.exports,React,isChecklistItemActive,validateChecklist,checklistPrintPeriod,printTimestamp)
+new Function('module','exports','React','managementAuditScoreText','isChecklistItemActive','validateChecklist','checklistPrintPeriod','printTimestamp',transformSync(source,{loader:'jsx',format:'cjs'}).code)(module,module.exports,React,managementAuditScoreText,isChecklistItemActive,validateChecklist,checklistPrintPeriod,printTimestamp)
 const render=record=>renderToStaticMarkup(React.createElement(module.exports.default,{record,images:new Map([['p','blob:photo'],['sig','blob:signature']]),locationLabel:'1001',locationName:'Fictional Site'}))
 
 test('all seven checklists print from the authorized submitted snapshot, never the editable form',async()=>{
@@ -21,7 +22,10 @@ test('all seven checklists print from the authorized submitted snapshot, never t
   const saved={...record,row:{...row,template_key:key}}
   const result=await loadOfficialChecklist({load:async()=>saved},'s')
   assert.deepEqual(result,saved)
-  assert.match(render(result),/Original saved question/)
+  const html = render(result)
+  assert.match(html,/Original saved question/)
+  if (key === 'monthly_site_assessment' || key === 'quarterly_safety_audit') assert.match(html, /Audit score: 0\.0% · Passed: 0 · Failed: 1 · N\/A: 0/)
+  else assert.doesNotMatch(html, /Audit score:/)
  }
 })
 test('a saved or unsaved correction prints only its archived official base and evidence',async()=>{
