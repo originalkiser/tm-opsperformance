@@ -6,7 +6,7 @@ import { yesterdayMetrics, mtdMetrics } from '../src/utils/budgetMath.js'
 const defaults = () => budgetLabelFields.map(({ id, label, helper }) => ({ id, label, helper }))
 
 test('fixed catalog preserves original input defaults and never changes field identities or optional rules', () => {
-  assert.equal(budgetLabelFields.length, 21)
+  assert.equal(budgetLabelFields.length, 28)
   const labels = parseBudgetLabels(defaults())
   for (const field of [...YESTERDAY_FIELDS, ...MTD_FIELDS]) assert.deepEqual(budgetDisplayFields([field], labels)[0], { ...field, hint: field.hint || '' })
   for (const field of REVENUE_FIELDS) assert.equal(budgetFieldWording(field.key, labels).label, field.label)
@@ -20,6 +20,15 @@ test('malformed or unknown configuration fails closed; no partial catalog or arb
     const items = defaults(); change(items); assert.throws(() => parseBudgetLabels(items))
   }
   assert.equal(parseBudgetLabels(defaults())['yesterday-washes'].label, 'Yesterday Washes')
+})
+
+test('the complete pre-migration catalog still loads with existing customizations', () => {
+  const legacy = defaults().filter(item => !item.id.startsWith('cash-reconciliation-'))
+  legacy[0].label = 'Saved wash wording'
+  const labels = parseBudgetLabels(legacy)
+  assert.equal(budgetFieldWording('yesterday_washes', labels).label, 'Saved wash wording')
+  assert.equal(budgetFieldWording('reconciliationHeading', labels).label, 'Daily Cash Reconciliation')
+  assert.throws(() => parseBudgetLabels([...legacy.slice(1), defaults().at(-1)]), /incomplete/)
 })
 
 test('read and write use only scoped RPCs, expected revision and fixed wording arguments', async () => {

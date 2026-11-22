@@ -81,7 +81,7 @@ function DailyEntryPane({ location }) {
           </div>
         ))}
         <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"><BudgetRevenueFields labels={labels} entryDate={entryDate} form={form} set={set} fieldCls={fieldCls} /></div>
-        <CashReconciliationSection attemptedSave={attemptedSave} showExpected={profile?.role === 'admin'} locationId={location.id} timeZone={location.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
+        <CashReconciliationSection labels={labels} attemptedSave={attemptedSave} showExpected={profile?.role === 'admin'} locationId={location.id} timeZone={location.timezone} entryDate={entryDate} form={form} entry={entry} set={set} disabled={saving || loading || !!error} />
          <div>
 
           {goalError && <p role="status" className="text-xs text-amber-800 dark:text-amber-300">{goalError}</p>}

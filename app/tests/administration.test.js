@@ -84,14 +84,14 @@ test('Cash on Hand deep links preserve Budget-enabled location scope and return 
 })
 
 test('the moved Budget Tracker Labels editor still sends audited save and restore actions', async () => {
-  const { budgetLabelFields, budgetLabelEditorAction } = await import('../src/utils/budgetLabels.js')
+  const { budgetLabelFields, budgetLabelEditorAction, budgetLabelSection } = await import('../src/utils/budgetLabels.js')
   const calls = [], events = []
   const items = budgetLabelFields.map(field => ({
     id: field.id, label: field.label, helper: field.helper,
     default_label: field.label, default_helper: field.helper, revision: 0,
   }))
   const h = locationHelpHarness('components/BudgetLabelsEditor', {
-    budgetLabelEditorAction,
+    budgetLabelEditorAction, budgetLabelSection,
     window: { addEventListener() {}, removeEventListener() {}, dispatchEvent: event => events.push(event.type) },
     supabase: { async rpc(name, args) {
       calls.push({ name, args })
@@ -104,6 +104,10 @@ test('the moved Budget Tracker Labels editor still sends audited save and restor
   const button = label => h.find(node => node.type === 'button' && node.props.children === label)
   await button('Load labels').props.onClick()
   await h.flush()
+  const selector = () => h.find(node => node.props['aria-label'] === 'Budget Tracker label field')
+  assert.ok(h.find(node => node.type === 'optgroup' && node.props.label === 'Daily Cash Reconciliation'))
+  selector().props.onChange({ target: { value: 'cash-reconciliation-heading' } })
+  await h.flush()
   h.find(node => node.props['aria-label'] === 'Replacement label').props.onChange({ target: { value: 'Verified replacement label' } })
   assert.equal(button('Save wording').props.disabled, false)
   await button('Save wording').props.onClick()
@@ -114,8 +118,8 @@ test('the moved Budget Tracker Labels editor still sends audited save and restor
   assert.ok(calls.every(call => call.name === 'budget_tracker_label_editor'))
   const writes = calls.map(call => call.args).filter(args => args.p_action !== 'read')
   assert.deepEqual(writes.map(({ p_action, p_key, p_revision, p_label }) => [p_action, p_key, p_revision, p_label]), [
-    ['save', items[0].id, 0, 'Verified replacement label'],
-    ['restore', items[0].id, 1, null],
+    ['save', 'cash-reconciliation-heading', 0, 'Verified replacement label'],
+    ['restore', 'cash-reconciliation-heading', 1, null],
   ])
   assert.deepEqual(events, ['tm-budget-labels-updated', 'tm-budget-labels-updated'])
   h.unmount()

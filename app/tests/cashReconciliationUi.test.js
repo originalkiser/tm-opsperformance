@@ -4,16 +4,18 @@ import { readFileSync } from 'node:fs'
 import { transformSync } from 'esbuild'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { applicableCashCents, CASH_COUNT_LABEL, cashBusinessDate, cashCountError, fetchCashSetting, reconcileCash } from '../src/utils/cashReconciliation.js'
+import { applicableCashCents, cashBusinessDate, cashCountError, fetchCashSetting, reconcileCash } from '../src/utils/cashReconciliation.js'
 
-function renderCash(count, showExpected = true, attemptedSave = false, submitted = true) {
+import { budgetFieldWording } from '../src/utils/budgetLabels.js'
+
+function renderCash(count, showExpected = true, attemptedSave = false, submitted = true, labels) {
   const source = readFileSync(new URL('../src/components/CashReconciliationSection.jsx', import.meta.url), 'utf8').replace(/^import .*\n/gm, '')
   const code = transformSync(source, { loader: 'jsx', format: 'cjs' }).code
   let hook = 0
   const useState = initial => [hook++ === 1 ? 'site|2026-10-13|stamp' : initial, () => {}]
   const mod = { exports: {} }
-  new Function('module','exports','React','useState','useEffect','applicableCashCents','CASH_COUNT_LABEL','cashBusinessDate','cashCountError','fetchCashSetting','reconcileCash',code)(mod,mod.exports,React,useState,()=>{},applicableCashCents,CASH_COUNT_LABEL,cashBusinessDate,cashCountError,fetchCashSetting,reconcileCash)
-  return renderToStaticMarkup(React.createElement(mod.exports.default, { attemptedSave, showExpected, locationId: 'site', entryDate: '2026-10-13', entry: { updated_at: 'stamp', cash_on_hand_version_id: 1, cash_on_hand_cents: 85000, cash_edited_after_submission: true, cash_original_count: submitted ? 969 : null, cash_first_submitted_at: submitted ? '2026-10-13T14:00:00Z' : null }, form: { yesterday_total_revenue: 119, yesterday_cc_revenue: 0, yesterday_house_revenue: 0, yesterday_cash_counted: count }, set:()=>{} }))
+  new Function('module','exports','React','useState','useEffect','applicableCashCents','budgetFieldWording','cashBusinessDate','cashCountError','fetchCashSetting','reconcileCash',code)(mod,mod.exports,React,useState,()=>{},applicableCashCents,budgetFieldWording,cashBusinessDate,cashCountError,fetchCashSetting,reconcileCash)
+  return renderToStaticMarkup(React.createElement(mod.exports.default, { labels, attemptedSave, showExpected, locationId: 'site', entryDate: '2026-10-13', entry: { updated_at: 'stamp', cash_on_hand_version_id: 1, cash_on_hand_cents: 85000, cash_edited_after_submission: true, cash_original_count: submitted ? 969 : null, cash_first_submitted_at: submitted ? '2026-10-13T14:00:00Z' : null }, form: { yesterday_total_revenue: 119, yesterday_cc_revenue: 0, yesterday_house_revenue: 0, yesterday_cash_counted: count }, set:()=>{} }))
 }
 
 test('Managers hide expected cash while Admins retain it and reconciliation stays identical',()=>{
@@ -36,6 +38,29 @@ test('cash UI shows exact green and red shortage/overage with one editable count
   assert.match(short,/Discrepancies may be saved/)
   assert.match(renderCash(''),/Incomplete or invalid/)
 })
+test('custom reconciliation wording updates visible labels while values, roles and status stay fixed', () => {
+  const labels = Object.fromEntries([
+    ['heading', 'Drawer reconciliation', 'Count physical cash before depositing.'],
+    ['count', 'Drawer count', 'Count every drawer.'],
+    ['revenue', 'Drawer receipts', ''],
+    ['hand', 'Starting float', ''],
+    ['expected', 'Expected drawer balance', ''],
+    ['deposit', 'Deposit-ready cash', ''],
+    ['variance', 'Drawer difference', ''],
+  ].map(([id, label, helper]) => ['cash-reconciliation-' + id, { label, helper }]))
+  const admin = renderCash('968.99', true, false, true, labels)
+  for (const { label } of Object.values(labels)) assert.ok(admin.includes(label), label)
+  assert.match(admin, /aria-label="Drawer count"/)
+  assert.match(admin, /Count every drawer/)
+  assert.match(admin, /Count physical cash before depositing/)
+  assert.match(admin, /Shortage \$0\.01/)
+  assert.match(admin, /Original submitted count:.*\$969\.00/)
+  const store = renderCash('968.99', false, false, true, labels)
+  assert.doesNotMatch(store, /Starting float|Expected drawer balance/)
+  assert.match(store, /Shortage \$0\.01/)
+  assert.match(renderCash('', true, true, false, labels), /Enter TOTAL CASH ONSITE/)
+})
+
 test('Admin Cash on Hand panel renders no setting editor for Managers', () => {
   const source = readFileSync(new URL('../src/components/AdminCashOnHandPanel.jsx', import.meta.url),'utf8').replace(/^import .*\n/gm,'')
   const code=transformSync(source,{loader:'jsx',format:'cjs'}).code; const mod={exports:{}}
