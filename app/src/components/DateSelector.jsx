@@ -135,9 +135,11 @@ export default function DateSelector({ dateRange, onChange }) {
   const showRangeSuffix = dateRange?.preset !== 'today' && dateRange?.start
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="tm-date-selector relative">
       {/* Trigger */}
       <button
+        type="button"
+        aria-expanded={open}
         onClick={handleToggle}
         className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-gray-300 dark:border-tm-dark-border bg-white dark:bg-tm-dark-card text-sm font-brand text-gray-700 dark:text-tm-dark-text hover:border-tm-teal dark:hover:border-tm-teal transition-colors whitespace-nowrap"
       >
@@ -152,7 +154,7 @@ export default function DateSelector({ dateRange, onChange }) {
 
       {/* Dropdown */}
       {open && (
-        <div className={`absolute ${dropdownAlign === 'left' ? 'left-0' : 'right-0'} top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl shadow-2xl py-1 min-w-[300px]`}>
+        <div className={`tm-date-popover absolute ${dropdownAlign === 'left' ? 'left-0' : 'right-0'} top-full mt-1 z-50 bg-white dark:bg-tm-dark-card border border-gray-200 dark:border-tm-dark-border rounded-xl shadow-2xl py-1 min-w-[300px]`}>
 
           {/* Preset options */}
           {PRESETS.map(p => {
@@ -193,22 +195,25 @@ export default function DateSelector({ dateRange, onChange }) {
               <span className="text-[9px]">{dateRange?.preset === 'custom' ? '●' : '○'}</span>
               Custom Range
             </div>
-            <div className="flex gap-2 items-center flex-wrap">
+            <div className="tm-date-range-fields flex gap-2 items-center flex-wrap">
               <input
                 type="date"
+                aria-label="Start date"
                 value={customStart}
                 onChange={e => setCustomStart(e.target.value)}
                 className="border border-gray-300 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
               />
-              <span className="text-gray-400 dark:text-tm-dark-muted text-xs">–</span>
+              <span aria-hidden="true" className="tm-date-range-separator text-gray-400 dark:text-tm-dark-muted text-xs">–</span>
               <input
                 type="date"
+                aria-label="End date"
                 value={customEnd}
                 min={customStart || undefined}
                 onChange={e => setCustomEnd(e.target.value)}
                 className="border border-gray-300 dark:border-tm-dark-border rounded px-2 py-1 text-xs bg-white dark:bg-tm-dark-surface text-gray-800 dark:text-tm-dark-text focus:outline-none focus:ring-1 focus:ring-tm-teal font-brand"
               />
               <button
+                type="button"
                 onClick={applyCustom}
                 disabled={!customStart || !customEnd || customStart > customEnd}
                 className="px-3 py-1 text-xs bg-tm-blue text-white rounded font-brand font-semibold hover:bg-tm-navy disabled:opacity-40 transition-colors"

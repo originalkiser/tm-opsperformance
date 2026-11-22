@@ -78,6 +78,8 @@ function Section({ id, badge, badgeCls, subtitle, children, defaultOpen = true }
   return (
     <div data-section={id} className="tm-dashboard-section bg-white dark:bg-tm-dark-surface rounded-xl shadow-md dark:border dark:border-tm-dark-border overflow-hidden">
       <button
+        type="button"
+        aria-expanded={open}
         onClick={toggle}
         className="tm-dashboard-section-heading w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-tm-dark-card transition-colors"
       >
@@ -90,7 +92,7 @@ function Section({ id, badge, badgeCls, subtitle, children, defaultOpen = true }
         </span>
       </button>
       {open && (
-        <div className="tm-dashboard-section-body px-5 pb-5 pt-1 border-t border-gray-100 dark:border-tm-dark-border">
+        <div className="tm-dashboard-section-body px-4 pb-5 pt-4 sm:px-5 border-t border-gray-100 dark:border-tm-dark-border">
           {children}
         </div>
       )}
@@ -436,10 +438,10 @@ export default function Insights() {
     <div className="tm-bold-page tm-dashboard-page min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
       <NavBar />
 
-      <div className="tm-dashboard-toolbar sticky top-0 z-30 bg-tm-cream dark:bg-tm-dark-bg border-b border-gray-200 dark:border-tm-dark-border shadow-sm">
-        <div className="max-w-screen-2xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div className="tm-dashboard-toolbar relative z-30 lg:sticky lg:top-0 bg-tm-cream dark:bg-tm-dark-bg border-b border-gray-200 dark:border-tm-dark-border shadow-sm">
+        <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center justify-between gap-x-5 gap-y-2 px-4 py-3 sm:px-6">
           <div className="flex flex-wrap items-center gap-3 text-left">
-            <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal tracking-wide">Dashboard</h1>
+            <h1 className="font-brand text-2xl font-bold">Dashboard</h1>
             <button
               onClick={() => setShowCustomize(true)}
               className="tm-dashboard-customize flex items-center gap-1.5 px-3 py-1.5 text-xs font-brand font-semibold rounded-lg border border-gray-200 dark:border-tm-dark-border bg-white dark:bg-tm-dark-surface text-gray-500 dark:text-tm-dark-muted hover:text-tm-blue hover:border-tm-teal dark:hover:text-white shadow-sm transition-colors"
@@ -450,7 +452,7 @@ export default function Insights() {
               Customize
             </button>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {markets.length > 0 && (
               <MarketMultiSelect
                 markets={markets}
@@ -464,12 +466,13 @@ export default function Insights() {
             {reportingMarketLocations.length > 1 && (
               <ShopMultiSelect locations={reportingMarketLocations} selected={selectedShops} onChange={setSelectedShops} />
             )}
-            <div><DateSelector dateRange={dateRange} onChange={handleDateRangeChange} /><p className="tm-dashboard-filter-help text-[10px] text-gray-500 dark:text-tm-dark-muted mt-1">Date filter: other sections. Performance tables show today / current MTD.</p></div>
+            <DateSelector dateRange={dateRange} onChange={handleDateRangeChange} />
           </div>
         </div>
       </div>
 
-      <div className="max-w-screen-2xl mx-auto px-4 py-6">
+      <main className="mx-auto max-w-screen-2xl px-4 pb-8 pt-4 sm:px-6">
+        <p className="mb-4 text-sm text-[var(--tm-muted)]">Performance views use today and the current month. The date filter applies to the other sections.</p>
         {companyError && <p role="alert" className="text-red-600 dark:text-red-400 mb-3">{companyError}</p>}
         {loading ? (
           <div className="bg-white dark:bg-tm-dark-surface rounded-xl shadow-md p-12 flex items-center justify-center">
@@ -492,7 +495,7 @@ export default function Insights() {
             })}
           </div>
         )}
-      </div>
+      </main>
 
       {showCustomize && (
         <CustomizePanel
