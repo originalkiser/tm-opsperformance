@@ -1,3 +1,4 @@
+import { legacyWeeklyPeriods } from './helpers/weeklyDeadlineFixture.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
@@ -29,7 +30,7 @@ test('Opening template preview renders existing form without creating a database
  useAuth:()=>({user,profile:{...profile,role:'store',location_id:'b'},locations:[sites[1]],managerPreview:true}),
  NavBar:()=>null,Link:()=>null,ChecklistAccessForm:()=>null,ChecklistQrAdmin:()=>null,ChecklistOpenWork:()=>null,ChecklistAdmin:()=>null,
  checklistPeriod,localChecklistDate,completionStatus,checklistTimestamp,
- supabase:{rpc(){calls.push('WRITE');throw Error('Preview must not create records')},from(name){return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?[template]:[]}).then(resolve)}}}},
+ supabase:{rpc(name,args){if(name==='checklist_weekly_periods')return {data:legacyWeeklyPeriods(args)};calls.push(name);throw Error('Preview must not create records')},from(name){return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?[template]:[]}).then(resolve)}}}},
  });await h.flush();const start=h.all(n=>n.type==='button').find(n=>n.props.children==='Start checklist');assert.ok(start);await start.props.onClick();await h.flush()
  const form=h.find(n=>n.props?.initial?.preview_only);assert.ok(form);assert.equal(form.props.previewReadOnly,true);assert.deepEqual(form.props.initial.template_snapshot.definition,template.definition);assert.equal(form.props.initial.location_id,'b');assert.deepEqual(calls,[]);h.unmount()
 })

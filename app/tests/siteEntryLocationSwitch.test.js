@@ -68,7 +68,7 @@ function hook(client, id, onSaved = () => {}) {
 }
 const Placeholder = () => null
 const Daily = () => null, Budget = () => null, Ownership = () => null, Rollup = () => null, Snapshot = () => null, Summary = () => null, Picker = () => null
-function dashboard(client = api().supabase) {
+function dashboard(client = api().supabase, canLeaveDailyLog = () => true) {
   const stored = new Map([['tm_selected_location', sites[0].id], ['tm_active_tab', 'budget']])
   const h = harness('pages/Dashboard.jsx', 'default', {}, {
     useAuth: () => ({ profile: { role: 'admin' }, locations: sites }),
@@ -76,7 +76,7 @@ function dashboard(client = api().supabase) {
     loadSavedDateRange: () => ({ start: date, end: date }), saveDateRange() {}, fmtDateRange: () => '',
     entryLocationOptions, resolveEntryLocation, isDayComplete: fields.isDayComplete,
     shopTotals: rows => rows[0] || null, morningEntryStatus: complete => complete ? 'complete' : 'pending',
-    supabase: client, setInterval: () => 1, clearInterval() {},
+    canLeaveDailyLog, supabase: client, setInterval: () => 1, clearInterval() {},
     NavBar: Placeholder, LocationRepair: Placeholder, DateSelector: Placeholder, LocationSelector: Picker,
     PreviewReadOnly: ({ children }) => children,
     DailyLogTable: Daily, BudgetTrackingSection: Budget, OwnershipLogSection: Ownership,
@@ -88,7 +88,12 @@ function dashboard(client = api().supabase) {
 const content = h => h.find(n => n.type === 'div' && n.props.className === 'p-4')
 
 test('Greenville → Cleveland → Batesville changes the mount boundary for every Site Entry tab', async () => {
-  const h = dashboard(), keys = []
+  let mayLeave = false
+  const h = dashboard(undefined, () => mayLeave), keys = []
+  const original = content(h).key
+  h.find(n => n.type === Picker).props.onChange(sites[1].id)
+  assert.equal(content(h).key, original, 'declining the Daily Log warning keeps the current site')
+  mayLeave = true
   for (const site of sites) {
     h.find(n => n.type === Picker).props.onChange(site.id)
     const boundary = content(h); keys.push(boundary.key)
@@ -124,6 +129,7 @@ test('Budget daily entry never initializes from a profile site absent from the s
     let requested
     const h = harness('components/BudgetTrackingSection.jsx', 'DailyEntryTab', { locations: [site], profile: { role: 'admin', location_id: 'Greenville' } }, {
       ...fields, ...math, displayCount: String, reportedRevenuePace: () => ({ reported: {} }), TmLoader: Placeholder,
+      useBudgetLabels: () => ({ labels: {}, error: '' }),
       useBudgetDailyEntry(id) { requested = id; return { form: fields.emptyDailyForm(), loading: true, mtdRevenue: {}, historicalRevenue: {} } },
     })
     h.render()

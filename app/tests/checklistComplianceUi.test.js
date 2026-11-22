@@ -1,14 +1,19 @@
+import { Fragment } from 'react'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 import * as compliance from '../src/utils/checklistCompliance.js'
-const site = { id: 'a', site_code: '1001', name: 'Fictional North', market: 'North', timezone: 'America/New_York', local_today: '2026-11-11' }
-const snapshot = () => ({ generated_at: '2026-11-11T15:00:00Z', locations: [site, { ...site, id: 'b', site_code: '1002', name: 'Fictional South', market: 'South' }], submissions: ['opening', 'midday', 'closing'].map(template_key => ({ location_id: 'a', template_key, period_date: '2026-11-11', status: 'submitted', is_pilot: false })) })
+const site = { id: 'a', site_code: '1001', name: 'Fictional North', market: 'North', timezone: 'America/New_York', local_today: '2026-11-09' }
+const snapshot = () => ({ generated_at: '2026-11-09T15:00:00Z', locations: [site, { ...site, id: 'b', site_code: '1002', name: 'Fictional South', market: 'South' }], submissions: ['opening', 'midday', 'closing'].map(template_key => ({ location_id: 'a', template_key, period_date: '2026-11-09', status: 'submitted', is_pilot: false })) })
 function fixture({ payload = null, slow = false, fail = false, profile = { role: 'admin', is_active: true }, user = { id: 'one' } } = {}) {
   let auth = { user, profile, locations: [site] }
   const calls = [], exports = [], pending = []
+  const now = payload?.generated_at || snapshot().generated_at
+  class ReportDate extends Date {
+    constructor(...args) { super(...(args.length ? args : [now])) }
+  }
   const h = locationHelpHarness('pages/ChecklistCompliance', {
-    ...compliance, useAuth: () => auth, Link: () => null, NavBar: () => null, supabase: {}, localChecklistDate: () => '2026-11-11',
+    ...compliance, Fragment, Date: ReportDate, useAuth: () => auth, Link: () => null, NavBar: () => null, supabase: {}, localChecklistDate: () => '2026-11-09',
     fetchChecklistCompliance: async (_client, range) => { calls.push(range); if (slow) return new Promise((resolve, reject) => pending.push({ resolve, reject })); if (fail) throw new Error('Report unavailable'); return payload || snapshot() },
     downloadComplianceCsv: (...args) => exports.push(args),
   })
@@ -16,20 +21,24 @@ function fixture({ payload = null, slow = false, fail = false, profile = { role:
 }
 const button = (h, text) => h.find(node => node.type === 'button' && node.props.children === text)
 const change = (h, label, value) => h.find(node => node.props?.['aria-label'] === label).props.onChange({ target: { value } })
-const bodyRows = h => h.all(node => node.type === 'tr').slice(1)
+const bodyRows = h => h.all(node => node.props?.['data-location-summary'])
+const details = h => h.all(node => node.type === 'article')
+const exportLabel = 'Export detailed rows (CSV)'
+const text = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : text(node?.props?.children ?? '')
+const overall = h => h.find(node => node.type === 'strong' && text(node).endsWith('%'))
 
 test('report renders all sites including missing, binary scores, summary and filtered export', async () => {
   const h = fixture(); await h.flush()
   assert.equal(h.calls.length, 1); assert.equal(bodyRows(h).length, 2)
   assert.ok(h.find(node => node.type === 'td' && node.props.children === '100%'))
   assert.ok(h.find(node => node.type === 'td' && node.props.children === '0%'))
-  assert.ok(h.find(node => node.type === 'p' && node.props.children === '50%'))
+  assert.equal(text(overall(h)), '50%')
   change(h, 'Completion status', 'missing'); h.render()
   assert.equal(bodyRows(h).length, 1)
-  button(h, 'Export visible rows (CSV)').props.onClick()
+  button(h, exportLabel).props.onClick()
   assert.equal(h.exports[0][0][0].site.id, 'b')
   assert.equal(h.exports[0][0].length, 1)
-  assert.ok(h.find(node => node.type === 'p' && node.props.children === '50%')) // status filter does not inflate summary.
+  assert.equal(text(overall(h)), '50%') // status filter does not inflate summary.
   h.unmount()
 })
 
@@ -37,7 +46,8 @@ test('market/location filters and weekly control work without raw data access', 
   const h = fixture(); await h.flush()
   change(h, 'Market', 'North'); h.render(); assert.equal(bodyRows(h).length, 1)
   change(h, 'Market', ''); change(h, 'Location', 'b'); h.render(); assert.equal(bodyRows(h).length, 1)
-  button(h, 'Weekly').props.onClick(); await h.flush()
+  button(h, 'Weekly').props.onClick(); h.render()
+  change(h, 'Week containing', '2026-11-09'); await h.flush()
   assert.deepEqual(h.calls.at(-1), { start: '2026-11-09', end: '2026-11-15' })
   assert.equal(h.find(node => node.props?.['aria-label'] === 'Start date'), undefined)
   assert.ok(h.find(node => node.props?.['aria-label'] === 'Week containing'))
@@ -47,15 +57,21 @@ test('market/location filters and weekly control work without raw data access', 
 test('loading, repeated refresh and date changes clear scores/export until the latest response', async () => {
   const h = fixture({ slow: true }); await h.flush()
   assert.equal(bodyRows(h).length, 0)
-  assert.equal(button(h, 'Export visible rows (CSV)').props.disabled, true)
+  assert.equal(button(h, exportLabel).props.disabled, true)
   assert.equal(button(h, 'Loading…').props.disabled, true)
-  change(h, 'End date', '2026-11-12'); await h.flush()
+  change(h, 'End date', '2026-11-10'); await h.flush()
   assert.equal(h.pending.length, 2)
-  h.pending[1].resolve(snapshot()); await h.flush(); assert.equal(bodyRows(h).length, 4)
-  h.pending[0].resolve({ ...snapshot(), locations: [] }); await h.flush(); assert.equal(bodyRows(h).length, 4)
+  const later = snapshot()
+  later.locations = later.locations.map(location => ({ ...location, local_today: '2026-11-10' }))
+  h.pending[1].resolve(later); await h.flush()
+  assert.equal(bodyRows(h).length, 2)
+  button(h, 'Expand All').props.onClick(); h.render()
+  assert.equal(details(h).length, 4)
+  h.pending[0].resolve({ ...snapshot(), locations: [] }); await h.flush()
+  assert.equal(details(h).length, 4)
   button(h, 'Refresh').props.onClick(); h.render()
   assert.equal(bodyRows(h).length, 0)
-  assert.equal(button(h, 'Export visible rows (CSV)').props.disabled, true)
+  assert.equal(button(h, exportLabel).props.disabled, true)
   h.unmount(); h.pending[2].resolve(snapshot()); await h.flush()
 })
 
@@ -63,7 +79,7 @@ test('failed load shows blocker and retry, never missing zeros or export', async
   const h = fixture({ fail: true }); await h.flush()
   assert.equal(h.find(node => node.props?.role === 'alert').props.children, 'Report unavailable')
   assert.equal(bodyRows(h).length, 0)
-  assert.equal(button(h, 'Export visible rows (CSV)').props.disabled, true)
+  assert.equal(button(h, exportLabel).props.disabled, true)
   button(h, 'Refresh').props.onClick(); await h.flush(); assert.equal(h.calls.length, 2)
   h.unmount()
 })
@@ -73,7 +89,7 @@ test('invalid range blocks fetch and removes old scores', async () => {
   change(h, 'Start date', '2027-01-01'); h.render()
   assert.ok(h.find(node => node.props?.role === 'alert'))
   assert.equal(bodyRows(h).length, 0); assert.equal(h.calls.length, 1)
-  assert.equal(button(h, 'Export visible rows (CSV)').props.disabled, true)
+  assert.equal(button(h, exportLabel).props.disabled, true)
   h.unmount()
 })
 
@@ -93,7 +109,7 @@ test('account changes clear prior data immediately and ignore an earlier success
   h.pending[1].resolve({ ...snapshot(), locations: [{ ...site, id: 'b' }], submissions: [] }); await h.flush()
   assert.equal(bodyRows(h).length, 1)
   h.auth({ user: null, profile: null, locations: [] }); assert.equal(bodyRows(h).length, 0)
-  assert.equal(button(h, 'Export visible rows (CSV)'), undefined); h.unmount()
+  assert.equal(button(h, exportLabel), undefined); h.unmount()
 })
 
 test('a removed location filter resets instead of silently hiding refreshed available sites', async () => {
@@ -110,12 +126,14 @@ test('new weekly UI preserves separate late, overdue and draft filters and shows
  const period='2026-11-09',timing=phase=>({due_at:'2026-11-17T05:00:00Z',due_date:'2026-11-16',phase})
  const record=(location_id,template_key,status,phase)=>({location_id,template_key,period_date:period,status,is_pilot:false,weekly_timing:timing(phase)})
  const payload={generated_at:'2026-11-17T06:00:00Z',locations:[{...site,local_today:'2026-11-17'},{...site,id:'b',site_code:'1002',local_today:'2026-11-17'}],submissions:[record('a','weekly','submitted','submitted_on_time'),record('a','weekly_pm','submitted','completed_late'),record('b','weekly','draft','overdue')],weekly_periods:['a','b'].map(location_id=>({location_id,period_date:period,weekly_timing:timing('overdue'),score:0}))}
- const h=fixture({payload});await h.flush();button(h,'Weekly').props.onClick();await h.flush()
+ const h=fixture({payload});await h.flush();button(h,'Weekly').props.onClick();h.render()
+ change(h, 'Week containing', period);await h.flush()
+ button(h, 'Expand All').props.onClick();h.render()
  assert.equal(bodyRows(h).length,2)
- assert.ok(h.find(n=>n.type==='span'&&n.props.children==='Completed Late'))
- assert.ok(h.find(n=>n.type==='span'&&n.props.children==='Submitted on time'))
- assert.ok(h.find(n=>n.type==='span'&&n.props.children==='Overdue'))
- assert.ok(h.find(n=>n.type==='span'&&n.props.children==='In progress'))
+ assert.ok(h.find(n=>n.type==='li'&&text(n).includes('Completed Late')))
+ assert.ok(h.find(n=>n.type==='li'&&text(n).includes('Submitted on time')))
+ assert.ok(h.find(n=>n.type==='li'&&text(n).includes('Overdue')))
+ assert.ok(h.find(n=>n.type==='li'&&text(n).includes('In progress')))
  assert.equal(h.all(n=>n.type==='td'&&n.props.children==='0%').length,2)
  change(h,'Completion status','late');h.render();assert.equal(bodyRows(h).length,1)
  change(h,'Completion status','overdue');h.render();assert.equal(bodyRows(h).length,1)

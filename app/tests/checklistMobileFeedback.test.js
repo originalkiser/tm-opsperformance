@@ -1,3 +1,4 @@
+import { legacyWeeklyPeriods } from './helpers/weeklyDeadlineFixture.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
@@ -130,13 +131,13 @@ test('duplicate lookup never bypasses denials, offers a discarding row, or loops
 })
 function page({ guest, record = base, deny = false, deferred = false } = {}) {
   const calls = [], opened = [], route = { search: '' }; let contexts = 0, finish
-  const context = () => ({ location: { id: base.location_id, site_code: 'Fictional', timezone: 'America/Chicago' }, templates: [template], submissions: [], has_more: false, server_now: '2026-11-13T18:00:00Z' })
+  const context = () => ({ location: { id: base.location_id, site_code: 'Fictional', timezone: 'America/Chicago' }, templates: [template], submissions: [], weekly_periods: legacyWeeklyPeriods({ p_date: base.period_date }), has_more: false, server_now: '2026-11-13T18:00:00Z' })
   const transport = {
     async start(fields) { calls.push(['start-fields', fields]); calls.push('start'); throw Object.assign(new Error('Already exists'), { status: 409 }) },
     async request(action, fields) { calls.push({ action, fields }); contexts++; if (guest && contexts === 1) return context(); if (deferred) await new Promise(r => { finish = r }); if (deny) throw Object.assign(new Error('Denied'), { status: 403 }); return { ...context(), submissions: record ? [record] : [] } },
     async load(id) { calls.push(['read', id]); return { row: record, evidence: [], capabilities: caps } },
   }
-  const client = { from(table) { return { select() { return this }, in() { return this }, gte() { return this }, lte() { return this }, order() { return this }, then(resolve) { return Promise.resolve({ data: table === 'checklist_templates' ? [template] : [] }).then(resolve) } } }, async rpc() { calls.push('start'); return { error: { code: '23505', message: 'Duplicate key' } } } }
+  const client = { from(table) { return { select() { return this }, in() { return this }, eq() { return this }, gte() { return this }, lte() { return this }, order() { return this }, then(resolve) { return Promise.resolve({ data: table === 'checklist_templates' ? [template] : [] }).then(resolve) } } }, async rpc(name, args) { if (name === 'checklist_weekly_periods') return { data: legacyWeeklyPeriods(args) }; calls.push(name === 'save_checklist' ? 'start' : name); assert.equal(name, 'save_checklist'); return { error: { code: '23505', message: 'Duplicate key' } } } }
   const h = locationHelpHarness(guest ? 'pages/GuestChecklists' : 'pages/ManagerChecklists', {
     useLocation: () => route, useAuth: () => ({ user: { id: 'fictional-user' }, profile: { role: 'store', is_active: true }, locations: [{ id: base.location_id, timezone: 'America/Chicago', site_code: 'Fictional' }] }),
     window: { location: {}, history: {} }, sessionStorage: {}, takeGuestAccess: () => ({ recoveryKey: 'fictional' }), clearGuestAccess() {}, createChecklistTransport: () => transport, findChecklistOccurrence,

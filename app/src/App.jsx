@@ -101,8 +101,8 @@ function AccountApp() {
 }
 
 export default function App() {
-  const [dark, setDark] = useDarkMode()
-  return <DarkModeContext.Provider value={[dark, setDark]}>
+  const appearance = useDarkMode()
+  return <DarkModeContext.Provider value={appearance}>
     <HashRouter><Routes>
       <Route path="/guest-checklists" element={<GuestChecklists />} />
       <Route path="/*" element={<AccountApp />} />

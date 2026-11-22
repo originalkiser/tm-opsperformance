@@ -1,3 +1,4 @@
+import { legacyWeeklyPeriods } from './helpers/weeklyDeadlineFixture.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { takeGuestAccess, clearGuestAccess, checklistGuestUrl, createChecklistTransport } from '../src/utils/checklistAccess.js'
@@ -51,7 +52,7 @@ test('evidence revoked after transfer is never returned for display',async()=>{
   await assert.rejects(t.download({id:'record'},{id:'file'},new AbortController().signal),/revoked/)
   assert.deepEqual(calls,['download','read'])
 })
-const context = site => ({location:{id:site,site_code:site,timezone:'America/New_York'},templates:[...checklistTemplates,weeklyPmTemplate],submissions:[],server_now:'2026-11-12T12:00:00Z',has_more:false})
+const context = site => ({location:{id:site,site_code:site,timezone:'America/New_York'},templates:[...checklistTemplates,weeklyPmTemplate],submissions:[],weekly_periods:legacyWeeklyPeriods({p_date:'2026-11-12'}),server_now:'2026-11-12T12:00:00Z',has_more:false})
 const text = node => typeof node==='string'?node:Array.isArray(node)?node.map(text).join(''):node?.props?text(node.props.children):''
 test('guest route has fixed store, no account navigation, and never creates drafts on mount',async()=>{
   const b=browser();const calls=[]
