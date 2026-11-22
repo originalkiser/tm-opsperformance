@@ -2,10 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 import ChecklistAccessForm from '../components/ChecklistAccessForm'
-import ChecklistQrAdmin from '../components/ChecklistQrAdmin'
 import ChecklistOpenWork from '../components/ChecklistOpenWork'
-import ChecklistAdmin from '../components/ChecklistAdmin'
-import BudgetLabelsEditor from '../components/BudgetLabelsEditor'
 import ChecklistWeeklyDue from '../components/ChecklistWeeklyDue'
 import ChecklistSubmissionReview from '../components/ChecklistSubmissionReview'
 import { validateWeeklyPeriods } from '../utils/checklistWeekly'
@@ -25,17 +22,8 @@ export default function ManagerChecklists() {
   const admin = authorized && profile.role === 'admin'
   const [templates, setTemplates] = useState([]), [rows, setRows] = useState([])
   const [site, setSite] = useState(locations[0]?.id || ''), [date, setDate] = useState(''), [form, setForm] = useState(null)
-  const [error, setError] = useState(''), [busy, setBusy] = useState(false), [showAdmin, setShowAdmin] = useState(false)
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [weeklyPeriods, setWeeklyPeriods] = useState([])
-  const [configurationAccess, setConfigurationAccess] = useState(null)
-  useEffect(() => {
-    let current = true
-    setConfigurationAccess(null)
-    if (admin && !managerPreview) supabase.rpc('configuration_capabilities').then(({ data, error }) => {
-      if (current && !error && data?.can_edit_templates === true) setConfigurationAccess(user.id)
-    }).catch(() => { if (current) setConfigurationAccess(null) })
-    return () => { current = false }
-  }, [admin, user?.id, managerPreview])
   const [existing, setExisting] = useState(null)
   const request = useRef(0), opening = useRef(false)
   useEffect(() => { setExisting(null) }, [site, date, user?.id, authorized])
@@ -139,8 +127,8 @@ export default function ManagerChecklists() {
             <p>Saved audits for the selected calendar month and quarter.</p>
             <ChecklistSubmissionReview key={`audits:${site}:${date}:${user.id}:${managerPreview}`} label="Management audit submissions" records={rows.filter(record => auditKeys.includes(record.template_key))} locations={locations} busy={busy} onOpen={record => open(null, record)} />
           </section>}
-          <button className="min-h-12 px-4 border rounded" onClick={() => setShowAdmin(previous => !previous)}>{showAdmin ? 'Hide' : 'Manage'} checklist configuration</button>
-          {showAdmin && <><ChecklistQrAdmin location={selected} />{configurationAccess === user?.id && !managerPreview && <><ChecklistAdmin templates={templates} reload={load} /><BudgetLabelsEditor /></>}</>}
+          {!managerPreview && <Link to={`/admin?${new URLSearchParams({ category: 'checklists', ...(site ? { site } : {}) })}`}
+            className="inline-flex min-h-11 items-center rounded-lg border px-4 font-semibold">Manage checklist configuration</Link>}
         </>}
       </>}
     </main>

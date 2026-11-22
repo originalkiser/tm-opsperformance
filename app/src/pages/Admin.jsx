@@ -1,4 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import AdministrationDirectory from '../components/AdministrationDirectory'
+import AdminCashOnHandPanel from '../components/AdminCashOnHandPanel'
+import BudgetLabelsEditor from '../components/BudgetLabelsEditor'
+import ChecklistAdmin from '../components/ChecklistAdmin'
+import ChecklistQrAdmin from '../components/ChecklistQrAdmin'
+import { adminCategories, availableAdminTools, scopedAdminSite } from '../utils/administration.js'
 import { createEmployeeIfMissing, duplicateEmployeeGroups } from '../utils/employeeIdentity.js'
 import { supabase, supabasePublicKey } from '../lib/supabase'
 import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
@@ -26,21 +33,20 @@ function daysLeft(deletedAt) {
   return Math.max(0, diff)
 }
 
-export default function Admin() {
+function AdminEditor({ tab, site }) {
   const { profile: currentProfile, locations: myLocations } = useAuth()
   const isAdmin   = currentProfile?.role === 'admin'
 
   const [locations,    setLocations]    = useState([])
   const [users,        setUsers]        = useState([])
   const [deletedUsers, setDeletedUsers] = useState([])
-  const [selectedLocId, setSelectedLocId] = useState('')
+  const [selectedLocId, setSelectedLocId] = useState(tab === 'employees' ? site : '')
   const [employees,    setEmployees]    = useState([])
   const [newEmpName,   setNewEmpName]   = useState('')
   const [employeeError, setEmployeeError] = useState('')
   const [employeeSaving, setEmployeeSaving] = useState(false)
   const employeeSaveRef = useRef(false)
   const employeeReadRef = useRef(0)
-  const [tab,          setTab]          = useState('users')
   const [loading,      setLoading]      = useState(true)
 
   const [addEmail,  setAddEmail]  = useState('')
@@ -261,50 +267,10 @@ export default function Admin() {
   }
 
 
-  if (loading) return (
-    <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
-      <NavBar />
-      <div className="flex items-center justify-center h-64"><TmLoader /></div>
-    </div>
-  )
-
-  const tabs = isAdmin
-    ? ['users', 'add_user', 'employees', 'locations', 'budget_tracking', 'downtime']
-    : ['users', 'employees']
-
-  const tabLabel = (t) => {
-    if (t === 'add_user') return 'Add User'
-    if (t === 'budget_tracking') return 'Budget Tracking'
-    return t.charAt(0).toUpperCase() + t.slice(1)
-  }
+  if (loading) return <div className="flex justify-center p-8"><TmLoader /></div>
 
   return (
-    <div className="min-h-screen bg-tm-cream dark:bg-tm-dark-bg transition-colors">
-      <NavBar />
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        <h1 className="text-xl font-brand font-bold text-tm-blue dark:text-tm-teal mb-6 tracking-wide">
-          {isAdmin ? 'Admin Panel' : 'Manager Panel'}
-        </h1>
-
-        {/* Tabs */}
-        <div className="flex gap-1 mb-0 flex-wrap">
-          {tabs.map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded-t-lg text-sm font-brand font-semibold capitalize transition-colors ${
-                tab === t
-                  ? 'bg-white dark:bg-tm-dark-surface text-tm-blue dark:text-tm-teal shadow-sm border-b-2 border-tm-blue dark:border-tm-teal'
-                  : 'bg-gray-200 dark:bg-tm-dark-card text-gray-500 dark:text-tm-dark-muted hover:bg-gray-300 dark:hover:bg-tm-dark-border'
-              }`}
-            >
-              {tabLabel(t)}
-            </button>
-          ))}
-        </div>
-
-        <div className="bg-white dark:bg-tm-dark-surface rounded-b-xl rounded-tr-xl shadow-md p-5 dark:border dark:border-tm-dark-border">
-
+    <div className="tm-shared-panel min-w-0 overflow-x-auto rounded-xl border p-4 sm:p-5">
           {/* ── Users ── */}
           {tab === 'users' && (
             <div>
@@ -666,16 +632,136 @@ export default function Admin() {
 
           {/* ── Downtime ── */}
           {isAdmin && tab === 'budget_tracking' && (
-            <HistoricalMtdStartingBalances locations={locations.filter(location => location.show_budget_tracking)} />
+            <HistoricalMtdStartingBalances locations={locations.filter(location => location.show_budget_tracking)} initialLocationId={site} />
           )}
 
-          {tab === 'downtime' && (
-            <DowntimeAdminTab locations={locations} />
-          )}
-        </div>
-      </div>
+          {tab === 'downtime' && <DowntimeAdminTab locations={locations} />}
     </div>
   )
+}
+
+export default function Admin() {
+  const { user, profile, locations = [], managerPreview } = useAuth()
+  const [params, setParams] = useSearchParams()
+  const [configurationAccess, setConfigurationAccess] = useState(null)
+  const authorized = profile?.role === 'admin' && !managerPreview
+  const capabilityUser = authorized && profile.is_active === true && !profile.deleted_at ? user?.id : null
+
+  useEffect(() => {
+    let current = true
+    setConfigurationAccess(null)
+    if (capabilityUser) supabase.rpc('configuration_capabilities').then(({ data, error }) => {
+      if (current) setConfigurationAccess({ userId: capabilityUser, allowed: !error && data?.can_edit_templates === true })
+    }).catch(() => {
+      if (current) setConfigurationAccess({ userId: capabilityUser, allowed: false })
+    })
+    return () => { current = false }
+  }, [capabilityUser])
+
+  const canEditConfiguration = Boolean(capabilityUser && configurationAccess?.userId === capabilityUser && configurationAccess.allowed)
+  const tools = availableAdminTools(canEditConfiguration)
+  const requestedTool = params.get('tool')
+  const tool = tools.find(item => item.id === requestedTool && !item.path && !item.tool)
+  const category = adminCategories.find(group => group.id === (tool?.category || params.get('category')))
+  const site = scopedAdminSite(locations, params.get('site'))
+  const budgetLocations = locations.filter(location => location.show_budget_tracking)
+  const returnTo = new URLSearchParams()
+  if (category && requestedTool) returnTo.set('category', category.id)
+  if (site) returnTo.set('site', site)
+  const returnHref = returnTo.size ? `/admin?${returnTo}` : '/admin'
+
+  function selectSite(locationId) {
+    setParams(previous => {
+      const next = new URLSearchParams(previous)
+      if (locationId) next.set('site', locationId)
+      else next.delete('site')
+      return next
+    }, { replace: true })
+  }
+
+  let content
+  if (authorized && tool) {
+    switch (tool.id) {
+      case 'cash-on-hand':
+        content = budgetLocations.length
+          ? <AdminCashOnHandPanel locations={budgetLocations} selectedLocationId={scopedAdminSite(budgetLocations, site) || budgetLocations[0].id} onLocationChange={selectSite} />
+          : <p>No sites have Budget Tracking enabled.</p>
+        break
+      case 'operating-hours':
+        content = <OperatingHoursSection />
+        break
+      case 'budget-labels':
+        content = <BudgetLabelsEditor />
+        break
+      case 'checklist-templates':
+        content = <AdministrationTemplates />
+        break
+      case 'checklist-qr': {
+        const location = locations.find(item => item.id === site) || locations[0]
+        content = location ? <>
+          <label htmlFor="admin-qr-site" className="tm-field-label">Location</label>
+          <select id="admin-qr-site" className="tm-field mb-3 max-w-sm" value={location.id} onChange={event => selectSite(event.target.value)}>
+            {locations.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <ChecklistQrAdmin key={location.id} location={location} />
+        </> : <p>No locations are available.</p>
+        break
+      }
+      case 'jotform':
+        content = <JotFormSection />
+        break
+      default:
+        content = <AdminEditor key={tool.id} tab={tool.id} site={site} />
+    }
+  }
+
+  return <div className="min-h-screen bg-[var(--tm-canvas)] text-[var(--tm-text)]">
+    <NavBar />
+    <main className="mx-auto max-w-screen-xl space-y-4 px-4 py-5 sm:px-6">
+      <header>
+        {(requestedTool || category) && authorized && <Link to={returnHref} className="mb-2 inline-flex min-h-11 items-center text-sm font-semibold underline">
+          {category && requestedTool ? `Back to ${category.label}` : 'Back to Administration'}
+        </Link>}
+        <h1 className="font-brand text-2xl font-bold sm:text-3xl">{authorized && (tool?.name || (!requestedTool && category?.label)) || 'Administration'}</h1>
+        {tool && authorized && <p className="mt-1 text-sm text-[var(--tm-muted)]">{tool.scope} · {tool.description}</p>}
+      </header>
+      {!authorized ? <p role="alert">Administration requires Admin access outside Manager View.</p>
+        : requestedTool ? content || <p role="status">{capabilityUser && configurationAccess?.userId !== capabilityUser
+          ? 'Checking administration access…' : 'This administration tool is unavailable.'}</p>
+        : <AdministrationDirectory tools={tools} category={category} site={site} />}
+    </main>
+  </div>
+}
+
+function AdministrationTemplates() {
+  const [templates, setTemplates] = useState(null)
+  const [error, setError] = useState('')
+  const request = useRef(0)
+
+  async function load() {
+    const current = ++request.current
+    setError('')
+    try {
+      const { data, error } = await supabase.from('checklist_templates').select('*')
+      if (error) throw error
+      const order = ['opening', 'midday', 'closing', 'weekly', 'weekly_pm']
+      const position = key => order.includes(key) ? order.indexOf(key) : order.length
+      if (current === request.current) setTemplates([...(data || [])].sort((a, b) => position(a.key) - position(b.key)))
+    } catch (error) {
+      if (current === request.current) setError(error.message || 'Checklist templates could not be loaded.')
+    }
+  }
+
+  useEffect(() => {
+    load()
+    return () => { request.current++ }
+  }, [])
+
+  return <>
+    {error && <div role="alert">{error} <button type="button" onClick={load} className="underline">Retry</button></div>}
+    {templates ? <ChecklistAdmin templates={templates} reload={load} />
+      : !error && <p role="status">Loading checklist templates…</p>}
+  </>
 }
 
 // ── Locations tab ─────────────────────────────────────────────────────────────
@@ -1478,7 +1564,6 @@ function DowntimeAdminTab({ locations }) {
         Manage downtime reason categories, view logs, and restore cancelled events. Enable tracking per site in the Locations tab.
       </p>
 
-      <OperatingHoursSection />
 
       {/* Reason management */}
       <div className="pt-6 border-t border-gray-200 dark:border-tm-dark-border">
@@ -1702,7 +1787,6 @@ in exp2`
         })()}
       </div>
 
-      <JotFormSection />
     </div>
   )
 }
