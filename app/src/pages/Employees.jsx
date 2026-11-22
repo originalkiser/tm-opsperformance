@@ -1,6 +1,7 @@
 import PreviewReadOnly from '../components/PreviewReadOnly'
 import '../styles/operationsColors.css'
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import NavBar from '../components/NavBar'
@@ -11,8 +12,9 @@ import { addRosterEmployee, filterRoster, loadRoster, reviewRosterDuplicates, ro
 const control = 'rounded border border-gray-300 dark:border-tm-dark-border bg-white dark:bg-tm-dark-card p-2 text-sm disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-tm-teal'
 export default function Employees() {
   const { user, profile, locations = [] } = useAuth()
-  const [selected, setSelected] = useState('')
-  const [view, setView] = useState('roster')
+  const [params] = useSearchParams()
+  const [selected, setSelected] = useState(() => params.get('site') || '')
+  const [view, setView] = useState(() => params.get('section') === 'history' ? 'history' : 'roster')
   const allowed = ['admin', 'store'].includes(profile?.role)
     && profile?.is_active === true && !profile?.deleted_at
   const locationId = locations.some(row => row.id === selected) ? selected : locations[0]?.id || ''

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import AdminStartingBalancePanel from './AdminStartingBalancePanel'
 
-export default function HistoricalMtdStartingBalances({ locations }) {
+export default function HistoricalMtdStartingBalances({ locations, initialLocationId }) {
   const { profile } = useAuth()
   const [expanded, setExpanded] = useState(false)
   if (profile?.role !== 'admin') return null
@@ -21,6 +21,7 @@ export default function HistoricalMtdStartingBalances({ locations }) {
     {expanded && <div id="historical-mtd-starting-balances" className="mt-3">
       {locations.length ? <AdminStartingBalancePanel
         locations={locations}
+        initialLocationId={initialLocationId}
         onClose={() => setExpanded(false)}
         onSaved={() => {}}
       /> : <p className="text-sm text-gray-500 dark:text-tm-dark-muted">No sites have Budget Tracking enabled.</p>}

@@ -2,7 +2,6 @@ import useBudgetLabels from '../hooks/useBudgetLabels'
 import { budgetFieldWording, budgetDisplayFields } from '../utils/budgetLabels'
 import useBudgetReport from '../hooks/useBudgetReport'
 import { budgetReportPeriod } from '../utils/budgetReportRows'
-import AdminCashOnHandPanel from './AdminCashOnHandPanel'
 import CashReconciliationSection from './CashReconciliationSection'
 import BudgetRevenueFields from './BudgetRevenueFields'
 import { reportedRevenuePace } from '../utils/budgetRevenueReporting'
@@ -148,15 +147,13 @@ export default function BudgetTrackingReport({ locations, dateRange }) {
   const { rows, loading, goalError: reportGoalError, error: reportError, refresh: fetchAll } = useBudgetReport(locations, supported ? reportingDate : null)
   const [editingLoc, setEditingLoc] = useState(null)
 
-  const cashTools = profile?.role === 'admin' && <AdminCashOnHandPanel locations={locations} />
   if (!supported) return <p className="text-sm text-gray-500">Budget scoring requires a month-to-date range ending on a morning reporting date no later than today. The entry covers through the prior business day.</p>
-  if (loading) return <div>{cashTools}<div className="flex justify-center py-12"><TmLoader /></div></div>
-  if (reportError) return <div>{cashTools}<p role="alert" className="text-red-600">{reportError}</p></div>
+  if (loading) return <div><div className="flex justify-center py-12"><TmLoader /></div></div>
+  if (reportError) return <div><p role="alert" className="text-red-600">{reportError}</p></div>
   if (!locations.length) return <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-10 text-center">No sites have Budget Tracking enabled yet. Turn it on in Admin → Locations.</div>
 
   return (
     <div>
-      {cashTools}
       {reportGoalError && <p role="status" className="text-xs text-amber-800 dark:text-amber-300">{reportGoalError}</p>}
       <p className="text-xs mb-3 text-gray-500">Morning reporting entry: {reportingDate}. MTD covers through the prior business day; rankings use all accessible eligible Budget sites.</p>
       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-tm-dark-border">

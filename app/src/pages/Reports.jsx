@@ -18,6 +18,7 @@ import MonthlyRollup from '../components/MonthlyRollup'
 import DailySnapshot from '../components/DailySnapshot'
 import DowntimeSection from '../components/DowntimeSection'
 import BudgetTrackingReport from '../components/BudgetTrackingReport'
+import { adminDestination } from '../utils/administration.js'
 import OwnershipLogReport from '../components/OwnershipLogReport'
 import OwnershipScorecardSection from '../components/OwnershipScorecardSection'
 import { supabase as supabaseClient } from '../lib/supabase'
@@ -565,7 +566,12 @@ export default function Reports() {
 
             {/* Budget Tracking */}
             {activeReport === 'budget' && (
-              <BudgetTrackingReport locations={budgetLocations} dateRange={dateRange} />
+              <>
+                {profile?.role === 'admin' && <Link to={adminDestination('cash-on-hand',
+                  visibleLocations.length === 1 && budgetLocations.some(site => site.id === visibleLocations[0].id) ? visibleLocations[0].id : '')}
+                  className="mb-3 inline-flex min-h-11 items-center rounded-lg border px-4 text-sm font-semibold">Manage Cash on Hand in Administration</Link>}
+                <BudgetTrackingReport locations={budgetLocations} dateRange={dateRange} />
+              </>
             )}
 
             {/* Ownership Log */}

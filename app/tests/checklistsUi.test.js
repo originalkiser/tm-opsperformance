@@ -366,17 +366,23 @@ test('direct checklist page denies inactive, deleted, unknown and unauthenticate
   await h.flush();assert.equal(h.find(n=>n.props?.role==='alert').props.children,'Active checklist account required.');h.unmount()
  }
 })
-test('only Super Admin capability reveals editor; ordinary Admin retains QR management without grant queries',async()=>{
- for(const allowed of [false,true]) {
-  const Editor=()=>null, Qr=()=>null, BudgetLabels=()=>null
-  const h=locationHelpHarness('pages/ManagerChecklists',{
-   useAuth:()=>({user:{id:actor},profile:{role:'admin',is_active:true},locations:[{id:'site',site_code:'Fictional',timezone:'America/New_York'}]}),
-   supabase:{async rpc(name,args){if(name==='checklist_weekly_periods')return {data:legacyWeeklyPeriods(args)};assert.equal(name,'configuration_capabilities');return {data:{can_edit_templates:allowed}}},from(name){assert.notEqual(name,'checklist_pilot_access');return {select(){return this},in(){return this},gte(){return this},lte(){return this},eq(){return this},order(){return this},then(resolve){return Promise.resolve({data:name==='checklist_templates'?checklistTemplates:[]}).then(resolve)}}}},
-   checklistPeriod,completionStatus:()=> 'Available',localChecklistDate:()=> '2026-11-02',checklistTimestamp,
-   Link:()=>null,NavBar:()=>null,ChecklistForm:()=>null,ChecklistAdmin:Editor,BudgetLabelsEditor:BudgetLabels,ChecklistQrAdmin:Qr,ChecklistOpenWork:()=>null,
+test('checklist configuration links to Administration for Admin only, with the selected site', async () => {
+ for (const [role, managerPreview, allowed] of [['admin', false, true], ['store', false, false], ['admin', true, false]]) {
+  const calls = []
+  const h = locationHelpHarness('pages/ManagerChecklists', {
+   useAuth: () => ({ user: { id: actor }, profile: { role, is_active: true }, managerPreview, locations: [{ id: 'site', site_code: 'Fictional', timezone: 'America/New_York' }] }),
+   supabase: {
+    async rpc(name, args) { calls.push(name); assert.equal(name, 'checklist_weekly_periods'); return { data: legacyWeeklyPeriods(args) } },
+    from(name) { return { select() { return this }, in() { return this }, gte() { return this }, lte() { return this }, eq() { return this }, order() { return this }, then(resolve) { return Promise.resolve({ data: name === 'checklist_templates' ? checklistTemplates : [] }).then(resolve) } } },
+   },
+   checklistPeriod, completionStatus: () => 'Available', localChecklistDate: () => '2026-11-02', checklistTimestamp,
+   Link: () => null, NavBar: () => null, ChecklistForm: () => null, ChecklistOpenWork: () => null,
   })
-  await h.flush();h.find(n=>n.type==='button'&&Array.isArray(n.props.children)&&n.props.children.includes(' checklist configuration')).props.onClick();h.render()
-  assert.equal(!!h.find(n=>n.type===Editor),allowed);assert.equal(!!h.find(n=>n.type===BudgetLabels),allowed);assert.ok(h.find(n=>n.type===Qr));h.unmount()
+  await h.flush()
+  assert.equal(!!h.find(node => node.props?.to === '/admin?category=checklists&site=site'), allowed)
+  assert.ok(calls.includes('checklist_weekly_periods'))
+  assert.ok(calls.every(name => name === 'checklist_weekly_periods'))
+  h.unmount()
  }
 })
 

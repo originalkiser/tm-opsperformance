@@ -50,7 +50,7 @@ export default function NavBar() {
     ...(resourceAccess(profile) ? [{ path: '/resources', label: 'Resources', useLink: true }] : []),
     ...(isManager ? [
       { path: '/am-entry', label: 'AM Entry', useLink: true },
-      { path: '/admin', label: 'Admin', useLink: true },
+      { path: '/admin', label: 'Administration', useLink: true },
     ] : []),
   ]
 

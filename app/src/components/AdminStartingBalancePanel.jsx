@@ -4,9 +4,9 @@ import { supabase } from '../lib/supabase'
 import { TRANSITION_MONTH } from '../utils/budgetRevenue'
 import RevenueStartingBalanceEditor from './RevenueStartingBalanceEditor'
 
-export default function AdminStartingBalancePanel({ locations, onSaved, onClose }) {
+export default function AdminStartingBalancePanel({ locations, initialLocationId, onSaved, onClose }) {
   const { profile } = useAuth()
-  const [locationId, setLocationId] = useState(locations[0]?.id || '')
+  const [locationId, setLocationId] = useState(() => locations.find(location => location.id === initialLocationId)?.id || locations[0]?.id || '')
   const [balance, setBalance] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadedLocationId, setLoadedLocationId] = useState(null)

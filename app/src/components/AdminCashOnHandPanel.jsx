@@ -3,9 +3,10 @@ import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { revenueCents } from '../utils/budgetRevenue.js'
 
-export default function AdminCashOnHandPanel({ locations }) {
+export default function AdminCashOnHandPanel({ locations, selectedLocationId, onLocationChange }) {
   const { profile } = useAuth()
-  const [locationId, setLocationId] = useState(locations[0]?.id || '')
+  const [localLocationId, setLocationId] = useState(locations[0]?.id || '')
+  const locationId = selectedLocationId ?? localLocationId
   const [amount, setAmount] = useState('')
   const [effectiveDate, setEffectiveDate] = useState('')
   const [note, setNote] = useState('')
@@ -55,7 +56,7 @@ export default function AdminCashOnHandPanel({ locations }) {
     <h3 className="font-bold">Admin Cash on Hand</h3>
     <p className="text-xs">Choose when the verified fixed amount was actually in effect, including past business dates. Saved cash counts and reconciliation snapshots remain unchanged.</p>
     <fieldset disabled={saving} className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
-      <label>Location<select aria-label="Cash on Hand location" value={locationId} onChange={e => setLocationId(e.target.value)} className={inputClass}>{locations.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>
+      <label>Location<select aria-label="Cash on Hand location" value={locationId} onChange={e => (onLocationChange || setLocationId)(e.target.value)} className={inputClass}>{locations.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>
       <label>Cash on Hand ($)<input aria-label="Admin Cash on Hand amount" type="number" min="0" step="0.01" value={amount} onChange={e => { setAmount(e.target.value); setConfirmed(false); setCorrectionConfirmed(false) }} className={inputClass} /></label>
       <label>Effective business date<input aria-label="Cash on Hand effective business date" type="date" value={effectiveDate} onChange={e => { setEffectiveDate(e.target.value); setConfirmed(false) }} className={inputClass} /></label>
       <label className="sm:col-span-3">Verification source / reason<input aria-label="Cash on Hand verification source" maxLength={1000} value={note} onChange={e => { setNote(e.target.value); setConfirmed(false); setCorrectionConfirmed(false) }} className={inputClass} /></label>
