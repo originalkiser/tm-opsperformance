@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { canLeaveDailyLog } from '../utils/dailyLogValidation.js'
 import PreviewReadOnly from '../components/PreviewReadOnly'
 import '../styles/siteEntryColors.css'
@@ -173,7 +174,14 @@ export default function Dashboard() {
 
       <div className="max-w-screen-2xl mx-auto px-4 py-4">
         {(locationRepairMessage || repairingLocation || (profile?.role === 'store' && !locations.length)) && <LocationRepair />}
-        <header className="tm-entry-title"><h1 className="text-2xl font-brand font-bold">Site Entry</h1></header>
+        <header className="tm-entry-title flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-2xl font-brand font-bold">Site Entry</h1>
+          {selectedLocationId && <Link className="rounded-md border px-3 py-2 text-sm font-semibold"
+            to={'/weekly-labor-planner?site=' + encodeURIComponent(selectedLocationId)}
+            onClick={event => { if (!canLeaveDailyLog()) event.preventDefault() }}>
+            Weekly Labor Planner
+          </Link>}
+        </header>
         {/* Controls */}
         <div className="tm-entry-controls flex flex-wrap gap-3 items-center mb-4">
           {isManager && markets.length > 0 && (

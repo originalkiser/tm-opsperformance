@@ -9,6 +9,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
 import Employees from './pages/Employees'
+import WeeklyLaborPlanner from './pages/WeeklyLaborPlanner'
 import Insights from './pages/Insights'
 import Reports from './pages/Reports'
 import SalesReconciliation from './pages/SalesReconciliation'
@@ -88,6 +89,7 @@ function AccountApp() {
               path="/am-entry"
               element={<ProtectedRoute><ManagerRoute><AmEntry /></ManagerRoute></ProtectedRoute>}
             />
+            <Route path="/weekly-labor-planner" element={<ProtectedRoute><WeeklyLaborPlanner /></ProtectedRoute>} />
             <Route path="/employees" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
             <Route path="/sales-reconciliation" element={<ProtectedRoute><ManagerRoute><SalesReconciliation /></ManagerRoute></ProtectedRoute>} />
             <Route path="/checklists" element={<ProtectedRoute><ManagerChecklists /></ProtectedRoute>} />

@@ -17,7 +17,7 @@ function dashboard(role='admin',managerPreview=false){
  loadSavedDateRange:()=>({start:'2026-11-01',end:'2026-11-30'}),saveDateRange(){},fmtDateRange:()=>'',
  entryLocationOptions,resolveEntryLocation,shopTotals:()=>null,morningEntryStatus:()=>null,isDayComplete:()=>false,
  supabase:{from(){return{select(){return this},eq(){return this},maybeSingle:async()=>({data:null})}}},setInterval:()=>1,clearInterval(){},
- NavBar:()=>null,LocationRepair:()=>null,DateSelector:()=>null,LocationSelector:()=>null,MonthlyRollup:()=>null,DailySnapshot:()=>null,EmployeeSummary:()=>null,
+ Link:({children,to})=>React.createElement('a',{href:to},children),NavBar:()=>null,LocationRepair:()=>null,DateSelector:()=>null,LocationSelector:()=>null,MonthlyRollup:()=>null,DailySnapshot:()=>null,EmployeeSummary:()=>null,
  });return{h,auth,storage,Boundary}
 }
 function ancestors(node,target,path=[]){if(!node||typeof node!=='object')return null;if(node.type===target)return path;for(const child of React.Children.toArray(node.props?.children)){const found=ancestors(child,target,[...path,node]);if(found)return found}return null}

@@ -1,0 +1,48 @@
+.labor-print {
+  display: none;
+}
+
+@media print {
+  body:has(.labor-print) {
+    background: white;
+    color: black;
+  }
+
+  body:has(.labor-print) .labor-no-print {
+    display: none;
+  }
+
+  .labor-print {
+    display: block;
+    background: white;
+    color: black;
+    font-size: 10pt;
+  }
+
+  .labor-print h1 {
+    font-size: 18pt;
+    font-weight: bold;
+  }
+
+  .labor-print table {
+    margin: 12pt 0;
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  .labor-print th,
+  .labor-print td {
+    border-bottom: 1px solid #b0b0b0;
+    padding: 4pt;
+    text-align: left;
+  }
+
+  .labor-print tr {
+    break-inside: avoid;
+  }
+
+  .labor-print section {
+    background: white;
+    border-color: #b0b0b0;
+  }
+}
