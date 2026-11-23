@@ -210,6 +210,10 @@ function PlannerWeek({ location, week, preview, admin, dirty, pending }) {
           <label className="grid gap-1 text-sm">Midday starts<input type="time" className={control} value={clock(settings.middayStart)} onChange={e => { if (e.target.value) changeSetting('middayStart', minutes(e.target.value)) }} /></label>
           <label className="grid gap-1 text-sm">Midday ends<input type="time" className={control} value={clock(settings.middayEnd)} onChange={e => { if (e.target.value) changeSetting('middayEnd', minutes(e.target.value)) }} /></label>
           <label className="grid gap-1 text-sm">Washes/hour for four staff<input type="number" min="1" max="1000" className={control} value={settings.peak} onChange={e => changeSetting('peak', Math.max(1, Math.min(1000, Number(e.target.value))))} /></label>
+          <label className="grid gap-1 text-sm">Additional washes/hour per extra employee
+            <input type="number" min="1" max="1000" step="1" className={control} value={settings.peakStep ?? ''}
+              placeholder="Four-person rule" onChange={e => changeSetting('peakStep', e.target.value === '' ? null : Math.max(1, Math.min(1000, Math.trunc(Number(e.target.value)))))} />
+          </label>
         </fieldset>
         <div className="flex flex-wrap gap-2">
           {!preview && <>

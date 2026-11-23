@@ -69,7 +69,10 @@ test('weekly planner RPCs enforce site scope, revision, cap approval and snapsho
       update budget_targets set labor_hours_with_salary = 200 where location_id = '${mine}';`)
     await who(other)
     assert.equal((await fetch(siteArgs)).draft.plan.inputs.hours.monSat.close, '19:00')
-    assert.equal(await save(siteArgs, 1, plan), 2)
+    const tiered = { ...plan, inputs: { ...plan.inputs,
+      settings: { ...plan.inputs.settings, prep: 60, peakStep: 25 } } }
+    assert.equal(await save(siteArgs, 1, tiered), 2)
+    assert.deepEqual((await fetch(siteArgs)).draft, { plan: tiered, revision: 2 })
     await assert.rejects(save(siteArgs, 1, plan), { code: '40001' })
     assert.equal((await fetch(otherArgs)).cap, null)
     await approve([...otherArgs, 180])

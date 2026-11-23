@@ -81,9 +81,64 @@ test('fills traffic-driven peak coverage only after mandatory coverage fits', ()
   const generated = analyzePlan(recommendPlan(winter, 12), winter, [])
   assert.ok(generated.coverage.every(row => !row.gap))
   const peak = generated.coverage.find(row => row.day === 2 && row.hour === 720)
-  assert.deepEqual([peak.required, peak.recommended, peak.minimum], [3, 4, 4])
+  assert.deepEqual([peak.required, peak.recommended, peak.minimum], [3, 6, 6])
   const constrained = { ...winter, budget: { method: 'hours', hourly: 95, combined: 140 } }
   const result = analyzePlan(recommendPlan(constrained, 12), constrained, [])
   assert.ok(result.coverage.some(row => row.gap))
   assert.ok(result.hourly <= 95 * 60)
+  const withoutPeaks = recommendPlan({ ...constrained, traffic: {} }, 12)
+  assert.deepEqual(recommendPlan(constrained, 12), withoutPeaks)
+  const monday = recommendPlan(winter, 12).find(s => s.role === 'GM' && s.day === 1)
+  const mondayBreaks = generated.coverage.filter(row => row.day === 1 &&
+    row.hour < monday.adminStart + 210 && row.hour + 60 > monday.adminStart)
+  assert.ok(mondayBreaks.length > 0 && mondayBreaks.every(row => !row.gap))
+})
+
+test('AGM and TL shifts share the tighter of both Express labor limits', () => {
+  for (const budget of [
+    { method: 'hours', hourly: 28, combined: 200 },
+    { method: 'hours', hourly: 200, combined: 73 },
+  ]) {
+    const constrained = { ...inputs, budget }
+    const plan = recommendPlan(constrained, 10)
+    const analysis = analyzePlan(plan, constrained, [])
+    assert.equal(analysis.gmMinutes, 45 * 60)
+    assert.ok(plan.some(s => ['AGM', 'TL 1', 'TL 2'].includes(s.role)))
+    assert.ok(analysis.hourly > 0 && analysis.hourly <= 28 * 60)
+    assert.equal(analysis.combined, analysis.hourly + 45 * 60)
+    assert.ok(analysis.warnings.some(w => /Budget conflict.*28.00 hourly hours/.test(w)))
+    assert.ok(analysis.warnings.some(w => /falls short of both mandatory coverage and AGM\/TL hour targets/.test(w)))
+  }
+  const gm = shift({ role: 'GM', end: 1020, adminStart: 660, breakStart: null })
+  const edited = analyzePlan([gm], { ...inputs, budget: { method: 'hours', hourly: 200, combined: 9 } }, [])
+  assert.equal(edited.combined, 600)
+  assert.ok(edited.warnings.includes('Combined labor exceeds the target including GM.'))
+})
+
+test('opening prep defaults to 60 minutes and existing 30-minute drafts keep their settings', () => {
+  assert.equal(defaults.prep, 60)
+  const winter = { ...inputs, hours: getEffectiveSchedule({ active: 'winter' }) }
+  const early = analyzePlan([], winter, []).coverage.find(row => row.day === 1)
+  assert.equal(early.hour, 420)
+  const changed = { ...winter, settings: { ...defaults, prep: 0 } }
+  assert.equal(analyzePlan([], changed, []).coverage.find(row => row.day === 1).hour, 480)
+  const legacy = { ...winter, settings: { prep: 30, middayStart: 660, middayEnd: 900, peak: 40 } }
+  assert.deepEqual(analyzePlan([], legacy, []).coverage.find(row => row.day === 1 && row.hour === 420).required, 1)
+  assert.equal(legacy.settings.prep, 30)
+})
+
+test('configurable traffic thresholds scale above four and distinguish zero, sparse and missing data', () => {
+  const traffic = {
+    '1:480': { average: 0, samples: 4 },
+    '1:540': { average: 90, samples: 1 },
+    '1:660': { average: 90, samples: 4 },
+  }
+  const configured = { ...inputs, settings: { ...defaults, peak: 50, peakStep: 20 }, traffic }
+  const rows = analyzePlan([], configured, []).coverage.filter(row => row.day === 1)
+  assert.deepEqual([480, 540, 600, 660].map(hour => rows.find(row => row.hour === hour).recommended), [2, 2, 2, 6])
+  assert.equal(rows.find(row => row.hour === 480).traffic.average, 0)
+  assert.equal(rows.find(row => row.hour === 600).traffic, null)
+  const { peakStep, ...legacy } = configured.settings
+  const saved = analyzePlan([], { ...configured, settings: legacy }, [])
+  assert.equal(saved.coverage.find(row => row.day === 1 && row.hour === 660).recommended, 4)
 })
