@@ -46,6 +46,7 @@ export default function NavBar() {
   ]
   const secondary = [
     ...(['admin', 'store'].includes(profile?.role) ? [{ path: '/employees', label: 'Employees', useLink: true }] : []),
+    ...(['admin', 'store'].includes(profile?.role) ? [{ path: '/weekly-labor-planner', label: 'Weekly Labor Planner', useLink: true }] : []),
     ...(checklistAccess ? [{ path: '/checklists', label: 'Manager Checklists', useLink: true }] : []),
     ...(resourceAccess(profile) ? [{ path: '/resources', label: 'Resources', useLink: true }] : []),
     ...(isManager ? [
