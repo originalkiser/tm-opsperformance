@@ -1,3 +1,4 @@
+import { notifyTargetsSaved } from '../utils/targetsNotifications'
 import { useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { computeMembershipGoal } from '../utils/budgetMath'
@@ -56,6 +57,7 @@ export default function MonthlyBudgetImport({ onSaved, onClose }) {
         p_sites: proposal(),
       })
       if (result.error) throw result.error
+      notifyTargetsSaved()
       onSaved(workbook.month, result.data)
     } catch (e) {
       setError((e.message || 'Import failed.') + ' No automatic retry. Reopen the workbook to refresh the preview before trying again.')
