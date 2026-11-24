@@ -12,15 +12,15 @@ import {locationHelpHarness} from './helpers/locationHelpHarness.js'
 function modal({existing=null,source=null,fail=false,drift=false}={}) {
  const row={site:'1512',existing,source_members:source,starting_members:existing?.starting_members??source,membership_goal:existing?.membership_goal??(source==null?null:source+58),membership_daily_growth:2,keep_membership:existing?.starting_members!=null,revenue_goal:'29.000000000000000029',hours:'100',hours_with_manager:'145',percentage:null}
  const workbook={month:'2028-02-01',totals:{total:'29.000000000000000029'},sites:[{site:'1512',daily:Array(29).fill({})}]}
- let values=[workbook,{fingerprint:'reviewed',state_fingerprint:'original-state',sites:[row]},{'1512':row.starting_members==null?'':String(row.starting_members)},{},false,false,''],cursor,refs=[],calls=[],saved=[]
+ let values=[workbook,{fingerprint:'reviewed',state_fingerprint:'original-state',sites:[row]},{'1512':row.starting_members==null?'':String(row.starting_members)},{},false,false,''],cursor,refs=[],calls=[],saved=[],notifications=[]
  const useState=initial=>{const i=cursor++;if(!(i in values))values[i]=initial;return[values[i],v=>{values[i]=typeof v==='function'?v(values[i]):v}]}
  const useRef=initial=>{const i=cursor++;return refs[i]||=( {current:initial} )}
  const code=readFileSync(new URL('../src/components/MonthlyBudgetImport.jsx',import.meta.url),'utf8').replace(/^import .*\n/gm,'')
  const mod={exports:{}},supabase={async rpc(name,args){calls.push({name,args});return args.p_confirm ? (fail?{error:{message:'Changed since preview'}}:{data:{sites:1,changed_sites:1,pending_membership:source==null?1:0}}) : {data:{fingerprint:'choices-reviewed',state_fingerprint:drift?'changed-state':'original-state',sites:[row]}}}}
- new Function('module','exports','React','useState','useRef','supabase','computeMembershipGoal','displayMoney',transformSync(code,{loader:'jsx',format:'cjs'}).code)(mod,mod.exports,React,useState,useRef,supabase,computeMembershipGoal,displayMoney)
+ new Function('module','exports','React','useState','useRef','supabase','computeMembershipGoal','displayMoney','notifyTargetsSaved',transformSync(code,{loader:'jsx',format:'cjs'}).code)(mod,mod.exports,React,useState,useRef,supabase,computeMembershipGoal,displayMoney,()=>notifications.push(true))
  const render=()=>{cursor=0;return mod.exports.default({onClose(){},onSaved(...args){saved.push(args)}})}
  const nodes=node=>!node||typeof node!=='object'?[]:[node,...React.Children.toArray(node.props?.children).flatMap(nodes)]
- return {render,find:fn=>nodes(render()).find(fn),html:()=>renderToStaticMarkup(render()),calls,saved}
+ return {render,find:fn=>nodes(render()).find(fn),html:()=>renderToStaticMarkup(render()),calls,saved,notifications}
 }
 const button=(h,text)=>h.find(n=>n.type==='button'&&n.props.children===text)
 
@@ -30,7 +30,7 @@ test('missing baseline warns but revenue/labor can confirm; duplicate clicks are
  await h.find(n=>n.type==='input'&&n.props.type==='checkbox').props.onChange({target:{checked:true}})
  const save=button(h,'Confirm Import');assert.equal(save.props.disabled,false)
  await Promise.all([save.props.onClick(),save.props.onClick()]);assert.equal(h.calls.length,2)
- assert.equal(h.calls.at(-1).args.p_sites[0].opening_members,null);assert.equal(h.calls.at(-1).args.p_expected,'choices-reviewed');assert.equal(h.saved.length,1)
+ assert.equal(h.calls.at(-1).args.p_sites[0].opening_members,null);assert.equal(h.calls.at(-1).args.p_expected,'choices-reviewed');assert.equal(h.saved.length,1);assert.equal(h.notifications.length,1)
 })
 test('approved baseline is disabled until explicit replacement and consent resets',async()=>{
  const h=modal({existing:{starting_members:100,membership_goal:158},source:999})
@@ -45,7 +45,7 @@ test('approved baseline is disabled until explicit replacement and consent reset
 })
 test('failed import clears stale preview and never retries automatically',async()=>{
  const h=modal({fail:true,source:0});await h.find(n=>n.type==='input'&&n.props.type==='checkbox').props.onChange({target:{checked:true}})
- await button(h,'Confirm Import').props.onClick();assert.equal(h.calls.length,2);assert.equal(h.saved.length,0)
+ await button(h,'Confirm Import').props.onClick();assert.equal(h.calls.length,2);assert.equal(h.saved.length,0);assert.equal(h.notifications.length,0)
  assert.match(h.html(),/No automatic retry/);assert.equal(button(h,'Confirm Import'),undefined)
 })
 test('import button exists only for Admin in existing targets table',()=>{
@@ -63,7 +63,7 @@ test('editing a pending target preserves NULL membership and imported decimal pr
  const source=readFileSync(new URL('../src/components/BudgetTargetsTable.jsx',import.meta.url),'utf8').replace(/^import .*\n/gm,'')+'\nexport { TargetModal };'
  const mod={exports:{}},saved=[]
  const supabase={from(){return{async upsert(row){calls.push(row);return{error:null}}}}}
- new Function('module','exports','React','useState','computeMembershipGoal','DEFAULT_MEMBERSHIP_DAILY_GROWTH','supabase','logEdit',transformSync(source,{loader:'jsx',format:'cjs'}).code)(mod,mod.exports,React,useState,computeMembershipGoal,2,supabase,async()=>{})
+ new Function('module','exports','React','useState','computeMembershipGoal','DEFAULT_MEMBERSHIP_DAILY_GROWTH','supabase','logEdit','notifyTargetsSaved',transformSync(source,{loader:'jsx',format:'cjs'}).code)(mod,mod.exports,React,useState,computeMembershipGoal,2,supabase,async()=>{},()=>{})
  const tree=mod.exports.TargetModal({location:{id:'a',name:'A'},month:'2028-02-01',existing:{revenue_goal:'29.000000000000000029',labor_hours_non_salary:'100.000000000000000001',starting_members:null,membership_goal:null,membership_daily_growth:2},profile:{role:'admin'},onClose(){},onSaved(){saved.push(true)}})
  const nodes=n=>!n||typeof n!=='object'?[]:[n,...React.Children.toArray(n.props?.children).flatMap(nodes)]
  await nodes(tree).find(n=>n.type==='button'&&n.props.children==='Update Target').props.onClick()

@@ -1,3 +1,4 @@
+import { notifyTargetsSaved } from '../utils/targetsNotifications'
 import useBudgetLabels from '../hooks/useBudgetLabels'
 import { budgetFieldWording, budgetDisplayFields } from '../utils/budgetLabels'
 import CashReconciliationSection from './CashReconciliationSection'
@@ -259,7 +260,7 @@ function TargetsTab({ locations, allLocations }) {
   const handleSave = async () => {
     setSaving(true)
     const numOrZero = (v) => v === '' ? 0 : Number(v)
-    await supabase.from('budget_targets').upsert({
+    const { error } = await supabase.from('budget_targets').upsert({
       location_id: selectedLocId,
       target_month: month,
       revenue_goal: numOrZero(form.revenue_goal),
@@ -269,6 +270,7 @@ function TargetsTab({ locations, allLocations }) {
       labor_hours_with_salary: numOrZero(form.labor_hours_with_salary),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'location_id,target_month' })
+    if (!error) notifyTargetsSaved()
     setSaving(false)
     fetchTarget()
   }

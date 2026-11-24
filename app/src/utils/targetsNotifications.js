@@ -1,48 +1,42 @@
-// "Set targets" reminder logic for Budget Tracking.
-//
-// Two independent conditions flag a location as needing attention:
-//   1. The CURRENT month has no budget_targets row yet — should already have
-//      been set (the workbook's own rule: "by the 3rd of the month").
-//   2. We're within 7 days of the current month's end and NEXT month's
-//      target hasn't been set yet — a proactive heads-up so it's not missed.
-// A flagged location stays flagged (banner/bell keep showing it) until a
-// budget_targets row exists for that month — there is no separate "dismiss
-// forever" state, only the temporary snooze the banner itself offers.
+import { toDateStr } from './budgetMath.js'
 
-import { toDateStr, firstOfMonth, daysInMonth } from './budgetMath'
+export const TARGETS_SAVED_EVENT = 'tm-budget-targets-saved'
 
-function addMonths(dateStr, n) {
-  const d = new Date(dateStr + 'T00:00:00')
-  const next = new Date(d.getFullYear(), d.getMonth() + n, 1)
-  return firstOfMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01`)
+export function notifyTargetsSaved() {
+  window.dispatchEvent(new Event(TARGETS_SAVED_EVENT))
 }
 
-// True once we're inside the last 7 days of the current month.
+export function isTargetReminderLocation(location) {
+  // Locations use their reporting exclusion flag for inactive, sold, and test sites.
+  return !!location.show_budget_tracking && !location.exclude_from_reporting && String(location.site_code) !== '1509'
+}
+
+export function targetReminderMonths(today = new Date()) {
+  const year = today.getFullYear()
+  const month = today.getMonth()
+  return [toDateStr(new Date(year, month, 1)), toDateStr(new Date(year, month + 1, 1))]
+}
+
 export function inProactiveWindow(today = new Date()) {
-  const dateStr = toDateStr(today)
-  const dim = daysInMonth(dateStr)
-  return today.getDate() >= dim - 6 // last 7 calendar days, inclusive
+  const lastWeekday = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+  if (lastWeekday.getDay() === 0) lastWeekday.setDate(lastWeekday.getDate() - 2)
+  if (lastWeekday.getDay() === 6) lastWeekday.setDate(lastWeekday.getDate() - 1)
+  return today.getDate() >= lastWeekday.getDate()
 }
 
-// locations: the set to check (already scoped to the viewer's role)
-// targets: all budget_targets rows for those locations (any month)
-// Returns [{ location, month, reason }] — reason: 'current' | 'upcoming'
 export function findMissingTargets(locations, targets, today = new Date()) {
-  const todayStr      = toDateStr(today)
-  const currentMonth  = firstOfMonth(todayStr)
-  const nextMonth     = addMonths(todayStr, 1)
-  const proactive     = inProactiveWindow(today)
-
-  const hasTarget = (locId, month) =>
-    targets.some(t => t.location_id === locId && t.target_month?.slice(0, 10) === month)
-
+  const [currentMonth, nextMonth] = targetReminderMonths(today)
+  const proactive = inProactiveWindow(today)
+  const existing = new Set(targets.map(t => t.location_id + ':' + t.target_month?.slice(0, 10)))
   const missing = []
-  locations.forEach(loc => {
-    if (!hasTarget(loc.id, currentMonth)) {
-      missing.push({ location: loc, month: currentMonth, reason: 'current' })
-    } else if (proactive && !hasTarget(loc.id, nextMonth)) {
-      missing.push({ location: loc, month: nextMonth, reason: 'upcoming' })
+  for (const location of locations.filter(isTargetReminderLocation)) {
+    // A saved target row is the existing completion criterion.
+    if (!existing.has(location.id + ':' + currentMonth)) {
+      missing.push({ location, month: currentMonth, reason: 'current' })
     }
-  })
+    if (proactive && !existing.has(location.id + ':' + nextMonth)) {
+      missing.push({ location, month: nextMonth, reason: 'upcoming' })
+    }
+  }
   return missing
 }

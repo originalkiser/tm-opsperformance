@@ -1,3 +1,4 @@
+import { notifyTargetsSaved } from '../utils/targetsNotifications'
 import MonthlyBudgetImport from './MonthlyBudgetImport'
 import { laborBudget } from '../utils/laborBudget.js'
 import { useState, useEffect, useRef } from 'react'
@@ -66,12 +67,13 @@ function TargetModal({ location, month, existing, profile, onClose, onSaved }) {
       labor_hours_non_salary: numOrZero(form.labor_hours_non_salary),
       labor_hours_with_salary: numOrZero(form.labor_hours_with_salary),
     }
-    await supabase.from('budget_targets').upsert({
+    const { error } = await supabase.from('budget_targets').upsert({
       location_id: location.id,
       target_month: month,
       ...newValues,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'location_id,target_month' })
+    if (!error) notifyTargetsSaved()
 
     await logEdit({
       tableName: 'budget_targets',

@@ -1,3 +1,4 @@
+import { notifyTargetsSaved } from '../utils/targetsNotifications'
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -11,7 +12,7 @@ const cellInputCls = 'w-24 border border-gray-300 dark:border-tm-dark-border rou
 
 async function saveTarget(item, form) {
   const numOrZero = (v) => v === '' ? 0 : Number(v)
-  return supabase.from('budget_targets').upsert({
+  const result = await supabase.from('budget_targets').upsert({
     location_id: item.location.id,
     target_month: item.month,
     revenue_goal: numOrZero(form.revenue_goal),
@@ -21,6 +22,8 @@ async function saveTarget(item, form) {
     labor_hours_with_salary: numOrZero(form.labor_hours_with_salary),
     updated_at: new Date().toISOString(),
   }, { onConflict: 'location_id,target_month' })
+  if (!result.error) notifyTargetsSaved()
+  return result
 }
 
 // ── Sequential mode: one site at a time, "N remaining" progress ──────────────
