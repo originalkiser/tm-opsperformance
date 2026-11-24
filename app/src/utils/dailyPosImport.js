@@ -31,7 +31,7 @@ function cents(value) {
   return accounting || digits.startsWith('-') ? -result : result
 }
 
-const collection = signed => -signed || 0
+const collection = signed => signed == null ? null : -signed || 0
 
 function quantity(value) {
   const raw = text(value).replace(/,/g, '')
@@ -84,42 +84,55 @@ function micLocation(rows, sourceId, businessDate) {
   const warnings = [], financialWarnings = [], sections = new Set()
   const values = []
   let section = ''
+  const balanceSection = 'revenue/payment balance'
+  const balanceLabels = ['total revenue', 'total payments', 'total house charges', 'total taxes']
+  const parseCell = (parse, value) => {
+    if (!text(value)) return null
+    try { return parse(value) } catch { return null }
+  }
   for (const [description, , qty, , , amount] of rows) {
     const label = text(description)
-    if (!label && !text(qty)) continue
-    if (!text(qty) && !text(amount) && !/ total$/i.test(label)) {
-      section = norm(label)
+    const key = norm(label)
+    if ((!label && !text(qty) && !text(amount)) || key === 'description') continue
+    if (!text(qty) && !text(amount) && !key.endsWith(' total') &&
+        !(section === balanceSection && balanceLabels.includes(key))) {
+      section = key
       sections.add(section)
       continue
     }
-    if (norm(label) === 'description') continue
-    // Other Micrologic sections use different column layouts and can contain
-    // irrelevant customer detail. Project only the sections this import uses.
-    if (!['car count', 'revenue/payment balance', 'payments', 'wash sales', 'wash override',
+    if (!['car count', balanceSection, 'payments', 'wash sales', 'wash override',
       'unlimited redemption', 'unlimited signup', 'unlimited recurring', 'totals', 'revenue summary'].includes(section)) continue
-    const count = /^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.0+)?$/.test(text(qty)) ? quantity(qty) : null
-    values.push({ category: section, label, quantity: count, amount: text(amount) ? cents(amount) : null })
+    const count = /^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.0+)?$/.test(text(qty)) ? parseCell(quantity, qty) : null
+    values.push({ category: section, label, quantity: count, amount: parseCell(cents, amount) })
   }
-  function get(section, label, field, fallback) {
-    const matches = category(values, section).filter(row => norm(row.label) === label)
-    if (matches.length !== 1) {
-      if (!matches.length && fallback !== undefined) return fallback
-      throw new Error('Missing or duplicate Micrologic subtotal: ' + label + '.')
+  const matching = (section, label) => category(values, section).filter(row => norm(row.label) === label)
+  function readSubtotal(section, label, field, issues, optional = false) {
+    const matches = matching(section, label)
+    if (!matches.length && optional) return null
+    const value = matches.length === 1 ? matches[0][field] : null
+    if (value == null || (field === 'quantity' && value < 0)) {
+      issues.push('Micrologic ' + label + ': ' + (matches.length > 1 ? 'duplicate' : matches.length ? 'invalid' : 'missing') + ' ' + field + '.')
+      return null
     }
-    const value = matches[0][field]
-    if (value == null && fallback === undefined) throw new Error('Missing Micrologic value: ' + label + '.')
     return value
   }
-  function subtotal(section, label = section + ' total') {
-    const matches = category(values, section).filter(row => norm(row.label) === label)
-    if (matches.length !== 1 || matches[0].quantity == null || matches[0].quantity < 0) return null
-    return matches[0].quantity
-  }
-  const rawPayments = get('revenue/payment balance', 'total payments', 'amount')
-  const revenue = get('revenue/payment balance', 'total revenue', 'amount')
-  const rawHouse = get('revenue/payment balance', 'total house charges', 'amount', 0)
+  const subtotal = (section, label = section + ' total', optional = false) =>
+    readSubtotal(section, label, 'quantity', warnings, optional)
+  const balanceAmount = (label, optional = false) => readSubtotal(balanceSection, label, 'amount', financialWarnings, optional)
+  const rawPayments = balanceAmount('total payments')
+  const revenue = balanceAmount('total revenue')
+  const rawHouse = balanceAmount('total house charges', true)
+  const rawTaxes = balanceAmount('total taxes', true)
+  const reportedBalance = balanceAmount('revenue/payment balance total', true)
   const tenderRows = category(values, 'payments').filter(row => norm(row.label) !== 'payments total')
-  if (!tenderRows.length || tenderRows.some(row => row.amount == null)) throw new Error('Missing Micrologic payment detail.')
+  const paymentSubtotal = readSubtotal('payments', 'payments total', 'amount', financialWarnings, true)
+  const detailComplete = tenderRows.length > 0 && tenderRows.every(row => row.amount != null)
+  const detailSum = detailComplete ? sum(tenderRows, 'amount') : null
+  const paymentSubtotalPresent = matching('payments', 'payments total').length > 0
+  const detailVerified = detailComplete && (paymentSubtotalPresent ? paymentSubtotal === detailSum : rawPayments === detailSum)
+  if (!detailComplete) financialWarnings.push('Missing or invalid Micrologic payment detail.')
+  else if (!detailVerified) financialWarnings.push('Payment detail cannot be verified against a valid payment subtotal.')
+  if (detailComplete && rawPayments != null && detailSum !== rawPayments) financialWarnings.push('Payment detail differs from TOTAL PAYMENTS.')
   const tenderType = row => {
     const label = norm(row.label).replace(/^--\s*refunds?:\s*/, '')
     if (/^credit\s*-\s*(amex|mc\s*\/\s*visa\s*\/\s*disc)$/.test(label)) return 'card'
@@ -127,26 +140,30 @@ function micLocation(rows, sourceId, businessDate) {
     if (/^check$/.test(label)) return 'other'
     return 'unmapped'
   }
-  const rawCard = sum(tenderRows.filter(row => tenderType(row) === 'card'), 'amount')
-  const rawOther = sum(tenderRows.filter(row => tenderType(row) === 'other'), 'amount')
-  const rawCash = sum(tenderRows.filter(row => tenderType(row) === 'cash'), 'amount')
-  const unmapped = tenderRows.filter(row => tenderType(row) === 'unmapped' && row.amount)
+  const tenderAmount = type => {
+    const items = tenderRows.filter(row => tenderType(row) === type)
+    return items.length && items.every(row => row.amount != null)
+      ? sum(items, 'amount') : !items.length && detailVerified ? 0 : null
+  }
+  const rawCard = tenderAmount('card')
+  const rawOther = tenderAmount('other')
+  const rawCash = tenderAmount('cash')
+  const unmapped = tenderRows.filter(row => tenderType(row) === 'unmapped' && row.amount !== 0)
   if (unmapped.length) financialWarnings.push('Unresolved payment tender: ' + unmapped.map(row => row.label || '(blank item)').join(', '))
-  if (sum(tenderRows, 'amount') !== rawPayments) financialWarnings.push('Payment detail differs from TOTAL PAYMENTS.')
-  const expectedCash = -rawPayments + rawCard + rawOther
-  if (expectedCash !== -rawCash) financialWarnings.push('Calculated cash differs from net cash payments.')
-  const explicitCountPresent = category(values, 'car count').some(row => norm(row.label) === 'car count total')
-  const reported = subtotal('car count', 'car count total')
+  const expectedCash = detailVerified && !unmapped.length && rawPayments != null && rawCard != null && rawOther != null
+    ? -rawPayments + rawCard + rawOther : null
+  if (expectedCash != null && rawCash != null && expectedCash !== -rawCash) financialWarnings.push('Calculated cash differs from net cash payments.')
+  const explicitCountPresent = matching('car count', 'car count total').length > 0
+  const reported = subtotal('car count', 'car count total', !explicitCountPresent)
   const washSales = subtotal('wash sales')
   const redemptions = subtotal('unlimited redemption')
-  const summaryQuantity = subtotal('revenue summary')
-  const signupSubtotal = subtotal('unlimited signup')
-  const signupInTotals = category(values, 'totals').some(row => norm(row.label) === 'unlimited signup')
-  // Jackson's report omits the signup section. Require the standard totals
-  // structure and independent revenue-summary quantity before inferring zero.
+  const summaryQuantity = subtotal('revenue summary', 'revenue summary total', true)
+  const signupSubtotal = subtotal('unlimited signup', 'unlimited signup total', !sections.has('unlimited signup'))
+  const signupInTotals = matching('totals', 'unlimited signup').length > 0
+  // A missing signup section can mean zero only when the other subtotals corroborate it.
   const confirmedZero = !sections.has('unlimited signup') && !signupInTotals &&
-    subtotal('totals') != null && washSales != null && redemptions != null &&
-    subtotal('totals', 'wash sales') === washSales && subtotal('totals', 'unlimited redemption') === redemptions &&
+    subtotal('totals', 'totals total', true) != null && washSales != null && redemptions != null &&
+    subtotal('totals', 'wash sales', true) === washSales && subtotal('totals', 'unlimited redemption', true) === redemptions &&
     summaryQuantity === washSales + redemptions
   const signupCount = signupSubtotal ?? (confirmedZero ? 0 : null)
   const signups = category(values, 'unlimited signup').filter(row => norm(row.label) !== 'unlimited signup total')
@@ -164,9 +181,20 @@ function micLocation(rows, sourceId, businessDate) {
   if (reported != null && calculated != null && reported !== calculated) warnings.push('Reported Car Count Total differs from the calculated wash count.')
   const washCount = { source: washes == null ? 'unavailable' : reported != null ? 'reported' : 'calculated',
     reported, calculated, washSales, signupCount, redemptions, confirmedZero, summaryQuantity }
-  const rawTaxes = get('revenue/payment balance', 'total taxes', 'amount', 0)
-  const balance = rawTaxes == null || rawHouse == null ? null : revenue + rawPayments + rawHouse + rawTaxes
-  if (balance) financialWarnings.push('Micrologic revenue/payment balance is nonzero.')
+  const omittedHouse = !matching(balanceSection, 'total house charges').length
+  const omittedTaxes = !matching(balanceSection, 'total taxes').length
+  const baseBalance = revenue != null && rawPayments != null ? revenue + rawPayments : null
+  const knownBalance = baseBalance == null ? null : baseBalance + (rawHouse ?? 0) + (rawTaxes ?? 0)
+  // An omitted zero line can be inferred only when the signed balance corroborates it.
+  const corroboratedOmissions = reportedBalance != null && knownBalance === reportedBalance
+  const house = rawHouse ?? (omittedHouse && corroboratedOmissions ? 0 : null)
+  const taxes = rawTaxes ?? (omittedTaxes && corroboratedOmissions ? 0 : null)
+  const balance = house == null || taxes == null || baseBalance == null ? null : baseBalance + house + taxes
+  if (balance == null) financialWarnings.push('Micrologic revenue/payment balance cannot be verified from the available subtotals.')
+  else if (balance) financialWarnings.push('Micrologic revenue/payment balance is nonzero.')
+  if (balance != null && reportedBalance != null && balance !== reportedBalance) {
+    financialWarnings.push('Calculated revenue/payment balance differs from the reported balance.')
+  }
   const overrideItems = category(values, 'wash override').filter(row => !/ total$/i.test(row.label))
   const salesItems = category(values, 'wash sales').filter(row => !/ total$/i.test(row.label))
   const normalized = row => norm(row.label).replace(/\s/g, '')
@@ -175,15 +203,24 @@ function micLocation(rows, sourceId, businessDate) {
   if (overrideItems.some(row => /(?:basic|good|better|best).*rewash/i.test(row.label) && !qualifyingOverride(row)) ||
     salesItems.some(row => /z\s*best.*wash/i.test(row.label) && !qualifyingSale(row))) warnings.push('Review ambiguous wash override spelling.')
   const qualifying = [...overrideItems.filter(qualifyingOverride), ...salesItems.filter(qualifyingSale)]
-  const overrides = qualifying.some(row => row.quantity == null) ? null : sum(qualifying, 'quantity')
-  return { system: 'Micrologic', sourceId, businessDate, siteCode: micrologicSites[sourceId], warnings, financialWarnings, washCount,
-    metrics: ratios({ revenue, payments: collection(rawPayments), cards: collection(rawCard), other: collection(rawOther), house: collection(rawHouse),
-      cash: unmapped.length ? null : expectedCash, reportedCash: collection(rawCash), reportBalance: balance, washes, overrides,
-      rawOverrides: sum(overrideItems, 'quantity'),
-      redemptions,
-      recharges: get('unlimited recurring', 'unlimited recurring total', 'quantity', 0), terminations: null,
+  const overrideTotal = subtotal('wash override', 'wash override total', !sections.has('wash override'))
+  const noOverrideCategory = !sections.has('wash override') && subtotal('totals', 'totals total', true) != null &&
+    !matching('totals', 'wash override').length
+  const rawOverrides = overrideTotal ?? (noOverrideCategory ? 0 : null)
+  const overrideDetailValid = rawOverrides != null && overrideItems.every(row => row.quantity != null) &&
+    sum(overrideItems, 'quantity') === rawOverrides
+  const salesDetailValid = washSales != null && salesItems.every(row => row.quantity != null) && sum(salesItems, 'quantity') === washSales
+  const overrides = !salesDetailValid || !overrideDetailValid || qualifying.some(row => row.quantity == null)
+    ? null : sum(qualifying, 'quantity')
+  if (overrides == null) warnings.push('Qualifying wash overrides are unavailable because source subtotals or detail are incomplete.')
+  const recharges = subtotal('unlimited recurring')
+  return { system: 'Micrologic', sourceId, businessDate, siteCode: micrologicSites[sourceId], warnings, financialWarnings, washCount, provisionalTenders: !detailVerified || unmapped.length > 0,
+    metrics: ratios({ revenue, payments: collection(rawPayments), cards: collection(rawCard), other: collection(rawOther), house: collection(house),
+      cash: expectedCash, reportedCash: collection(rawCash), reportBalance: balance, washes, overrides,
+      rawOverrides,
+      redemptions, recharges, terminations: null,
       ...signup }, 'Micrologic'),
-    signedAmounts: { totalRevenue: revenue, totalPayments: rawPayments, houseCharges: rawHouse, taxes: rawTaxes,
+    signedAmounts: { totalRevenue: revenue, totalPayments: rawPayments, houseCharges: rawHouse, taxes: rawTaxes, reportedBalance,
       tenders: tenderRows.map(({ label, amount }) => ({ label, amount })) } }
 }
 
@@ -272,7 +309,7 @@ export function parseDailyDrb(sheets) {
     const quantityDifferences = rows.filter(row => ['basic washes', 'arm plans sold', 'arm plans recharged',
       'arm plans redeemed', 'arm plans terminated'].includes(row.category) && row.count !== row.quantity)
       .map(({ sourceCategory, label, count, quantity }) => ({ category: sourceCategory, label, count, quantity }))
-    return { system: 'DRB', sourceId, siteCode, businessDate: date, warnings, financialWarnings, quantityDifferences,
+    return { system: 'DRB', sourceId, siteCode, businessDate: date, warnings, financialWarnings, quantityDifferences, provisionalFinancial: unknown.length > 0,
       metrics: ratios({ revenue: total, payments: total, cards: card, house, other, cash, reportedCash, reportBalance, overrides: null,
         washes: sum(category(rows, 'basic washes'), 'quantity'), redemptions: sum(category(rows, 'arm plans redeemed'), 'quantity'),
         recharges: sum(category(rows, 'arm plans recharged'), 'quantity'), terminations: sum(category(rows, 'arm plans terminated'), 'quantity'),
@@ -357,6 +394,10 @@ export function posComparisonValues(row) {
   }
 }
 
+export const isProvisionalPosMetric = (row, key) =>
+  (row.provisionalFinancial && ['revenue', 'payments', 'cash'].includes(key)) ||
+  (row.provisionalTenders && ['cards', 'budgetOther'].includes(key))
+
 export function comparePosMetric(key, imported, saved) {
   if (imported == null || saved == null) return 'unavailable'
   if (imported === saved) return 'exact'
@@ -369,10 +410,19 @@ export function posManagerStatus(row) {
   if (!row.manager) return row.managerMissing ? 'missing' : 'unavailable'
   const { imported, saved } = posComparisonValues(row)
   const fields = row.system === 'Micrologic' ? [...comparisonFields, 'overrides'] : comparisonFields
-  const statuses = fields.map(key => comparePosMetric(key, imported[key], saved[key]))
+  const statuses = fields.map(key => isProvisionalPosMetric(row, key) ? 'unavailable' : comparePosMetric(key, imported[key], saved[key]))
   if (imported.unclassified || statuses.includes('substantive')) return 'substantive'
   if (statuses.includes('unavailable')) return 'unavailable'
   return statuses.includes('rounding') ? 'rounding' : 'exact'
+}
+
+export function groupPosReviewByDate(rows) {
+  const dates = new Map()
+  for (const row of rows) {
+    if (!dates.has(row.businessDate)) dates.set(row.businessDate, [])
+    dates.get(row.businessDate).push(row)
+  }
+  return [...dates.entries()].sort(([a], [b]) => b.localeCompare(a))
 }
 
 export function summarizePosReview(rows) {
@@ -385,9 +435,9 @@ export function summarizePosReview(rows) {
     results.mapped++
     if (!row.metrics) continue
     const { imported, saved } = posComparisonValues(row)
-    if (saved && [...moneyFields].some(key => comparePosMetric(key, imported[key], saved[key]) === 'rounding')) results.anyRounding++
+    if (saved && [...moneyFields].some(key => !isProvisionalPosMetric(row, key) && comparePosMetric(key, imported[key], saved[key]) === 'rounding')) results.anyRounding++
     if (row.system === 'DRB' && row.metrics.reportBalance === 0) results.drbZero++
-    if (row.metrics.cash != null && row.metrics.cash === row.metrics.reportedCash) results.cashMatched++
+    if (!row.provisionalFinancial && row.metrics.cash != null && row.metrics.cash === row.metrics.reportedCash) results.cashMatched++
     if (row.washCount?.source === 'calculated') results.calculated++
   }
   return results

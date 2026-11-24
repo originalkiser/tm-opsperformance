@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import JSZip from 'jszip'
-import { comparePosMetric, posManagerStatus, summarizePosReview, matchPosLocations, parseDailyPosFile, parseDailyDrb, parseMicrologic, readPosComparisons } from '../src/utils/dailyPosImport.js'
+import { groupPosReviewByDate, isProvisionalPosMetric, comparePosMetric, posManagerStatus, summarizePosReview, matchPosLocations, parseDailyPosFile, parseDailyDrb, parseMicrologic, readPosComparisons } from '../src/utils/dailyPosImport.js'
 import { budgetCountFields, YESTERDAY_FIELDS } from '../src/utils/budgetDailyFields.js'
 import { budgetDisplayFields } from '../src/utils/budgetLabels.js'
 
@@ -16,11 +17,11 @@ const micro = [
   ['UNLIMITED RECURRING'], micRow('UNLIMITED RECURRING Total', 112, '$3,496.00'),
   ['WASH OVERRIDE'], micRow('  BestRewash ', 1, '($26.00)'), micRow('Ghost Wash', 3, '$0.00'),
   micRow('Rewash', 3, '$0.00'), micRow('WASH OVERRIDE Total', 7, '($26.00)'),
-  ['WASH SALES'], micRow('Best Wash', 2, '$52.00'), micRow('WASH SALES Total', 13, '$52.00'),
+  ['WASH SALES'], micRow('Best Wash', 13, '$52.00'), micRow('WASH SALES Total', 13, '$52.00'),
   ['PAYMENTS'], micRow('CASH', 1, '($38.00)'), micRow('CREDIT -AMEX', 1, '($356.00)'),
   micRow('CREDIT -MC / VISA / DISC', 1, '($3,397.00)'), micRow('-- refunds: credit - mc / visa / disc', 1, '$0.58'),
   ['REVENUE/PAYMENT BALANCE'], micRow('TOTAL REVENUE', 118, '$3,798.42'),
-  micRow('TOTAL PAYMENTS', 235, '($3,790.42)'), micRow('TOTAL HOUSE CHARGES', 2, '($8.00)'),
+  micRow('TOTAL PAYMENTS', 235, '($3,790.42)'), micRow('TOTAL HOUSE CHARGES', 2, '($8.00)'), micRow('TOTAL TAXES', 0, '$0.00'),
 ]
 
 const drbRow = (category, quantity, amount, item = '', site = '1518-Greenwood', count = quantity) =>
@@ -67,7 +68,7 @@ test('Micrologic original-shape XLSX resolves date, net cash and cards, override
 })
 
 test('only approved override items count and missing Car Count does not borrow final-summary quantity', () => {
-  const rows = micro.flatMap(row => row[0] === 'Car Count Total' ? [] : row[0] === 'Best Wash' ? [row, micRow('zBest Wash', 2, '$40.00'),
+  const rows = micro.flatMap(row => row[0] === 'Car Count Total' ? [] : row[0] === 'Best Wash' ? [micRow('Best Wash', 6, '$52.00'), micRow('zBest Wash', 2, '$40.00'),
     micRow('zBest Wash Redemption', 5, '$0.00')] : [row])
   const [result] = parseMicrologic(rows)
   assert.equal(result.metrics.overrides, 3)
@@ -229,4 +230,69 @@ test('manager and network statuses separate rounding, substantive, missing, and 
     mapped: 5, drbZero: 0, cashMatched: 5, exact: 1, rounding: 1, substantive: 1, unavailable: 1,
     missing: 1, calculated: 1, financial: 1, anyRounding: 2,
   })
+})
+
+test('missing, malformed, and duplicate financial subtotals leave independent results available', () => {
+  for (const [label, key] of [['TOTAL REVENUE', 'revenue'], ['TOTAL PAYMENTS', 'payments']]) {
+    for (const replacement of [[], [micRow(label, '', '')], [micRow(label, 3, 'invalid')], [micRow(label, 3, '0'), micRow(label, 3, '0')]]) {
+      const [result] = parseMicrologic(micro.flatMap(row => row[0] === label ? replacement : [row]))
+      assert.equal(result.metrics[key], null)
+      assert.equal(result.metrics.reportBalance, null)
+      assert.equal(result.metrics.washes, 121)
+      assert.equal(result.metrics[key === 'revenue' ? 'payments' : 'revenue'], key === 'revenue' ? 379042 : 379842)
+      assert.ok(result.financialWarnings.length)
+    }
+  }
+  const torn = micro.map(row => row[0] === 'CREDIT -AMEX' ? micRow(row[0], 1, 'invalid') : row)
+  const [result] = parseMicrologic(torn)
+  assert.equal(result.metrics.cards, null)
+  assert.equal(result.metrics.cash, null)
+  assert.equal(result.metrics.reportedCash, 3800)
+  assert.equal(result.metrics.payments, 379042)
+})
+
+test('incomplete operational subtotals and override detail cannot be validated as zeros', () => {
+  for (const [label, key] of [['UNLIMITED RECURRING Total', 'recharges'], ['WASH OVERRIDE Total', 'overrides'],
+    ['UNLIMITED REDEMPTION Total', 'redemptions']]) {
+    for (const replacement of [[], [micRow(label, 'invalid', '0')], [micRow(label, 0, '0'), micRow(label, 0, '0')]]) {
+      const [result] = parseMicrologic(micro.flatMap(row => row[0] === label ? replacement : [row]))
+      assert.equal(result.metrics[key], null)
+      assert.equal(result.metrics.washes, 121)
+      assert.equal(result.metrics.revenue, 379842)
+      assert.ok(result.warnings.length)
+    }
+  }
+  const [partialSales] = parseMicrologic(micro.filter(row => row[0] !== 'Best Wash'))
+  assert.equal(partialSales.metrics.overrides, null)
+  assert.equal(partialSales.metrics.washes, 121)
+})
+
+test('DRB unknown financial categories keep numeric estimates provisional and out of verified matches', () => {
+  const fixture = structuredClone(drb)
+  fixture[0].rows.push(drbRow('Unmapped revenue', 1, 17.99))
+  const [row] = parseDailyDrb(fixture)
+  assert.equal(row.metrics.revenue, 140300)
+  assert.equal(row.metrics.reportBalance, null)
+  assert.equal(row.signedAmounts['unmapped revenue'], 1799)
+  assert.ok(['revenue', 'payments', 'cash'].every(key => isProvisionalPosMetric(row, key)))
+  const reviewed = { ...row, location: { id: 'test' }, manager: { ...row.metrics, other: 0 } }
+  assert.equal(posManagerStatus(reviewed), 'unavailable')
+  assert.equal(summarizePosReview([reviewed]).cashMatched, 0)
+  assert.equal(row.metrics.washes, 62)
+})
+
+test('review groups location results by business date even when the same site appears twice', () => {
+  const location = { id: 'site-a' }
+  const rows = [{ location, businessDate: '2026-11-22' }, { location, businessDate: '2026-11-23' },
+    { location: { id: 'site-b' }, businessDate: '2026-11-23' }]
+  const groups = groupPosReviewByDate(rows)
+  assert.deepEqual(groups.map(([date, entries]) => [date, summarizePosReview(entries).mapped]),
+    [['2026-11-23', 2], ['2026-11-22', 1]])
+})
+
+test('Reports link requires active, nondeleted Admin while the route retains its guards', () => {
+  const reports = readFileSync(new URL('../src/pages/Reports.jsx', import.meta.url), 'utf8')
+  assert.match(reports, /\{profile\?\.role === 'admin' && profile\.is_active === true && !profile\.deleted_at && <Link to="\/daily-pos-import"/)
+  const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
+  assert.match(app, /path="\/daily-pos-import" element=\{<ProtectedRoute><ManagerRoute><DailyPosImport/)
 })

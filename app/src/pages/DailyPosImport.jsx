@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { comparePosMetric, comparisonLabels, matchPosLocations, parseDailyPosFile,
+import { comparePosMetric, comparisonLabels, groupPosReviewByDate, isProvisionalPosMetric, matchPosLocations, parseDailyPosFile,
   posComparisonValues, posManagerStatus, readPosComparisons, summarizePosReview } from '../utils/dailyPosImport'
 
 const card = 'rounded-xl border border-gray-200 bg-white p-4 dark:border-tm-dark-border dark:bg-tm-dark-surface'
@@ -47,6 +47,11 @@ function Comparison({ row }) {
   const { imported, saved } = posComparisonValues(row)
   const { washCount } = row
   return <>
+    {row.provisionalFinancial && <p className="my-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+      Provisional revenue and cash use recognized categories only. Unmapped financial categories must be reviewed before these totals can be reconciled.
+    </p>}
+    {row.system === 'DRB' && !row.provisionalFinancial && !row.financialWarnings?.length && row.metrics.reportBalance === 0 &&
+      <p className="my-2 text-sm font-medium">DRB revenue reconciled to a zero report balance and matching POS cash.</p>}
     {!saved && <p className="my-2 text-sm">{row.managerMissing
       ? 'No saved Budget Tracking entry for this site and business date.' : 'Budget Tracking comparison unavailable.'}</p>}
     {washCount && <details className="my-2 text-sm">
@@ -69,8 +74,9 @@ function Comparison({ row }) {
           {['POS', 'Budget Tracking', 'Difference', 'Status'].map(header => <th scope="col" key={header} className="px-2 text-right">{header}</th>)}
         </tr></thead>
         <tbody>{metrics.map(([key, label, type]) => {
-          const difference = imported[key] == null || saved?.[key] == null ? null : imported[key] - saved[key]
-          const comparison = saved && Object.hasOwn(saved, key) && key !== 'other'
+          const provisional = isProvisionalPosMetric(row, key)
+          const difference = provisional || imported[key] == null || saved?.[key] == null ? null : imported[key] - saved[key]
+          const comparison = !provisional && saved && Object.hasOwn(saved, key) && key !== 'other'
             ? comparePosMetric(key, imported[key], saved[key]) : null
           return <tr key={key} className="border-b border-gray-100 dark:border-tm-dark-border">
             <th scope="row" className="py-1.5 text-left font-medium">{label}</th>
@@ -79,7 +85,7 @@ function Comparison({ row }) {
             <td className={'px-2 text-right tabular-nums ' + (difference ? 'font-semibold text-amber-800 dark:text-amber-300' : '')}>
               {format(difference, type)}
             </td>
-            <td className="px-2 text-right">{comparisonLabels[comparison] || '—'}</td>
+            <td className="px-2 text-right">{provisional ? 'Provisional · unreconciled' : comparisonLabels[comparison] || '—'}</td>
           </tr>
         })}</tbody>
       </table>
@@ -147,7 +153,7 @@ function PosReview({ locations }) {
 
   const ready = compared.report === reports && compared.locations === locations
   const rows = ready ? compared.rows : []
-  const summary = summarizePosReview(rows)
+  const dates = groupPosReviewByDate(rows)
   return <div className="min-h-screen bg-tm-cream text-gray-900 dark:bg-tm-dark-bg dark:text-tm-dark-text">
     <NavBar />
     <main className="mx-auto max-w-screen-xl space-y-4 p-4 sm:p-6">
@@ -170,32 +176,39 @@ function PosReview({ locations }) {
       {!!errors.length && <ul role="alert" className={card + ' list-disc space-y-1 pl-8 text-sm'}>{errors.map(error => <li key={error}>{error}</li>)}</ul>}
       {reports.length > 0 && !ready && <p role="status">Loading Budget Tracking comparisons…</p>}
       {ready && compared.error && <p role="alert">{compared.error} POS figures are still available.</p>}
-      {ready && <section className={card} aria-labelledby="pos-network-summary">
-        <h2 id="pos-network-summary" className="font-brand text-lg font-bold">Network summary</h2>
-        <dl className="mt-2 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
-          {[
-            ['Mapped locations', summary.mapped], ['DRB zero balances', summary.drbZero],
-            ['Matched POS cash', summary.cashMatched], ['Exact manager matches', summary.exact],
-            ['Locations with rounding differences', summary.anyRounding], ['Substantive discrepancies or unresolved tiers', summary.substantive],
-            ['Missing manager entries', summary.missing], ['Unavailable comparisons', summary.unavailable],
-            ['Calculated POS wash counts', summary.calculated], ['Financial warnings', summary.financial],
-          ].map(([label, count]) => <div key={label}><dt>{label}</dt><dd className="text-xl font-bold tabular-nums">{count}</dd></div>)}
-        </dl>
-      </section>}
-      {rows.map((row, index) => <details key={row.system + row.sourceId + row.businessDate + index} className={card}>
-        <summary className="cursor-pointer">
-          <span className="font-brand font-semibold">{row.location?.name || row.sourceId}</span>
-          <span className="ml-2 text-sm">{row.system} · {row.businessDate}{' · ' + comparisonLabels[posManagerStatus(row)]}{row.washCount?.source === 'calculated' ? ' · Calculated washes' : ''}{row.financialWarnings?.length ? ' · Financial warning' : ''}</span>
-        </summary>
-        {!!row.warnings.length && <ul className="my-2 list-disc pl-5 text-sm text-amber-800 dark:text-amber-300">
-          {row.warnings.map((warning, i) => <li key={i}>{warning}</li>)}
-        </ul>}
-        {!!row.financialWarnings?.length && <div className="my-2 text-sm text-amber-800 dark:text-amber-300">
-          <p className="font-semibold">Financial reconciliation</p>
-          <ul className="list-disc pl-5">{row.financialWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
-        </div>}
-        {row.location && row.metrics && <Comparison row={row} />}
-      </details>)}
+      {dates.length > 1 && <p className="text-sm font-semibold">{dates.length} business dates in this review. Coverage and comparisons are counted separately for each date.</p>}
+      {dates.map(([date, dateRows]) => {
+        const summary = summarizePosReview(dateRows)
+        return <section key={date} className="space-y-3" aria-labelledby={'pos-date-' + date}>
+          <h2 id={'pos-date-' + date} className="font-brand text-lg font-bold">Business date {date}</h2>
+          <div className={card}>
+            <h3 className="font-brand font-semibold">Network summary for {date}</h3>
+            <dl className="mt-2 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
+              {[
+                ['Mapped locations', summary.mapped], ['DRB zero balances', summary.drbZero],
+                ['Matched POS cash', summary.cashMatched], ['Exact manager matches', summary.exact],
+                ['Locations with rounding differences', summary.anyRounding], ['Substantive discrepancies or unresolved tiers', summary.substantive],
+                ['Missing manager entries', summary.missing], ['Unavailable comparisons', summary.unavailable],
+                ['Calculated POS wash counts', summary.calculated], ['Financial warnings', summary.financial],
+              ].map(([label, count]) => <div key={label}><dt>{label}</dt><dd className="text-xl font-bold tabular-nums">{count}</dd></div>)}
+            </dl>
+          </div>
+          {dateRows.map((row, index) => <details key={row.system + row.sourceId + row.businessDate + index} className={card}>
+            <summary className="cursor-pointer">
+              <span className="font-brand font-semibold">{row.location?.name || row.sourceId}</span>
+              <span className="ml-2 text-sm">{row.system} · {row.businessDate}{' · ' + comparisonLabels[posManagerStatus(row)]}{row.washCount?.source === 'calculated' ? ' · Calculated washes' : ''}{row.financialWarnings?.length ? ' · Financial warning' : ''}</span>
+            </summary>
+            {!!row.warnings.length && <ul className="my-2 list-disc pl-5 text-sm text-amber-800 dark:text-amber-300">
+              {row.warnings.map((warning, i) => <li key={i}>{warning}</li>)}
+            </ul>}
+            {!!row.financialWarnings?.length && <div className="my-2 text-sm text-amber-800 dark:text-amber-300">
+              <p className="font-semibold">Financial reconciliation</p>
+              <ul className="list-disc pl-5">{row.financialWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+            </div>}
+            {row.location && row.metrics && <Comparison row={row} />}
+          </details>)}
+        </section>
+      })}
     </main>
   </div>
 }
