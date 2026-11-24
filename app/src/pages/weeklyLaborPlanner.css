@@ -1,5 +1,120 @@
+.labor-matrix-scroll {
+  overflow: auto;
+  max-height: 66vh;
+  isolation: isolate;
+}
+
+.labor-matrix {
+  width: 100%;
+  min-width: 72rem;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 0.8125rem;
+  text-align: left;
+}
+
+.labor-matrix th,
+.labor-matrix td {
+  border-right: 1px solid #cbd5e1;
+  border-bottom: 1px solid #cbd5e1;
+  padding: 0.4rem;
+  vertical-align: middle;
+}
+
+.labor-matrix th:first-child {
+  width: 11rem;
+}
+
+.labor-matrix small {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.labor-matrix-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #e2e8f0;
+}
+
+.labor-matrix-scroll tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  overflow-wrap: anywhere;
+  background: #f1f5f9;
+}
+
+.labor-matrix-scroll thead tr > :first-child {
+  z-index: 3;
+}
+
+.labor-matrix tfoot {
+  font-weight: 600;
+}
+
+.labor-cell-button {
+  display: block;
+  min-height: 2.75rem;
+  width: 100%;
+  border-radius: 0.25rem;
+  text-align: left;
+}
+
+.labor-cell-button:hover {
+  background: rgb(14 116 144 / 13%);
+}
+
+.labor-shift {
+  display: block;
+  margin: 0.125rem 0;
+  border-inline-start: 2px solid #0f766e;
+  border-radius: 0.25rem;
+  background: rgb(20 184 166 / 12%);
+  padding: 0.25rem;
+  white-space: nowrap;
+}
+
+.labor-shift-leader {
+  border-inline-start-color: #4f70a2;
+  background: rgb(96 165 250 / 15%);
+}
+
+.dark .labor-matrix-scroll th,
+.dark .labor-matrix-scroll td {
+  border-color: #475569;
+}
+
+.dark .labor-matrix-scroll thead th,
+.dark .labor-matrix-scroll tr > :first-child {
+  background: #1e293b;
+}
+
+.labor-editor {
+  width: min(30rem, calc(100% - 2rem));
+  max-height: 90dvh;
+  border-radius: 0.75rem;
+  color: #0f172a;
+  background: white;
+}
+
+.dark .labor-editor {
+  color: #f1f5f9;
+  background: #1e293b;
+}
+
+.labor-editor::backdrop {
+  background: rgb(15 23 42 / 65%);
+}
+
 .labor-print {
   display: none;
+}
+
+@page labor-weekly {
+  size: letter landscape;
+  margin: 0.35in;
 }
 
 @media print {
@@ -8,11 +123,13 @@
     color: black;
   }
 
-  body:has(.labor-print) .labor-no-print {
+  body:has(.labor-print) .labor-no-print,
+  #root:has(.labor-print) > :not(:has(.labor-print)) {
     display: none;
   }
 
   .labor-print {
+    page: labor-weekly;
     display: block;
     background: white;
     color: black;
@@ -20,21 +137,45 @@
   }
 
   .labor-print h1 {
-    font-size: 18pt;
+    font-size: 17pt;
     font-weight: bold;
   }
 
-  .labor-print table {
-    margin: 12pt 0;
+  .labor-print .labor-matrix {
+    min-width: 0;
+    margin: 10pt 0;
     border-collapse: collapse;
-    width: 100%;
+    font-size: 8pt;
   }
 
-  .labor-print th,
-  .labor-print td {
-    border-bottom: 1px solid #b0b0b0;
-    padding: 4pt;
-    text-align: left;
+  .labor-print .labor-matrix th:first-child {
+    width: 16%;
+    overflow-wrap: anywhere;
+  }
+
+  .labor-print .labor-matrix th,
+  .labor-print .labor-matrix td {
+    border: 1px solid #a8a8a8;
+    padding: 3pt;
+  }
+
+  .labor-print .labor-matrix small {
+    font-size: 7.5pt;
+  }
+
+  .labor-print .labor-shift {
+    border: 0;
+    background: transparent;
+    margin: 0;
+    padding: 0;
+  }
+
+  .labor-print .labor-matrix thead {
+    display: table-header-group;
+  }
+
+  .labor-print .labor-matrix tfoot {
+    display: table-row-group;
   }
 
   .labor-print tr {

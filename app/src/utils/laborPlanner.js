@@ -63,7 +63,7 @@ const validShift = s => Number.isInteger(s.start) && Number.isInteger(s.end) && 
 const inside = (time, start, end) => start != null && time >= start && time < end
 const adminAt = (shift, time) => shift.role === 'GM' && shift.day === 1 && inside(time, shift.adminStart, shift.adminStart + 210)
 const breakAt = (shift, time) => inside(time, shift.breakStart, shift.breakStart + breakLength(shift))
-const paid = s => validShift(s) ? s.end - s.start - (breakLength(s) === 30 ? 30 : 0) : 0
+export const shiftPaidMinutes = s => validShift(s) ? s.end - s.start - (breakLength(s) === 30 ? 30 : 0) : 0
 
 function windowFor(hours, day, settings) {
   const { open, close } = day === 0 ? hours.sun : hours.monSat
@@ -76,8 +76,8 @@ export function analyzePlan(shifts, inputs, roster) {
   const { hours, budget, traffic, settings } = inputs
   const warnings = new Set(), coverage = []
   const gm = shifts.filter(s => s.role === 'GM')
-  const gmMinutes = gm.reduce((sum, s) => sum + paid(s), 0)
-  const hourly = shifts.filter(s => s.role !== 'GM').reduce((sum, s) => sum + paid(s), 0)
+  const gmMinutes = gm.reduce((sum, s) => sum + shiftPaidMinutes(s), 0)
+  const hourly = shifts.filter(s => s.role !== 'GM').reduce((sum, s) => sum + shiftPaidMinutes(s), 0)
   const combined = gmMinutes + hourly
   if (budget.method === 'percentage' && budget.combined == null) warnings.add('Missing approved full-service hours cap.')
   if (budget.method === 'hours' && (budget.hourly == null || budget.combined == null)) warnings.add('Missing weekly labor targets.')
@@ -87,9 +87,10 @@ export function analyzePlan(shifts, inputs, roster) {
   if (gmDays.size !== 5 || ![1, 5, 6].every(day => gmDays.has(day)) || gmMinutes < 2700 || gmMinutes > 3000) {
     warnings.add('GM must work five days, including Monday, Friday and Saturday, and schedule 45–50 hours.')
   }
+  if (gmDays.has(0)) warnings.add('GM is scheduled Sunday as an exception to the default day off.')
   let leaderTargetMissed = false
   for (const role of leaders.slice(1)) {
-    const total = shifts.filter(s => s.role === role).reduce((sum, shift) => sum + paid(shift), 0)
+    const total = shifts.filter(s => s.role === role).reduce((sum, shift) => sum + shiftPaidMinutes(shift), 0)
     if (total < 1800) leaderTargetMissed = true
     if (total < 1800 || total > 2400) warnings.add(role + ' is outside the 30–40 paid-hour target.')
   }
@@ -100,6 +101,7 @@ export function analyzePlan(shifts, inputs, roster) {
     for (const [index, s] of dayShifts.entries()) {
       const label = days[day] + ' ' + s.role
       if (!validShift(s)) warnings.add(label + ': invalid shift times.')
+      else if (s.end - s.start < 240) warnings.add(label + ': shift is shorter than four hours.')
       if (s.role !== 'GM' && (s.breakStart == null || s.breakStart < s.start || s.breakStart + breakLength(s) > s.end)) warnings.add(label + ': break must fit inside the shift.')
       if (s.role === 'GM' && day === 1 && (s.adminStart == null || s.adminStart < s.start || s.adminStart + 210 > s.end)) warnings.add(label + ': reserve 3.5 hours of admin time inside the shift.')
       if (dayShifts.slice(index + 1).some(other => (s.role === other.role || (s.employeeId && s.employeeId === other.employeeId)) && s.start < other.end && other.start < s.end)) {
@@ -114,6 +116,9 @@ export function analyzePlan(shifts, inputs, roster) {
       const present = dayShifts.filter(s => validShift(s) && inside(time, s.start, s.end))
       const floor = present.filter(s => !adminAt(s, time) && !breakAt(s, time))
       const keys = new Set(floor.map(s => s.employeeId || s.role))
+      if (time < Math.max(prep, start - 30) && present.length > 1) {
+        warnings.add(days[day] + ': only one opening leader should be scheduled during early preparation.')
+      }
       const lead = floor.some(s => leaders.includes(s.role))
       if (time < start && keys.size && !lead) warnings.add(days[day] + ': opening preparation requires a leader.')
       const hour = Math.floor(time / 60) * 60
@@ -154,13 +159,32 @@ export function recommendPlan(inputs, rosterSize) {
   if (budget.combined == null || (budget.method === 'hours' && budget.hourly == null) || settings.middayStart >= settings.middayEnd) return []
   const windows = days.map((_, day) => windowFor(hours, day, settings))
   if (windows.some(window => !window)) return []
+  const dayTraffic = days.map((_, day) => Object.entries(traffic)
+    .filter(([key, sample]) => key.startsWith(day + ':') && enoughSamples(sample))
+    .reduce((total, [, sample]) => total + sample.average, 0))
+  const preferredDays = [5, 6, 1, 2, 3, 4, 0].sort((a, b) => dayTraffic[b] - dayTraffic[a]).slice(0, 2)
+  const daysOff = [4, 3, 2].sort((a, b) => dayTraffic[a] - dayTraffic[b])
+  let bestPlan
+  // Prefer taking the quietest optional day off. Try the other dates only
+  // when they could close a leadership gap in the resulting weekly plan.
+  for (const dayOff of daysOff) {
+    const options = [2, 3, 4].filter(day => day !== dayOff)
+    const plan = buildPlan(inputs, rosterSize, windows, preferredDays, options)
+    if (!bestPlan || plan.leadershipGaps < bestPlan.leadershipGaps ||
+        (plan.leadershipGaps === bestPlan.leadershipGaps && plan.coverageGaps < bestPlan.coverageGaps)) bestPlan = plan
+    if (plan.leadershipGaps === 0) break
+  }
+  return bestPlan.shifts
+}
+
+function buildPlan({ budget, traffic, settings }, rosterSize, windows, preferredDays, optionalDays) {
   const shifts = []
   const slots = windows.map(({ prep, start, end, finish }, day) =>
     Array.from({ length: finish - prep }, (_, index) => {
       const time = prep + index
       const required = time < start ? 1 : time < end && inside(time, settings.middayStart, settings.middayEnd) ? 3 : 2
       const sample = time >= start && time < end ? traffic[day + ':' + Math.floor(time / 60) * 60] : null
-      return { time, required, recommended: recommendedStaff(required, sample, settings), count: 0, lead: 0 }
+      return { time, required, recommended: recommendedStaff(required, sample, settings), count: 0, lead: 0, scheduled: 0 }
     }))
   let limit = Infinity
   let hourlyUsed = 0
@@ -179,40 +203,58 @@ export function recommendPlan(inputs, rosterSize) {
   }
   function applyCoverage(shift, direction) {
     for (const slot of slots[shift.day]) {
-      if (!inside(slot.time, shift.start, shift.end) || breakAt(shift, slot.time) || adminAt(shift, slot.time)) continue
+      if (!inside(slot.time, shift.start, shift.end)) continue
+      slot.scheduled += direction
+      if (breakAt(shift, slot.time) || adminAt(shift, slot.time)) continue
       slot.count += direction
       if (leaders.includes(shift.role)) slot.lead += direction
     }
   }
   function add(shift) {
     shifts.push(shift)
-    if (shift.role !== 'GM') hourlyUsed += paid(shift)
+    if (shift.role !== 'GM') hourlyUsed += shiftPaidMinutes(shift)
     applyCoverage(shift, 1)
   }
   const breakOptions = (role, start, end) => role === 'GM' ? [null]
     : Array.from({ length: 11 }, (_, i) => 60 + 30 * i).filter(offset => offset + breakLength({ role, start, end }) <= end - start).map(offset => start + offset)
 
   function best(role, choices, lengths, phase = 'mandatory', replacingPaid = 0) {
-    let winner = null, bestScore = -Infinity, bestPreference = -Infinity
+    let winner = null, bestScore = -Infinity, bestUtility = -Infinity, bestPreference = -Infinity
     for (const day of choices) {
       const { prep, finish } = windows[day]
       const gm = shifts.find(s => s.day === day && s.role === 'GM')
       for (const length of lengths) {
         if (finish - prep < length) continue
-        const starts = new Set([prep, finish - length])
+        const starts = new Set([prep, Math.max(prep, windows[day].start - 30), windows[day].start, finish - length])
         for (let start = prep; start + length <= finish; start += 30) starts.add(start)
         for (const start of starts) {
           const end = start + length
-          if (role !== 'GM' && hourlyUsed - replacingPaid + paid({ role, start, end }) > limit) continue
+          const open = windows[day].start, secondArrival = Math.max(prep, open - 30)
+          if (end > finish || (start < open && ![prep, secondArrival].includes(start))) continue
+          const early = start === prep && prep < open
+          if (early && (!leaders.includes(role) || slots[day].slice(0, Math.max(1, secondArrival - prep)).some(slot => slot.scheduled))) continue
+          if (start < open && !early && (!slots[day][0]?.scheduled ||
+            slots[day].slice(start - prep, open - prep).some(slot => slot.scheduled >= 2))) continue
+          if (role !== 'GM' && hourlyUsed - replacingPaid + shiftPaidMinutes({ role, start, end }) > limit) continue
+          const overlap = leaders.includes(role) ? slots[day].filter(slot => slot.lead >= 2 && inside(slot.time, start, end)).length : 0
           for (const breakStart of breakOptions(role, start, end)) {
             const adminStarts = role === 'GM' && day === 1 ? [start, Math.min(end - 210, start + 180), end - 210] : [null]
             for (const adminStart of adminStarts) {
               const candidate = { day, role, start, end, breakStart, adminStart, employeeId: '' }
               const opposite = role === 'AGM' && gm && ((start + end) / 2 < (prep + finish) / 2) !== ((gm.start + gm.end) / 2 < (prep + finish) / 2)
               const value = score(candidate, phase)
-              const preference = (opposite ? 1 : 0) - paid(candidate) / 1440
-              if (value > bestScore || (value === bestScore && preference > bestPreference)) {
-                winner = candidate; bestScore = value; bestPreference = preference
+                const preference = (opposite ? 1 : 0) + (leaders.includes(role) && preferredDays.includes(day) ? 2 : 0)
+                - overlap / 720 - (role === 'GM' ? 0 : Math.abs(length - 360) / 360)
+                + (start === secondArrival && secondArrival < open ? 0.1 : 0)
+              const utility = value > 0 && role !== 'GM'
+                ? value - Math.abs(length - 360) / 2 - (role.startsWith('CWA') ? shiftPaidMinutes(candidate) / 5 : 0)
+                : value
+              if (!winner || (value > 0 && bestScore <= 0) ||
+                  ((value > 0) === (bestScore > 0) && (utility > bestUtility || (utility === bestUtility && preference > bestPreference)))) {
+                winner = candidate
+                bestScore = value
+                bestUtility = utility
+                bestPreference = preference
               }
             }
           }
@@ -226,23 +268,22 @@ export function recommendPlan(inputs, rosterSize) {
     const { winner } = best('GM', [day], [540])
     if (winner) add(winner)
   }
-  const optionalDays = [0, 2, 3, 4]
   for (let count = 0; count < 2; count++) {
     const { winner } = best('GM', optionalDays, [540])
     if (winner) { add(winner); optionalDays.splice(optionalDays.indexOf(winner.day), 1) }
   }
-  limit = hourlyLimit(budget, shifts.reduce((sum, shift) => sum + paid(shift), 0))
+  limit = hourlyLimit(budget, shifts.reduce((sum, shift) => sum + shiftPaidMinutes(shift), 0))
   const hourlyLeaders = leaders.slice(1)
-  const roleMinutes = role => shifts.filter(s => s.role === role).reduce((sum, s) => sum + paid(s), 0)
+  const roleMinutes = role => shifts.filter(s => s.role === role).reduce((sum, s) => sum + shiftPaidMinutes(s), 0)
   const openDays = role => days.map((_, day) => day).filter(day => !shifts.some(s => s.day === day && s.role === role))
-  const leaderLengths = [390, 330, 270, 210, 150, 90]
+  const leaderLengths = [360, 390, 420, 450, 480, 330, 300, 270, 240]
   // Place leaders where they close mandatory gaps. A shorter shift can fit
   // where the preferred six paid hours would exceed the available budget.
   for (let round = 0; round < 7; round++) {
     for (const role of hourlyLeaders) {
       const total = roleMinutes(role)
       if (total >= 1800) continue
-      const { winner, bestScore } = best(role, openDays(role), leaderLengths)
+      const { winner, bestScore } = best(role, openDays(role), leaderLengths.filter(length => roleMinutes(role) + shiftPaidMinutes({ role, start: 0, end: length }) <= 2400))
       if (winner && bestScore > 0) add(winner)
     }
   }
@@ -263,14 +304,15 @@ export function recommendPlan(inputs, rosterSize) {
     for (const shift of shifts.filter(s => s.role !== 'GM')) {
       applyCoverage(shift, -1)
       const length = shift.end - shift.start
-      const { winner, bestScore } = best(shift.role, [shift.day], [length], 'mandatory', paid(shift))
+      const { winner, bestScore } = best(shift.role, [shift.day], [length], 'mandatory', shiftPaidMinutes(shift))
       // Require a coverage improvement even when the AGM preference breaks a tie.
-      if (winner && bestScore > 0 && score(winner) > score(shift)) Object.assign(shift, winner)
+      if (winner && bestScore > 0 && score(winner) > score(shift) &&
+          (shift.start !== windows[shift.day].prep || winner.start === shift.start)) Object.assign(shift, winner)
       applyCoverage(shift, 1)
     }
   }
   const positions = Array.from({ length: Math.max(0, rosterSize - leaders.length) }, (_, index) => 'CWA ' + (index + 1))
-  const cwaLengths = [120, 180, 240, 300, 360, 420, 480]
+  const cwaLengths = [360, 330, 300, 270, 240, 390, 420, 450, 480]
   function fillCwa(phase) {
     for (const role of positions) {
       for (;;) {
@@ -286,7 +328,7 @@ export function recommendPlan(inputs, rosterSize) {
     for (;;) {
       const leadMissing = slots.some(day => day.some(slot => !slot.lead))
       if (!leadMissing) break
-      const lengths = leaderLengths.filter(length => roleMinutes(role) + paid({ role, start: 0, end: length }) <= 2400)
+      const lengths = leaderLengths.filter(length => roleMinutes(role) + shiftPaidMinutes({ role, start: 0, end: length }) <= 2400)
       const { winner, bestScore } = best(role, openDays(role), lengths, 'leadership')
       if (!winner || bestScore <= 0) break
       add(winner)
@@ -298,12 +340,24 @@ export function recommendPlan(inputs, rosterSize) {
     // targets before recommending traffic-only shifts.
     for (const role of hourlyLeaders) {
       while (roleMinutes(role) < 1800) {
-        const { winner } = best(role, openDays(role), leaderLengths)
+        const { winner } = best(role, openDays(role), leaderLengths.filter(length => roleMinutes(role) + shiftPaidMinutes({ role, start: 0, end: length }) <= 2400))
         if (!winner) break
         add(winner)
       }
     }
+    for (const role of hourlyLeaders) {
+      const lengths = leaderLengths.filter(length => roleMinutes(role) + shiftPaidMinutes({ role, start: 0, end: length }) <= 2400)
+      for (const day of preferredDays.filter(day => openDays(role).includes(day))) {
+        const { winner } = best(role, [day], lengths, 'traffic')
+        if (winner) add(winner)
+      }
+    }
     fillCwa('traffic')
   }
-  return shifts.sort((a, b) => a.day - b.day || a.start - b.start || a.role.localeCompare(b.role))
+  const allSlots = slots.flat()
+  return {
+    shifts: shifts.sort((a, b) => a.day - b.day || a.start - b.start || a.role.localeCompare(b.role)),
+    leadershipGaps: allSlots.filter(slot => !slot.lead).length,
+    coverageGaps: allSlots.filter(slot => slot.count < slot.required).length,
+  }
 }

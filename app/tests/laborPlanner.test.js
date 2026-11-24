@@ -77,7 +77,7 @@ test('Manager View allows loading only, not draft saves or cap approval', async 
 
 test('fills traffic-driven peak coverage only after mandatory coverage fits', () => {
   const winter = { ...inputs, hours: getEffectiveSchedule({ active: 'winter' }),
-    traffic: { '2:720': { average: 100, samples: 4 } } }
+    budget: { method: 'hours', hourly: 250, combined: 295 }, traffic: { '2:720': { average: 100, samples: 4 } } }
   const generated = analyzePlan(recommendPlan(winter, 12), winter, [])
   assert.ok(generated.coverage.every(row => !row.gap))
   const peak = generated.coverage.find(row => row.day === 2 && row.hour === 720)
@@ -86,7 +86,7 @@ test('fills traffic-driven peak coverage only after mandatory coverage fits', ()
   const result = analyzePlan(recommendPlan(constrained, 12), constrained, [])
   assert.ok(result.coverage.some(row => row.gap))
   assert.ok(result.hourly <= 95 * 60)
-  const withoutPeaks = recommendPlan({ ...constrained, traffic: {} }, 12)
+  const withoutPeaks = recommendPlan({ ...constrained, settings: { ...constrained.settings, peak: 1000 } }, 12)
   assert.deepEqual(recommendPlan(constrained, 12), withoutPeaks)
   const monday = recommendPlan(winter, 12).find(s => s.role === 'GM' && s.day === 1)
   const mondayBreaks = generated.coverage.filter(row => row.day === 1 &&
@@ -141,4 +141,46 @@ test('configurable traffic thresholds scale above four and distinguish zero, spa
   const { peakStep, ...legacy } = configured.settings
   const saved = analyzePlan([], { ...configured, settings: legacy }, [])
   assert.equal(saved.coverage.find(row => row.day === 1 && row.hour === 660).recommended, 4)
+})
+
+test('generated shifts are at least four hours and prefer six where coverage permits', () => {
+  const winter = { ...inputs, hours: getEffectiveSchedule({ active: 'winter' }),
+    budget: { method: 'hours', hourly: 250, combined: 295 } }
+  const shifts = recommendPlan(winter, 12)
+  assert.ok(shifts.length > 0)
+  assert.ok(shifts.every(s => s.end - s.start >= 240))
+  const hourly = shifts.filter(s => s.role !== 'GM')
+  assert.ok(hourly.some(s => s.end - s.start === 360))
+  assert.ok(hourly.some(s => s.end - s.start > 360))
+  assert.ok(analyzePlan([shift({ end: 600 })], winter, []).warnings.some(w => /shorter than four hours/.test(w)))
+})
+
+test('winter and standard opening have one leader, then a second employee at an allowed offset', () => {
+  for (const active of ['winter', 'standard']) {
+    const scenario = { ...inputs, hours: getEffectiveSchedule({ active }), budget: { method: 'hours', hourly: 250, combined: 295 } }
+    const plan = recommendPlan(scenario, 12)
+    for (let day = 0; day < 7; day++) {
+      const open = day === 0 || active === 'winter' ? 480 : 420
+      const first = plan.filter(s => s.day === day).sort((a, b) => a.start - b.start)
+      assert.equal(first[0].start, open - 60)
+      assert.ok(['GM', 'AGM', 'TL 1', 'TL 2'].includes(first[0].role))
+      assert.ok([open - 30, open].includes(first[1].start))
+    }
+    assert.ok(!plan.some(s => s.role === 'GM' && s.day === 0))
+    assert.ok(analyzePlan([shift({ role: 'GM', day: 0 })], scenario, []).warnings.some(w => /exception to the default day off/.test(w)))
+  }
+})
+
+test('observed busy days get distributed leadership and the GM works busy optional days', () => {
+  const scenario = { ...inputs, hours: getEffectiveSchedule({ active: 'winter' }),
+    budget: { method: 'hours', hourly: 250, combined: 295 },
+    traffic: { '2:720': { average: 100, samples: 4 }, '5:720': { average: 90, samples: 4 } } }
+  const plan = recommendPlan(scenario, 12)
+  assert.ok(plan.some(s => s.day === 2 && s.role === 'GM'))
+  for (const day of [2, 5]) {
+    const onDuty = plan.filter(s => s.day === day && ['GM', 'AGM', 'TL 1', 'TL 2'].includes(s.role))
+    assert.ok(new Set(onDuty.map(s => s.role)).size >= 3)
+    assert.ok(new Set(onDuty.map(s => s.start)).size >= 2)
+  }
+  assert.ok(analyzePlan(plan, scenario, []).coverage.every(row => !row.gap))
 })
