@@ -1,7 +1,7 @@
 // Values-only DRB XLSX reader, reused from the local import prototype.
 const fail = message => { throw new Error(message) }
 const text = value => String(value ?? '').trim()
-export async function readDrbWorkbook(buffer) {
+export async function readWorkbookSheets(buffer, singleSheet = false) {
   if (buffer.byteLength > 10_000_000) fail('Choose a workbook up to 10 MB.')
   // Read the original XML: census exports use namespace prefixes and omit
   // cell references, which ExcelJS does not support. Preserve exact ID strings.
@@ -33,47 +33,54 @@ export async function readDrbWorkbook(buffer) {
   const find = (node, name) => node.children.flatMap(c => [...(c.name === name ? [c] : []), ...find(c, name)])
   const content = node => (node.text || '') + node.children.map(content).join('')
   const workbook = await read('xl/workbook.xml'), sheets = find(workbook, 'sheet')
-  if (sheets.length !== 1) fail('Expected a single Export worksheet.')
+  if (singleSheet && sheets.length !== 1) fail('Expected a single Export worksheet.')
+  if (!sheets.length || sheets.length > 5) fail('Unsupported worksheet count.')
   const relations = find(await read('xl/_rels/workbook.xml.rels'), 'Relationship')
-  const relation = relations.find(r => r.attrs.Id === sheets[0].attrs.relationshipId)
-  if (!relation || relation.attrs.TargetMode === 'External' || /\.\.|\\|:/.test(relation.attrs.Target)) fail('Invalid worksheet relationship.')
-  const target = relation.attrs.Target.startsWith('/') ? relation.attrs.Target.slice(1) : 'xl/' + relation.attrs.Target
   const strings = zip.file('xl/sharedStrings.xml') ? find(await read('xl/sharedStrings.xml'), 'si').map(content) : []
-  const tree = await read(target), matrix = [], numericCells = []
-  for (const row of find(tree, 'row')) {
-    const rowIndex = row.attrs.r ? Number(row.attrs.r) - 1 : matrix.length
-    if (!Number.isSafeInteger(rowIndex) || rowIndex < 0 || rowIndex > 20000 || matrix[rowIndex]) fail('Invalid, duplicate or oversized Excel row.')
-    while (matrix.length < rowIndex) matrix.push([])
-    const values = [], numeric = new Set()
-    for (const cell of row.children.filter(c => c.name === 'c')) {
-      let col = values.length
-      if (cell.attrs.r) {
-        const ref = cell.attrs.r.match(/^([A-Z]+)(\d+)$/)
-        if (!ref || Number(ref[2]) !== rowIndex + 1) fail('Invalid cell reference.')
-        col = [...ref[1]].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1
-      }
-      if (col > 49 || col < 0 || Object.hasOwn(values, col)) fail('Duplicate or oversized Excel column.')
-      if (find(cell, 'f').length || cell.attrs.t === 'e') fail('Import an export containing values, not formulas or errors.')
-      const raw = cell.children.find(c => c.name === 'v')?.text || ''
-      if (cell.attrs.t === 's') {
-        if (!/^\d+$/.test(raw) || strings[Number(raw)] == null) fail('Invalid shared string.')
-        values[col] = strings[Number(raw)]
-      } else if (cell.attrs.t === 'inlineStr') values[col] = find(cell, 't').map(content).join('')
-      else if (!cell.attrs.t || cell.attrs.t === 'n') { values[col] = raw; numeric.add(col) }
-      else if (cell.attrs.t === 'str' || cell.attrs.t === 'd') values[col] = raw
-      else fail('Unsupported spreadsheet cell type.')
-    }
-    matrix[rowIndex] = values; numericCells[rowIndex] = numeric
-  }
-  if (!matrix.length) fail('Empty workbook.')
-  const dateColumn = matrix[0].findIndex(v => text(v) === 'LOGDATE')
   const date1904 = find(workbook, 'workbookPr').some(n => ['1', 'true'].includes(n.attrs.date1904))
-  if (dateColumn >= 0) for (let row = 1; row < matrix.length; row++) {
-    const value = matrix[row][dateColumn]
-    if (value && numericCells[row]?.has(dateColumn)) {
-      if (!/^\d+$/.test(value) || Number(value) > 100000) fail('Invalid Excel sale date.')
-      matrix[row][dateColumn] = new Date(Date.UTC(date1904 ? 1904 : 1899, date1904 ? 0 : 11, date1904 ? 1 : 30) + Number(value) * 86400000).toISOString().slice(0, 10)
+  return Promise.all(sheets.map(async sheet => {
+    const relation = relations.find(r => r.attrs.Id === sheet.attrs.relationshipId)
+    if (!relation || relation.attrs.TargetMode === 'External' || /\.\.|\\|:/.test(relation.attrs.Target)) fail('Invalid worksheet relationship.')
+    const target = relation.attrs.Target.startsWith('/') ? relation.attrs.Target.slice(1) : 'xl/' + relation.attrs.Target
+    const tree = await read(target), matrix = [], numericCells = []
+    for (const row of find(tree, 'row')) {
+      const rowIndex = row.attrs.r ? Number(row.attrs.r) - 1 : matrix.length
+      if (!Number.isSafeInteger(rowIndex) || rowIndex < 0 || rowIndex > 20000 || matrix[rowIndex]) fail('Invalid, duplicate or oversized Excel row.')
+      while (matrix.length < rowIndex) matrix.push([])
+      const values = [], numeric = new Set()
+      for (const cell of row.children.filter(c => c.name === 'c')) {
+        let col = values.length
+        if (cell.attrs.r) {
+          const ref = cell.attrs.r.match(/^([A-Z]+)(\d+)$/)
+          if (!ref || Number(ref[2]) !== rowIndex + 1) fail('Invalid cell reference.')
+          col = [...ref[1]].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1
+        }
+        if (col > 49 || col < 0 || Object.hasOwn(values, col)) fail('Duplicate or oversized Excel column.')
+        if (find(cell, 'f').length || cell.attrs.t === 'e') fail('Import an export containing values, not formulas or errors.')
+        const raw = cell.children.find(c => c.name === 'v')?.text || ''
+        if (cell.attrs.t === 's') {
+          if (!/^\d+$/.test(raw) || strings[Number(raw)] == null) fail('Invalid shared string.')
+          values[col] = strings[Number(raw)]
+        } else if (cell.attrs.t === 'inlineStr') values[col] = find(cell, 't').map(content).join('')
+        else if (!cell.attrs.t || cell.attrs.t === 'n') { values[col] = raw; numeric.add(col) }
+        else if (cell.attrs.t === 'str' || cell.attrs.t === 'd') values[col] = raw
+        else fail('Unsupported spreadsheet cell type.')
+      }
+      matrix[rowIndex] = values; numericCells[rowIndex] = numeric
     }
-  }
-  return matrix
+    if (!matrix.length) fail('Empty workbook.')
+    const dateColumn = matrix[0].findIndex(v => text(v) === 'LOGDATE')
+    if (dateColumn >= 0) for (let row = 1; row < matrix.length; row++) {
+      const value = matrix[row][dateColumn]
+      if (value && numericCells[row]?.has(dateColumn)) {
+        if (!/^\d+$/.test(value) || Number(value) > 100000) fail('Invalid Excel sale date.')
+        matrix[row][dateColumn] = new Date(Date.UTC(date1904 ? 1904 : 1899, date1904 ? 0 : 11, date1904 ? 1 : 30) + Number(value) * 86400000).toISOString().slice(0, 10)
+      }
+    }
+    return { name: sheet.attrs.name, rows: matrix }
+  }))
+}
+
+export async function readDrbWorkbook(buffer) {
+  return (await readWorkbookSheets(buffer, true))[0].rows
 }
