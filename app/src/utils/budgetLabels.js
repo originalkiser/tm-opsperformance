@@ -157,7 +157,7 @@ export function budgetFieldWording(field, labels = {}) {
   return labels[item.id] || { label: item.label, helper: item.helper }
 }
 export function budgetDisplayFields(fields, labels) {
-  return fields.map(field => { const wording = budgetFieldWording(field.key, labels); return { ...field, label: wording.label, hint: wording.helper } })
+  return fields.map(field => { const wording = budgetFieldWording(field.key, labels); return { ...field, label: wording.label, hint: [field.guidance, wording.helper].filter(Boolean).join(' ') } })
 }
 export function parseBudgetLabels(items) {
   // The older RPC returns only the entry catalog until the seed migration is applied.

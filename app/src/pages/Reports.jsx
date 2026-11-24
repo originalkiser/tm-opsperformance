@@ -396,6 +396,7 @@ export default function Reports() {
                 )}
               </button>
             ))}
+            {profile?.role === 'admin' && profile.is_active === true && !profile.deleted_at && <Link to="/daily-pos-import" title="Daily POS Import" className="tm-reports-nav-item flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-tm-blue hover:bg-gray-50 dark:text-tm-teal dark:hover:bg-tm-dark-card">Daily POS Import</Link>}
             <Link to="/sales-reconciliation" className="tm-reports-nav-item flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-tm-blue hover:bg-gray-50 dark:text-tm-teal dark:hover:bg-tm-dark-card">DRB Sales Reconciliation</Link>
             <Link to="/checklist-compliance" title="Checklist Compliance" className="tm-reports-nav-item flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-tm-blue hover:bg-gray-50 dark:text-tm-teal dark:hover:bg-tm-dark-card">
               <span aria-hidden="true">✓</span>{sidebarOpen && <span className="text-xs">Checklist Compliance</span>}

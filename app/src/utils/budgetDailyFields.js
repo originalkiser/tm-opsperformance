@@ -37,7 +37,9 @@ export function budgetCountFields(fields, location) {
   return fields.flatMap(field => field.key.endsWith('_redemptions')
     ? [field, { key: field.key.replace('_redemptions', '_wash_overrides'),
       label: field.key.startsWith('yesterday_') ? 'Yesterday Wash Overrides' : 'MTD Wash Overrides',
-      hint: 'Blank counts as zero', optional: true }]
+      hint: 'Blank counts as zero',
+      guidance: 'Count Basic, Good, Better and Best Rewash under Wash Override, plus zBest Wash under Wash Sales.',
+      optional: true }]
     : [field])
 }
 
