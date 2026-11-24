@@ -1,3 +1,4 @@
+import LaborScheduleMatrix, { LaborShiftEditor } from '../components/LaborScheduleMatrix'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import NavBar from '../components/NavBar'
@@ -6,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { laborBudget } from '../utils/laborBudget'
 import { DEFAULT_TIMEZONE, getEffectiveSchedule } from '../utils/operatingHours'
 import {
-  addDays, analyzePlan, breakLength, clock, days, defaults, leaders, minutes,
+  addDays, analyzePlan, clock, days, defaults, leaders, minutes,
   recommendPlan, siteToday, summarizeTraffic, sunday,
 } from '../utils/laborPlanner'
 import './weeklyLaborPlanner.css'
@@ -15,7 +16,6 @@ const control = 'rounded-md border border-gray-300 bg-white px-2 py-2 text-sm da
 const button = control + ' font-semibold hover:border-tm-teal disabled:opacity-50'
 const panel = 'rounded-xl border border-gray-200 bg-white p-4 dark:border-tm-dark-border dark:bg-tm-dark-surface'
 const hoursText = value => (value / 60).toFixed(2) + ' h'
-const person = (shift, roster) => roster.find(e => e.id === shift.employeeId)?.name || 'Unassigned'
 const elapsed = (used, target) => target == null ? 'No hours target' : target + ' h target · ' + (used / 60 - target).toFixed(2) + ' h variance'
 const payload = (id, week) => ({ p_location: id, p_week: week })
 
@@ -122,6 +122,7 @@ function PlannerWeek({ location, week, preview, admin, dirty, pending }) {
   const [busy, setBusy] = useState(false)
   const [cap, setCap] = useState('')
   const [coverageDay, setCoverageDay] = useState(0)
+  const [editor, setEditor] = useState(null)
   const [loadVersion, setLoadVersion] = useState(0)
   useEffect(() => {
     let mounted = true
@@ -161,7 +162,6 @@ function PlannerWeek({ location, week, preview, admin, dirty, pending }) {
   const canGenerate = budget.combined != null && (budget.method === 'percentage' || budget.hourly != null)
   const cwaCount = Math.max(1, source.roster.length - leaders.length)
   const roles = [...new Set([...leaders, ...Array.from({ length: cwaCount }, (_, i) => 'CWA ' + (i + 1)), ...shifts.map(s => s.role)])]
-  const changeShift = (index, patch) => edit(previous => ({ ...previous, shifts: previous.shifts.map((s, i) => i === index ? { ...s, ...patch } : s) }))
   const changeSetting = (key, value) => edit(previous => ({ ...previous, inputs: { ...previous.inputs, settings: { ...previous.inputs.settings, [key]: value } } }))
   const save = () => perform(async () => {
     const saved = await read(supabase.rpc('save_weekly_labor_plan', { ...payload(location.id, week), p_revision: revision, p_plan: plan }))
@@ -204,17 +204,6 @@ function PlannerWeek({ location, week, preview, admin, dirty, pending }) {
           </label>
           <button className={button} disabled={busy}>Approve cap</button>
         </form>}
-        <fieldset className="flex flex-wrap gap-3" disabled={preview || busy}>
-          <legend className="mb-2 font-semibold">Staffing settings</legend>
-          <label className="grid gap-1 text-sm">Opening prep (minutes)<input type="number" min="0" max="120" className={control} value={settings.prep} onChange={e => changeSetting('prep', Math.max(0, Math.min(120, Number(e.target.value))))} /></label>
-          <label className="grid gap-1 text-sm">Midday starts<input type="time" className={control} value={clock(settings.middayStart)} onChange={e => { if (e.target.value) changeSetting('middayStart', minutes(e.target.value)) }} /></label>
-          <label className="grid gap-1 text-sm">Midday ends<input type="time" className={control} value={clock(settings.middayEnd)} onChange={e => { if (e.target.value) changeSetting('middayEnd', minutes(e.target.value)) }} /></label>
-          <label className="grid gap-1 text-sm">Washes/hour for four staff<input type="number" min="1" max="1000" className={control} value={settings.peak} onChange={e => changeSetting('peak', Math.max(1, Math.min(1000, Number(e.target.value))))} /></label>
-          <label className="grid gap-1 text-sm">Additional washes/hour per extra employee
-            <input type="number" min="1" max="1000" step="1" className={control} value={settings.peakStep ?? ''}
-              placeholder="Four-person rule" onChange={e => changeSetting('peakStep', e.target.value === '' ? null : Math.max(1, Math.min(1000, Math.trunc(Number(e.target.value)))))} />
-          </label>
-        </fieldset>
         <div className="flex flex-wrap gap-2">
           {!preview && <>
             <button className={button} disabled={busy || !canGenerate || settings.middayStart >= settings.middayEnd} onClick={() => {
@@ -232,36 +221,30 @@ function PlannerWeek({ location, week, preview, admin, dirty, pending }) {
         {error && <p role="alert" className="text-red-700 dark:text-red-300">{error}</p>}
         {message && <p role="status">{message}</p>}
       </section>
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        {days.map((day, dayIndex) => <section key={day} className={panel + ' space-y-3'}>
-          <h2 className="font-brand font-bold">{day} · {addDays(week, dayIndex)}</h2>
-          {shifts.map((shift, index) => shift.day === dayIndex && <fieldset key={index} disabled={preview || busy} className="grid grid-cols-2 gap-2 rounded-lg border border-gray-200 p-2 dark:border-tm-dark-border">
-            <legend className="px-1 text-sm font-semibold">{shift.role}</legend>
-            <label className="col-span-2 grid gap-1 text-sm">Position
-              <select className={control} value={shift.role} onChange={e => changeShift(index, { role: e.target.value })}>
-                {roles.map(role => <option key={role}>{role}</option>)}
-              </select>
-            </label>
-            <label className="col-span-2 grid min-w-0 gap-1 text-sm">Employee
-              <select className={control} value={shift.employeeId} onChange={e => changeShift(index, { employeeId: e.target.value })}>
-                <option value="">Unassigned</option>
-                {shift.employeeId && !source.roster.some(e => e.id === shift.employeeId) && <option value={shift.employeeId}>Inactive or unavailable</option>}
-                {source.roster.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-            </label>
-            {['start', 'end', ...(shift.role === 'GM' ? (dayIndex === 1 ? ['adminStart'] : []) : ['breakStart'])].map(key =>
-              <label key={key} className="grid min-w-0 gap-1 text-sm">{key === 'adminStart' ? 'Admin starts' : key === 'breakStart' ? 'Break starts' : key === 'start' ? 'Start' : 'End'}
-                <input type="time" className={control + ' min-w-0'} value={key === 'end' && shift.end === 1440 ? '00:00' : clock(shift[key])}
-                  onChange={e => changeShift(index, { [key]: key === 'end' && e.target.value === '00:00' ? 1440 : minutes(e.target.value) })} />
-              </label>)}
-            {shift.role !== 'GM' && <p className="self-center text-xs">{breakLength(shift)} min {breakLength(shift) === 30 ? 'unpaid' : 'paid'}</p>}
-            {!preview && <button className={button + ' col-span-2'} onClick={() => edit(previous => ({ ...previous, shifts: previous.shifts.filter((_, i) => i !== index) }))}>Remove shift</button>}
-          </fieldset>)}
-          {!preview && <button className={button} disabled={busy} onClick={() => edit(previous => ({
-            ...previous, shifts: [...previous.shifts, { day: dayIndex, role: 'CWA 1', employeeId: '', start: 480, end: 840, breakStart: 720, adminStart: null }],
-          }))}>Add shift</button>}
-        </section>)}
-      </div>
+      <section className={panel + ' min-w-0 space-y-3'}>
+        <h2 className="font-brand text-lg font-bold">Weekly schedule</h2>
+        <LaborScheduleMatrix shifts={shifts} roster={source.roster} roles={roles} week={week}
+          combined={analysis.combined} disabled={preview || busy}
+          onEdit={(row, day, entries) => setEditor({ row, day, entries })} />
+      </section>
+      {editor && <LaborShiftEditor {...editor} roster={source.roster} roles={roles} control={control} button={button}
+        onClose={() => setEditor(null)} onApply={replacement => {
+          const indexes = new Set(editor.entries.map(entry => entry.index))
+          edit(previous => ({ ...previous, shifts: [...previous.shifts.filter((_, index) => !indexes.has(index)), ...replacement] }))
+        }} />}
+      <details className={panel}>
+        <summary className="cursor-pointer font-semibold">Staffing settings</summary>
+        <fieldset className="mt-3 flex flex-wrap gap-3" disabled={preview || busy}>
+          <label className="grid gap-1 text-sm">Opening prep (minutes)<input type="number" min="0" max="120" className={control} value={settings.prep} onChange={e => changeSetting('prep', Math.max(0, Math.min(120, Number(e.target.value))))} /></label>
+          <label className="grid gap-1 text-sm">Midday starts<input type="time" className={control} value={clock(settings.middayStart)} onChange={e => { if (e.target.value) changeSetting('middayStart', minutes(e.target.value)) }} /></label>
+          <label className="grid gap-1 text-sm">Midday ends<input type="time" className={control} value={clock(settings.middayEnd)} onChange={e => { if (e.target.value) changeSetting('middayEnd', minutes(e.target.value)) }} /></label>
+          <label className="grid gap-1 text-sm">Washes/hour for four staff<input type="number" min="1" max="1000" className={control} value={settings.peak} onChange={e => changeSetting('peak', Math.max(1, Math.min(1000, Number(e.target.value))))} /></label>
+          <label className="grid gap-1 text-sm">Additional washes/hour per extra employee
+            <input type="number" min="1" max="1000" step="1" className={control} value={settings.peakStep ?? ''}
+              placeholder="Four-person rule" onChange={e => changeSetting('peakStep', e.target.value === '' ? null : Math.max(1, Math.min(1000, Math.trunc(Number(e.target.value)))))} />
+          </label>
+        </fieldset>
+      </details>
       <section className={panel + ' space-y-3'}>
         <h2 className="font-brand text-lg font-bold">Coverage and traffic</h2>
         <label className="flex flex-wrap items-center gap-2 text-sm">Day
@@ -281,16 +264,7 @@ function PlannerWeek({ location, week, preview, admin, dirty, pending }) {
       <h1>{location.name} · Weekly employee schedule</h1>
       <p>Draft · {week} through {addDays(week, 6)} · {inputs.timezone}</p>
       <p>GM {hoursText(analysis.gmMinutes)} · Hourly {hoursText(analysis.hourly)} · Combined {hoursText(analysis.combined)}</p>
-      <table>
-        <thead><tr>{['Day', 'Position', 'Employee', 'Shift', 'Break / admin'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
-        <tbody>{days.flatMap((day, index) => {
-          const rows = shifts.filter(s => s.day === index).sort((a, b) => a.start - b.start)
-          return rows.length ? rows.map((s, i) => <tr key={index + ':' + i}>
-            <th scope="row">{day}</th><td>{s.role}</td><td>{person(s, source.roster)}</td><td>{clock(s.start)}–{clock(s.end)}</td>
-            <td>{s.role === 'GM' ? (s.day === 1 && s.adminStart != null ? clock(s.adminStart) + ' · 3.5 h admin' : '—') : s.breakStart == null ? '—' : clock(s.breakStart) + ' · ' + breakLength(s) + ' min ' + (breakLength(s) === 30 ? 'unpaid' : 'paid')}</td>
-          </tr>) : <tr key={day}><th scope="row">{day}</th><td colSpan="4">No shifts</td></tr>
-        })}</tbody>
-      </table>
+      <LaborScheduleMatrix print shifts={shifts} roster={source.roster} week={week} combined={analysis.combined} />
       <Warnings analysis={analysis} middayValid={settings.middayStart < settings.middayEnd} />
     </section>
   </>
