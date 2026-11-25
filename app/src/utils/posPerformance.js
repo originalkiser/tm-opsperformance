@@ -45,22 +45,37 @@ export async function readPosTargets(client, locations, start, end) {
 const revenueMetrics = new Set(['total', 'retail', 'member'])
 const totals = ['total', 'member', 'retail', 'washes', 'opportunities', 'redemptions', 'memberships']
 const available = value => Number.isSafeInteger(value)
-const field = (record, key) => record.financial_status === 'provisional' && revenueMetrics.has(key)
+const supportedRevenue = record => record.document.quality
+  ? record.document.quality.revenueStatus === 'supported' : record.financial_status !== 'provisional'
+const field = (record, key) => !supportedRevenue(record) && revenueMetrics.has(key)
   ? null : record.document.metrics[key]
-const hasFinancialWarning = record => record.financial_status !== 'reconciled'
+const tenderStatus = record => record.document.quality?.tenderStatus ?? record.financial_status
+const hasFinancialWarning = record => tenderStatus(record) !== 'reconciled'
 
 function aggregate(records, expected, targets, targetComplete) {
-  const values = {}
+  const values = {}, coverage = {}
   for (const key of totals) {
     const amounts = records.map(row => field(row, key)).filter(available)
     values[key] = amounts.length ? amounts.reduce((a, b) => a + b, 0) : null
     values[key + 'Partial'] = amounts.length !== expected
+    coverage[key] = { usable: amounts.length, expected }
   }
-  const weighted = (numerator, denominator, unresolved) => {
-    if (!expected || records.length !== expected || records.some(row => !available(field(row,numerator)) ||
-      !available(field(row,denominator)) || unresolved && field(row,unresolved) !== 0)) return null
-    const denom = records.reduce((sum,row) => sum + field(row,denominator),0)
-    return denom > 0 ? records.reduce((sum,row) => sum + field(row,numerator),0) / denom : null
+  const weighted = (key, numerator, denominator, unresolved, nonTier) => {
+    const inputs = records.map(record => {
+      const n = field(record, numerator)
+      const raw = field(record, denominator)
+      const excluded = record.document.quality && nonTier ? record.document.quality[nonTier] : 0
+      const d = available(raw) && available(excluded) && raw >= excluded ? raw - excluded : null
+      return { n, d, usable: available(n) && available(d) && (d > 0 || n === 0) && (!unresolved || field(record, unresolved) === 0) }
+    })
+    const matched = inputs.filter(input => input.usable)
+    const denom = matched.reduce((sum, input) => sum + input.d, 0)
+    const knownDenoms = inputs.filter(input => available(input.d))
+    coverage[key] = { usable: matched.length, expected, denominator: denom,
+      knownDenominator: knownDenoms.reduce((sum, input) => sum + input.d, 0),
+      knownDenominatorDays: knownDenoms.length }
+    values[key + 'Partial'] = matched.length !== expected
+    return denom > 0 ? matched.reduce((sum, input) => sum + input.n, 0) / denom : null
   }
   // Scale the exact target strings together before adding. Convert once for display and ratios.
   const scale = Math.max(0, ...targets.map(target => target.split('.')[1]?.length || 0))
@@ -69,14 +84,18 @@ function aggregate(records, expected, targets, targetComplete) {
     return sum + BigInt(whole + fraction.padEnd(scale,'0'))
   }, 0n)
   const target = targets.length ? Number(units) / 10 ** scale : null
-  const targetVerified = targetComplete && !values.totalPartial && !records.some(hasFinancialWarning)
-  return { ...values, target, targetPartial: !targetComplete,
+  const targetVerified = targetComplete && !values.totalPartial
+  const retailMix = weighted('retailMix','premiumRetail','eligibleRetail')
+  const redeemMix = weighted('redeemMix','premiumRedeemed','redemptions','unclassifiedRedeemed','nonTierRedeemed')
+  const soldMix = weighted('soldMix','premiumSold','memberships','unclassifiedSold','nonTierSold')
+  const conversion = weighted('conversion','memberships','opportunities')
+  return { ...values, coverage, target, targetPartial: !targetComplete,
     comparison: target != null && target > 0 && targetVerified ? (values.total / 100 - target) / target : null,
-    retailMix: weighted('premiumRetail','eligibleRetail'), redeemMix: weighted('premiumRedeemed','redemptions','unclassifiedRedeemed'),
-    soldMix: weighted('premiumSold','memberships','unclassifiedSold'), conversion: weighted('memberships','opportunities'),
+    retailMix, redeemMix, soldMix, conversion,
     imported: records.length, expected, incomplete: records.filter(row => row.validation !== 'validated').length,
     financial: records.filter(hasFinancialWarning).length,
-    provisional: records.filter(row => row.financial_status === 'provisional').length,
+    provisional: records.filter(row => tenderStatus(row) === 'provisional').length,
+    revenueProvisional: records.filter(row => !supportedRevenue(row)).length,
     calculated: records.filter(row => row.document.sources?.washCount?.source === 'calculated').length,
     unclassified: records.filter(row => row.document.sources?.report?.unclassifiedRetail?.length ||
       row.document.metrics.unclassifiedSold > 0 || row.document.metrics.unclassifiedRedeemed > 0).length,

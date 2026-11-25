@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildPosReportMetrics } from '../src/utils/posMetrics.js'
 import { buildPosPerformance, posPeriod, readPosTargets } from '../src/utils/posPerformance.js'
-import { commitPosWorkbook, preparePosWorkbook, processPosFiles, fileDigest } from '../src/utils/posImportStorage.js'
+import { commitPosWorkbook, historicalChanges, prepareHistoricalManifest, preparePosWorkbook, processPosFiles, fileDigest } from '../src/utils/posImportStorage.js'
 
 const line = (category, label, quantity, amount = 0) => ({ category, label, quantity, amount })
 test('Micrologic recognizes reactivations and one item-level membership refund', () => {
@@ -25,7 +25,7 @@ test('Micrologic recognizes reactivations and one item-level membership refund',
   assert.equal(ambiguous.retailRevenue, null)
 })
 
-test('DRB counts premium packages once, allocates signed discounts to membership and holds unknown tiers', () => {
+test('DRB counts premium packages once, allocates signed discounts to membership and uses the approved Ultimate tier', () => {
   const source = [
     line('basic washes','Package Wash',4), line('basic washes','Basic Wash',2),
     line('wash packages','Better Wash',1), line('wash packages','Best Wash',3),
@@ -39,8 +39,8 @@ test('DRB counts premium packages once, allocates signed discounts to membership
   const report = buildPosReportMetrics('DRB', source, { revenue: 40000, redemptions: 5 })
   assert.deepEqual([report.memberRevenue, report.retailRevenue, report.premiumRetail, report.eligibleRetail], [27300,12700,4,6])
   assert.equal(report.retailComplete, true)
-  assert.equal(report.redeem.unclassified, 1)
-  assert.equal(report.redeem.best, 4)
+  assert.equal(report.redeem.unclassified, 0)
+  assert.equal(report.redeem.best, 5)
   assert.equal(buildPosReportMetrics('DRB', source.slice(1), { revenue: 40000, redemptions: 5 }).retailComplete, false)
 })
 
@@ -92,8 +92,10 @@ test('missing and provisional results leave targets intact and flagged rather th
   assert.equal(network.target,598.0000000004)
   assert.equal(network.targetPartial,false)
   assert.equal(network.comparison,null)
-  assert.equal(network.redeemMix,null)
-  assert.equal(rows[1].redeemMix,null)
+  assert.equal(network.redeemMix,2/10)
+  assert.equal(rows[1].redeemMix,1/8)
+  assert.equal(network.redeemMixPartial,true)
+  assert.deepEqual(network.coverage.redeemMix,{usable:2,expected:4,denominator:10,knownDenominator:16,knownDenominatorDays:3})
   assert.equal(network.provisional,1)
   const noGoals = buildPosPerformance(locations,records,goals.slice(1),start,end).network
   assert.equal(noGoals.targetPartial,true)
@@ -156,4 +158,61 @@ test('network conversion uses weighted revised opportunities and treats a zero d
   const period = buildPosPerformance([locations[0]], [a, secondDay], goals, start, end)
   assert.equal(period.network.conversion, 2 / 7)
   assert.equal(buildPosPerformance([locations[0]], [secondDay], goals, end, end).network.conversion, null)
+})
+
+test('supported revenue survives provisional tender and non-tier quantities leave both mix denominators', () => {
+  const entry = record('a', start, 1, { redemptions: 4, memberships: 3 }, { financial_status: 'provisional' })
+  entry.document.quality = { revenueStatus: 'supported', tenderStatus: 'provisional', nonTierSold: 1, nonTierRedeemed: 2 }
+  const result = buildPosPerformance([locations[0]], [entry], goals, start, start).network
+  assert.notEqual(result.comparison, null)
+  assert.equal(result.total, 10000)
+  assert.equal(result.financial, 1)
+  assert.equal(result.soldMix, 1 / 2)
+  assert.equal(result.redeemMix, 1 / 2)
+  assert.equal(result.conversion, 3 / 8)
+  entry.document.quality.revenueStatus = 'provisional'
+  assert.equal(buildPosPerformance([locations[0]], [entry], goals, start, start).network.comparison, null)
+})
+
+test('approved Micrologic membership refunds and retail sale mirrors are each counted once', () => {
+  const source = [
+    line('unlimited recurring','Best membership',3,12000),
+    line('unlimited recurring','-- refund: best - rinsed - 50% off 3 months updated',-1,-2699),
+    line('refunded','-- Best - Rinsed - 50% Off 3 Months Updated',-1,-2699),
+    line('refunded','-- UWC-Partial Refund',-1,-500),
+    line('open refund','-- refund: uwc-partial refund',-1,-500),
+    line('refunded','-- Better Wash',-1,-2000),
+    line('wash sales','-- refund: better wash',-1,-2000),
+    line('wash sales','Better Wash',3,6000), line('wash sales','Basic Wash',2,2000),
+    line('unlimited redemption','Military & Veteran',1), line('unlimited redemption','Basic Unlimited',1),
+    line('unlimited redemption','Police UWC',1), line('unlimited redemption','Beaches USA House Acct',1),
+  ]
+  const report = buildPosReportMetrics('Micrologic', source, { revenue:20000, memberships:0, recharges:2, overrides:0, redemptions:4 }, '1529')
+  assert.equal(report.memberRevenue, 8801)
+  assert.equal(report.retailRevenue, 11199)
+  assert.equal(report.premiumRetail, 2)
+  assert.equal(report.eligibleRetail, 4)
+  assert.deepEqual(report.redeem, { basic:1, good:0, better:0, best:1, nonTier:2, unclassified:0 })
+  assert.equal(buildPosReportMetrics('Micrologic', source, { redemptions:4 }, '1528').redeem.unclassified, 1)
+  assert.equal(buildPosReportMetrics('Micrologic', [line('unlimited redemption','$18 Unlimited',1)], { redemptions:1 }, '1512').redeem.basic, 1)
+  assert.equal(buildPosReportMetrics('Micrologic', source.filter(row => row.label !== '-- refund: better wash'),
+    { revenue:20000, memberships:0, recharges:2, overrides:0, redemptions:4 }, '1529').retailComplete, false)
+})
+
+test('historical approval payload freezes the reviewed projection and excludes source workbook bytes', async () => {
+  const calls = []
+  const client = { rpc(name, args) { calls.push([name,args]); return Promise.resolve({ data:{ id:'manifest',digest:'hash' } }) } }
+  const previous = { metrics:{total:300,member:null}, sources:{signedAmounts:{totalRevenue:300}}, warnings:[], financialWarnings:[] }
+  const document = { ...previous, metrics:{total:300,member:100}, sources:{signedAmounts:{totalRevenue:300,revenueSummary:300}} }
+  const row = { sourceId:'source',locationId:'id',expectedRevision:3,previous,document }
+  const workbook = { name:'fixture.xlsx',sha:'c'.repeat(64),day:start,system:'Micrologic',issues:[],candidates:[row],bytes:new Uint8Array([1]) }
+  assert.deepEqual(historicalChanges(row).changes,[{key:'member',previous:null,proposed:100}])
+  await assert.rejects(prepareHistoricalManifest(client,[workbook,workbook],'approved'),/invariants/)
+  assert.deepEqual(await prepareHistoricalManifest(client,[workbook],' approved '),{id:'manifest',digest:'hash'})
+  assert.deepEqual(calls[0],['pos_reprocess_prepare',{p_reason:'approved',p_workbooks:[{
+    name:'fixture.xlsx',sha:workbook.sha,day:start,system:'Micrologic',parser:'daily-pos-v3.1.0',
+    rows:[{sourceId:'source',locationId:'id',expectedRevision:3,document}],
+  }]}])
+  row.document = {...document,metrics:{total:400,member:100}}
+  await assert.rejects(prepareHistoricalManifest(client,[workbook],'approved'),/invariants/)
 })

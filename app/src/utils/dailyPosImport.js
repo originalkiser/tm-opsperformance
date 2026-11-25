@@ -1,4 +1,4 @@
-import { buildPosReportMetrics } from './posMetrics.js'
+import { buildPosReportMetrics, posTierAlias } from './posMetrics.js'
 import { readWorkbookSheets } from './drbWorkbook.js'
 import { drbDate } from './drbReconciliation.js'
 import { cashRevenue, revenueCents, shiftDate } from './budgetRevenue.js'
@@ -70,28 +70,31 @@ function micDate(value) {
 const sum = (rows, field) => rows.reduce((total, row) => total + row[field], 0)
 const category = (rows, key) => rows.filter(row => row.category === key)
 
-function memberships(rows, warnings) {
+function memberships(rows, warnings, system) {
   const counts = Object.fromEntries(tiers.map(tier => [tier, 0]))
-  let unclassified = 0
+  let unclassified = 0, nonTier = 0
   for (const row of rows) {
     const matches = [...new Set(norm(row.label).match(/\b(?:basic|good|better|best)\b/g) || [])]
     if (!matches.length && /^zbest\b/i.test(row.label)) matches.push('best')
-    if (matches.length === 1) counts[matches[0]] += row.quantity
+    const alias = posTierAlias(system, row.category, row.label)
+    if (alias === 'nonTier') nonTier += row.quantity
+    else if (alias) counts[alias] += row.quantity
+    else if (matches.length === 1) counts[matches[0]] += row.quantity
     else if (row.quantity) {
       unclassified += row.quantity
       warnings.push('Unclassified new membership: ' + (row.label || '(blank item)'))
     }
   }
-  return { ...counts, unclassified, memberships: sum(rows, 'quantity'), membershipAmounts: rows.map(({ label, amount, quantity }) => ({ label, amount, quantity })) }
+  return { ...counts, unclassified, nonTier, memberships: sum(rows, 'quantity'), membershipAmounts: rows.map(({ label, amount, quantity }) => ({ label, amount, quantity })) }
 }
 
 function ratios(metrics, system) {
-  const opportunities = metrics.washes == null || (system === 'Micrologic' && (metrics.redemptions == null || metrics.overrides == null)) ? null : system === 'DRB' ? metrics.washes - metrics.governmentWashes - metrics.policeWashes : metrics.washes - metrics.redemptions - metrics.overrides
+  const opportunities = metrics.washes == null || (system === 'Micrologic' && (metrics.redemptions == null || metrics.overrides == null)) ? null : system === 'DRB' ? metrics.washes - metrics.governmentWashes - metrics.policeWashes - (metrics.employeeWashes ?? 0) : metrics.washes - metrics.redemptions - metrics.overrides
   return {
     ...metrics,
     opportunities: opportunities == null ? null : Math.max(0, opportunities),
     conversion: opportunities > 0 && metrics.memberships != null ? metrics.memberships / opportunities : null,
-    pmix: metrics.memberships > 0 && metrics.unclassified === 0 ? (metrics.better + metrics.best) / metrics.memberships : null,
+    pmix: metrics.memberships > metrics.nonTier && metrics.unclassified === 0 ? (metrics.better + metrics.best) / (metrics.memberships - metrics.nonTier) : null,
   }
 }
 
@@ -117,7 +120,7 @@ function micLocation(rows, sourceId, businessDate) {
       continue
     }
     if (!['car count', balanceSection, 'payments', 'wash sales', 'wash override',
-      'unlimited redemption', 'unlimited signup', 'unlimited recurring', 'unlimited reactivation', 'refunded', 'uwc downgrades', 'totals', 'revenue summary'].includes(section)) continue
+      'unlimited redemption', 'unlimited signup', 'unlimited recurring', 'unlimited reactivation', 'refunded', 'uwc downgrades', 'open refund', 'totals', 'revenue summary'].includes(section)) continue
     const count = /^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.0+)?$/.test(text(qty)) ? parseCell(quantity, qty) : null
     values.push({ category: section, label, quantity: count, amount: parseCell(cents, amount) })
   }
@@ -183,11 +186,12 @@ function micLocation(rows, sourceId, businessDate) {
     summaryQuantity === washSales + redemptions
   const signupCount = signupSubtotal ?? (confirmedZero ? 0 : null)
   const signups = category(values, 'unlimited signup').filter(row => norm(row.label) !== 'unlimited signup total')
-  const signup = memberships(signups, warnings)
+  const signup = memberships(signups, warnings, 'Micrologic')
   const signupMatches = signupCount != null && signups.every(row => row.quantity != null) && signup.memberships === signupCount
   if (!signupMatches) {
     warnings.push('New membership quantity is missing or differs from the signup subtotal.')
     for (const tier of tiers) signup[tier] = null
+    signup.nonTier = null
     signup.unclassified = signupCount
     signup.memberships = signupCount
   }
@@ -214,7 +218,7 @@ function micLocation(rows, sourceId, businessDate) {
   const overrideItems = category(values, 'wash override').filter(row => !/ total$/i.test(row.label))
   const salesItems = category(values, 'wash sales').filter(row => !/ total$/i.test(row.label))
   const normalized = row => norm(row.label).replace(/\s/g, '')
-  const qualifyingOverride = row => /^(basic|good|better|best)rewash$/.test(normalized(row))
+  const qualifyingOverride = row => /^(basic|good|better|best)rewash$/.test(normalized(row)) || ['good wash rewash', 'basic wash rewash'].includes(norm(row.label))
   const qualifyingSale = row => normalized(row) === 'zbestwash'
   if (overrideItems.some(row => /(?:basic|good|better|best).*rewash/i.test(row.label) && !qualifyingOverride(row)) ||
     salesItems.some(row => /z\s*best.*wash/i.test(row.label) && !qualifyingSale(row))) warnings.push('Review ambiguous wash override spelling.')
@@ -235,10 +239,13 @@ function micLocation(rows, sourceId, businessDate) {
       rawOverrides,
       redemptions, recharges, terminations: null,
       ...signup }, 'Micrologic')
+  const revenueSummary = matching('revenue summary', 'revenue summary total')
+  const summaryRevenue = revenueSummary.length === 1 ? revenueSummary[0].amount : null
   return { system: 'Micrologic', sourceId, businessDate, siteCode: micrologicSites[sourceId], warnings, financialWarnings, washCount,
+    revenueVerified: revenue != null && summaryRevenue === revenue,
     provisionalTenders: !detailVerified || unmapped.length > 0, metrics,
-    reportMetrics: buildPosReportMetrics('Micrologic', values, metrics),
-    signedAmounts: { totalRevenue: revenue, totalPayments: rawPayments, houseCharges: rawHouse, taxes: rawTaxes, reportedBalance,
+    reportMetrics: buildPosReportMetrics('Micrologic', values, metrics, micrologicSites[sourceId]),
+    signedAmounts: { totalRevenue: revenue, revenueSummary: summaryRevenue, totalPayments: rawPayments, houseCharges: rawHouse, taxes: rawTaxes, reportedBalance,
       tenders: tenderRows.map(({ label, amount }) => ({ label, amount })) } }
 }
 
@@ -341,12 +348,22 @@ export function parseDailyDrb(sheets, workbookName = 'DRB workbook') {
     // in other categories never add vehicles or exclusions.
     const governmentWashes = sum(basicWashes.filter(row => norm(row.label) === 'government car'), 'quantity')
     const policeWashes = sum(basicWashes.filter(row => norm(row.label) === 'police wash'), 'quantity')
+    const employeeQuantity = categoryName => sum(category(rows, categoryName).filter(row => norm(row.label) === 'employee wash 002'), 'quantity')
+    const employeeInWashCount = employeeQuantity('basic washes')
+    const employeeInPackages = employeeQuantity('wash packages')
+    if (employeeInWashCount && employeeInPackages && employeeInWashCount !== employeeInPackages) {
+      return { system: 'DRB', sourceId, siteCode, businessDate: date, warnings: [...warnings, 'Employee wash quantities disagree across DRB categories.'] }
+    }
+    const employeeWashes = employeeInWashCount || employeeInPackages
+    if (employeeWashes < 0 || employeeWashes + governmentWashes + policeWashes > sum(basicWashes, 'quantity')) {
+      return { system: 'DRB', sourceId, siteCode, businessDate: date, warnings: [...warnings, 'DRB non-retail washes exceed the available Total Washes.'] }
+    }
     const metrics = ratios({ revenue: total, payments: total, cards: card, house, other, cash, reportedCash, reportBalance, overrides: null,
-        washes: sum(basicWashes, 'quantity'), governmentWashes, policeWashes, redemptions: sum(category(rows, 'arm plans redeemed'), 'quantity'),
+        washes: sum(basicWashes, 'quantity'), governmentWashes, policeWashes, employeeWashes, redemptions: sum(category(rows, 'arm plans redeemed'), 'quantity'),
         recharges: sum(category(rows, 'arm plans recharged'), 'quantity'), terminations: sum(category(rows, 'arm plans terminated'), 'quantity'),
-        ...memberships(category(rows, 'arm plans sold'), warnings) }, 'DRB')
+        ...memberships(category(rows, 'arm plans sold'), warnings, 'DRB') }, 'DRB')
     return { system: 'DRB', sourceId, siteCode, businessDate: date, warnings, financialWarnings, quantityDifferences,
-      provisionalFinancial: unknown.length > 0, metrics, reportMetrics: buildPosReportMetrics('DRB', rows, metrics),
+      revenueVerified: unknown.length === 0, provisionalFinancial: unknown.length > 0, metrics, reportMetrics: buildPosReportMetrics('DRB', rows, metrics),
       signedAmounts: Object.fromEntries([...new Set(rows.map(row => row.category))]
         .map(key => [key, sum(category(rows, key), 'amount')])) }
   })

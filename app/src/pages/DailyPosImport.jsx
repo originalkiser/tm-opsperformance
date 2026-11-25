@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import PosHistoricalReview from '../components/PosHistoricalReview'
 import NavBar from '../components/NavBar'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -18,10 +19,10 @@ const metrics = [
   ['cards', 'Credit Card Revenue', 'money'], ['house', 'House Charges / A/R', 'money'],
   ['other', 'Other Tenders', 'money'], ['budgetOther', 'House / Other Included in Budget Tracking', 'money'],
   ['cash', 'Calculated Cash Revenue', 'money'], ['reportedCash', 'Independent POS Cash', 'money'],
-  ['reportBalance', 'Report Balance', 'money'], ['washes', 'Total Washes'], ['governmentWashes', 'Government Car Washes'], ['policeWashes', 'Police Washes'], ['redemptions', 'Redemptions'],
+  ['reportBalance', 'Report Balance', 'money'], ['washes', 'Total Washes'], ['governmentWashes', 'Government Car Washes'], ['policeWashes', 'Police Washes'], ['employeeWashes', 'Employee Washes'], ['redemptions', 'Redemptions'],
   ['rawOverrides', 'Raw Wash Override Quantity'], ['overrides', 'Qualifying Wash Overrides'],
   ['basic', 'Basic Memberships Sold'], ['good', 'Good Memberships Sold'], ['better', 'Better Memberships Sold'],
-  ['best', 'Best Memberships Sold'], ['unclassified', 'Unclassified Memberships Sold'], ['memberships', 'Total Memberships Sold'], ['recharges', 'Membership Recharges'],
+  ['best', 'Best Memberships Sold'], ['unclassified', 'Unclassified Memberships Sold'], ['nonTier', 'Non-tier Memberships Sold'], ['memberships', 'Total Memberships Sold'], ['recharges', 'Membership Recharges'],
   ['terminations', 'Membership Terminations'], ['opportunities', 'Conversion Opportunities'],
   ['conversion', 'Conversion', 'percent'], ['pmix', 'Membership P-Mix', 'percent'],
 ]
@@ -54,7 +55,7 @@ function Comparison({ row }) {
     {row.system === 'DRB' && !row.provisionalFinancial && !row.financialWarnings?.length && row.metrics.reportBalance === 0 &&
       <p className="my-2 text-sm font-medium">DRB revenue reconciled to a zero report balance and matching POS cash.</p>}
     {row.system === 'DRB' && <p className="my-2 text-sm">
-      POS conversion excludes Government Car and Police Wash activity. The manual Budget Tracking calculation uses Total Washes.
+      POS conversion excludes Government Car, Police Wash, and Employee Wash activity. The manual Budget Tracking calculation uses Total Washes.
     </p>}
     {!saved && <p className="my-2 text-sm">{row.managerMissing
       ? 'No saved Budget Tracking entry for this site and business date.' : 'Budget Tracking comparison unavailable.'}</p>}
@@ -208,6 +209,7 @@ function PosReview({ locations }) {
           setJobs([]); setActiveId(null); setProgress(''); files.current.clear()
         }} className="rounded border px-4 py-2 text-sm font-semibold">Clear review</button>}
       </form>
+      <PosHistoricalReview jobs={jobs} busy={busy} run={run} />
       {!!jobs.length && <section className={card + ' space-y-3'} aria-label="Import workbooks">
         <p role="status" className="text-sm">{progress} · {recorded} records saved · {duplicates} duplicates · {jobs.filter(job => job.error).length} failed files</p>
         <button type="button" disabled={busy || !ready.length} onClick={() => save(ready)}
