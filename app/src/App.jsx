@@ -12,6 +12,7 @@ import Employees from './pages/Employees'
 import WeeklyLaborPlanner from './pages/WeeklyLaborPlanner'
 import Insights from './pages/Insights'
 import Reports from './pages/Reports'
+import PosPerformance from './pages/PosPerformance'
 import DailyPosImport from './pages/DailyPosImport'
 import SalesReconciliation from './pages/SalesReconciliation'
 import AmEntry from './pages/AmEntry'
@@ -92,6 +93,7 @@ function AccountApp() {
             />
             <Route path="/weekly-labor-planner" element={<ProtectedRoute><WeeklyLaborPlanner /></ProtectedRoute>} />
             <Route path="/employees" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
+            <Route path="/pos-performance" element={<ProtectedRoute><ManagerRoute><PosPerformance /></ManagerRoute></ProtectedRoute>} />
             <Route path="/daily-pos-import" element={<ProtectedRoute><ManagerRoute><DailyPosImport /></ManagerRoute></ProtectedRoute>} />
             <Route path="/sales-reconciliation" element={<ProtectedRoute><ManagerRoute><SalesReconciliation /></ManagerRoute></ProtectedRoute>} />
             <Route path="/checklists" element={<ProtectedRoute><ManagerChecklists /></ProtectedRoute>} />

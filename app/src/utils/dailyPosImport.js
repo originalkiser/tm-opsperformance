@@ -1,3 +1,4 @@
+import { buildPosReportMetrics } from './posMetrics.js'
 import { readWorkbookSheets } from './drbWorkbook.js'
 import { drbDate } from './drbReconciliation.js'
 import { cashRevenue, revenueCents, shiftDate } from './budgetRevenue.js'
@@ -93,6 +94,7 @@ function micLocation(rows, sourceId, businessDate) {
   for (const [description, , qty, , , amount] of rows) {
     const label = text(description)
     const key = norm(label)
+    if (/\([a-z0-9]+\) total$/i.test(label) || key === 'all locations') continue
     if ((!label && !text(qty) && !text(amount)) || key === 'description') continue
     if (!text(qty) && !text(amount) && !key.endsWith(' total') &&
         !(section === balanceSection && balanceLabels.includes(key))) {
@@ -101,7 +103,7 @@ function micLocation(rows, sourceId, businessDate) {
       continue
     }
     if (!['car count', balanceSection, 'payments', 'wash sales', 'wash override',
-      'unlimited redemption', 'unlimited signup', 'unlimited recurring', 'totals', 'revenue summary'].includes(section)) continue
+      'unlimited redemption', 'unlimited signup', 'unlimited recurring', 'unlimited reactivation', 'refunded', 'uwc downgrades', 'totals', 'revenue summary'].includes(section)) continue
     const count = /^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.0+)?$/.test(text(qty)) ? parseCell(quantity, qty) : null
     values.push({ category: section, label, quantity: count, amount: parseCell(cents, amount) })
   }
@@ -135,7 +137,7 @@ function micLocation(rows, sourceId, businessDate) {
   if (detailComplete && rawPayments != null && detailSum !== rawPayments) financialWarnings.push('Payment detail differs from TOTAL PAYMENTS.')
   const tenderType = row => {
     const label = norm(row.label).replace(/^--\s*refunds?:\s*/, '')
-    if (/^credit\s*-\s*(amex|mc\s*\/\s*visa\s*\/\s*disc)$/.test(label)) return 'card'
+    if (/^credit\s*-\s*(amex|mc|visa|disc|mc\s*\/\s*visa\s*\/\s*disc)$/.test(label)) return 'card'
     if (label === 'cash') return 'cash'
     if (/^check$/.test(label)) return 'other'
     return 'unmapped'
@@ -214,12 +216,14 @@ function micLocation(rows, sourceId, businessDate) {
     ? null : sum(qualifying, 'quantity')
   if (overrides == null) warnings.push('Qualifying wash overrides are unavailable because source subtotals or detail are incomplete.')
   const recharges = subtotal('unlimited recurring')
-  return { system: 'Micrologic', sourceId, businessDate, siteCode: micrologicSites[sourceId], warnings, financialWarnings, washCount, provisionalTenders: !detailVerified || unmapped.length > 0,
-    metrics: ratios({ revenue, payments: collection(rawPayments), cards: collection(rawCard), other: collection(rawOther), house: collection(house),
+  const metrics = ratios({ revenue, payments: collection(rawPayments), cards: collection(rawCard), other: collection(rawOther), house: collection(house),
       cash: expectedCash, reportedCash: collection(rawCash), reportBalance: balance, washes, overrides,
       rawOverrides,
       redemptions, recharges, terminations: null,
-      ...signup }, 'Micrologic'),
+      ...signup }, 'Micrologic')
+  return { system: 'Micrologic', sourceId, businessDate, siteCode: micrologicSites[sourceId], warnings, financialWarnings, washCount,
+    provisionalTenders: !detailVerified || unmapped.length > 0, metrics,
+    reportMetrics: buildPosReportMetrics('Micrologic', values, metrics),
     signedAmounts: { totalRevenue: revenue, totalPayments: rawPayments, houseCharges: rawHouse, taxes: rawTaxes, reportedBalance,
       tenders: tenderRows.map(({ label, amount }) => ({ label, amount })) } }
 }
@@ -309,11 +313,12 @@ export function parseDailyDrb(sheets) {
     const quantityDifferences = rows.filter(row => ['basic washes', 'arm plans sold', 'arm plans recharged',
       'arm plans redeemed', 'arm plans terminated'].includes(row.category) && row.count !== row.quantity)
       .map(({ sourceCategory, label, count, quantity }) => ({ category: sourceCategory, label, count, quantity }))
-    return { system: 'DRB', sourceId, siteCode, businessDate: date, warnings, financialWarnings, quantityDifferences, provisionalFinancial: unknown.length > 0,
-      metrics: ratios({ revenue: total, payments: total, cards: card, house, other, cash, reportedCash, reportBalance, overrides: null,
+    const metrics = ratios({ revenue: total, payments: total, cards: card, house, other, cash, reportedCash, reportBalance, overrides: null,
         washes: sum(category(rows, 'basic washes'), 'quantity'), redemptions: sum(category(rows, 'arm plans redeemed'), 'quantity'),
         recharges: sum(category(rows, 'arm plans recharged'), 'quantity'), terminations: sum(category(rows, 'arm plans terminated'), 'quantity'),
-        ...memberships(category(rows, 'arm plans sold'), warnings) }, 'DRB'),
+        ...memberships(category(rows, 'arm plans sold'), warnings) }, 'DRB')
+    return { system: 'DRB', sourceId, siteCode, businessDate: date, warnings, financialWarnings, quantityDifferences,
+      provisionalFinancial: unknown.length > 0, metrics, reportMetrics: buildPosReportMetrics('DRB', rows, metrics),
       signedAmounts: Object.fromEntries([...new Set(rows.map(row => row.category))]
         .map(key => [key, sum(category(rows, key), 'amount')])) }
   })
