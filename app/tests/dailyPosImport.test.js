@@ -296,3 +296,46 @@ test('Reports link requires active, nondeleted Admin while the route retains its
   const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
   assert.match(app, /path="\/daily-pos-import" element=\{<ProtectedRoute><ManagerRoute><DailyPosImport/)
 })
+
+test('DRB government and police washes count once in total washes and never enter retail opportunities or mix', async () => {
+  for (const [government, police] of [[2,0],[0,3],[2,3]]) {
+    const fixture = structuredClone(drb)
+    fixture[0].rows.splice(1, 2, drbRow('Basic Washes', 33, 365, 'Basic Wash'),
+      drbRow('Basic Washes', 29, 174, 'Package Wash'), drbRow('Wash Packages', 13, 182, 'Better Wash'),
+      drbRow('Wash Packages', 16, 304, 'Best Wash'))
+    fixture[0].rows.push(drbRow('ARM Plans Sold', 2, 0, 'Unl. Best Sld'))
+    if (government) fixture[0].rows.push(drbRow('Basic Washes', government, 20, 'Government Car'),
+      drbRow('Wash Packages', government, 0, 'Government Car'))
+    if (police) fixture[0].rows.push(drbRow('Basic Washes', police, 30, 'Police Wash'),
+      drbRow('Wash Packages', police, 0, 'Police Wash'))
+    const [row] = parseDailyDrb(fixture)
+    assert.equal(row.metrics.washes, 62 + government + police)
+    assert.equal(row.metrics.governmentWashes, government)
+    assert.equal(row.metrics.policeWashes, police)
+    assert.equal(row.metrics.opportunities, 62)
+    assert.equal(row.metrics.conversion, 2 / 62)
+    assert.equal(row.metrics.revenue, 140300 + (government ? 2000 : 0) + (police ? 3000 : 0))
+    assert.equal(row.metrics.redemptions, 54)
+    assert.equal(row.reportMetrics.eligibleRetail, 62)
+    assert.equal(row.reportMetrics.premiumRetail, 29)
+    assert.deepEqual(row.reportMetrics.sources.unclassifiedRetail, [])
+    const [mapped] = matchPosLocations([row], [{ id:'site', site_code:'1518' }])
+    const client = { from() { return { select() { return this }, eq() { return this },
+      async in() { return { data: [{ location_id:'site', entry_date:'2026-11-24',
+        yesterday_washes:62+government+police, yesterday_basic:0, yesterday_good:0, yesterday_better:0, yesterday_best:2 }] } },
+    } } }
+    const [compared] = await readPosComparisons(client, [mapped])
+    assert.equal(compared.manager.conversion, 2 / (62 + government + police))
+  }
+})
+
+test('DRB conversion is unavailable with only government and police washes', () => {
+  const fixture = structuredClone(drb)
+  fixture[0].rows = [fixture[0].rows[0], drbRow('Basic Washes', 1, 0, 'Government Car'),
+    drbRow('Basic Washes', 2, 0, 'Police Wash'), drbRow('Paidouts', 0, 0), drbRow('Cash', 0, 0)]
+  const [row] = parseDailyDrb(fixture)
+  assert.equal(row.metrics.washes, 3)
+  assert.equal(row.metrics.opportunities, 0)
+  assert.equal(row.metrics.conversion, null)
+  assert.equal(row.reportMetrics.eligibleRetail, 0)
+})
