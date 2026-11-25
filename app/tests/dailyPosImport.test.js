@@ -339,3 +339,31 @@ test('DRB conversion is unavailable with only government and police washes', () 
   assert.equal(row.metrics.conversion, null)
   assert.equal(row.reportMetrics.eligibleRetail, 0)
 })
+
+test('DRB amounts accept exact cents and sub-nanodollar artifacts with the original sign', () => {
+  for (const [value, expected] of [
+    ['0.579999999999998', 58], ['-0.579999999999998', -58], ['($0.579999999999998)', -58],
+    ['0.580000000000002', 58], ['0.999999999999998', 100], ['0.580000001', 58],
+    ['$1,234.56', 123456], ['($1,234.56)', -123456], ['-17.1', -1710], ['0', 0],
+  ]) {
+    const fixture = structuredClone(drb)
+    fixture[0].rows.push(drbRow('Cash', 0, value, 'Cash/Change'))
+    const [row] = parseDailyDrb(fixture)
+    assert.equal(row.signedAmounts.cash, expected, value)
+  }
+})
+
+test('DRB rejects missing, malformed, and genuine fractional cents with source context', async () => {
+  for (const value of ['', 'NaN', '1,23.00', '0.585', '-0.581', '0.5800000011', '9999999999.99']) {
+    const fixture = structuredClone(drb)
+    fixture[0].rows.push(drbRow('Cash', 0, value, 'Cash/Change', '1511-Allen'))
+    const sourceRow = fixture[0].rows.length
+    const bytes = await xlsx(fixture)
+    await assert.rejects(parseDailyPosFile({ name: 'fixture.xlsx', async arrayBuffer() { return bytes } }), error => {
+      assert.match(error.message, /Invalid report amount|Report amount is out of range/)
+      for (const expected of ['fixture.xlsx', 'Site Financial Detail Report row ' + sourceRow, 'site 1511-Allen',
+        'category Cash', 'item Cash/Change', value ? JSON.stringify(value) : '(blank)']) assert.ok(error.message.includes(expected), error.message)
+      return true
+    })
+  }
+})

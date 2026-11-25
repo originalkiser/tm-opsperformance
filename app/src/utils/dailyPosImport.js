@@ -18,16 +18,30 @@ const drbSites = new Map([
 ].map(name => [norm(name), name.slice(0, 4)]))
 const drbIgnored = new Set(['magztx query server', 'magztx rep hub', 'old -1509-mesquite', 'old 1510-mckinney', '1509-mesquite'])
 
-function cents(value) {
+function cents(value, allowPrecisionArtifact = false) {
   const raw = text(value)
   const accounting = /^\((.*)\)$/.exec(raw)
   const formatted = accounting ? accounting[1].trim() : raw
-  if (!/^-?\$?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(formatted) ||
-      (accounting && formatted.startsWith('-'))) throw new Error('Invalid report amount.')
+  const pattern = allowPrecisionArtifact
+    ? /^-?\$?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,30})?$/
+    : /^-?\$?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/
+  if (!pattern.test(formatted) || (accounting && formatted.startsWith('-'))) throw new Error('Invalid report amount.')
   const digits = formatted.replace(/[$,]/g, '')
   const unsigned = digits.replace(/^-/, '')
   const [whole, fraction = ''] = unsigned.split('.')
-  const result = Number(whole) * 100 + Number(fraction.padEnd(2, '0'))
+  let fractionalCents = Number(fraction.slice(0, 2).padEnd(2, '0'))
+  if (fraction.length > 2) {
+    // Compare the exported decimal exactly. Allow at most one billionth of
+    // a dollar of drift, without binary floating-point rounding.
+    const scale = Math.max(9, fraction.length)
+    const units = BigInt(fraction.padEnd(scale, '0'))
+    const cent = 10n ** BigInt(scale - 2)
+    const tolerance = 10n ** BigInt(scale - 9)
+    const remainder = units % cent
+    if (remainder > tolerance && cent - remainder > tolerance) throw new Error('Invalid report amount.')
+    if (cent - remainder <= tolerance) fractionalCents++
+  }
+  const result = Number(whole) * 100 + fractionalCents
   if (!Number.isSafeInteger(result) || result > 100_000_000_000) throw new Error('Report amount is out of range.')
   return accounting || digits.startsWith('-') ? -result : result
 }
@@ -261,7 +275,7 @@ const balanceCategories = new Set([
 const drbCashCategories = new Set(['cash', 'xpt cash add/remove', 'xpt cash over/short', 'xpt chg over/short'])
 const drbCashDepositItems = new Set(['cash deposit', 'end cash', 'start cash'])
 
-export function parseDailyDrb(sheets) {
+export function parseDailyDrb(sheets, workbookName = 'DRB workbook') {
   const options = sheets.find(sheet => sheet.name === 'Options')?.rows
   const details = sheets.find(sheet => sheet.name === 'Site Financial Detail Report')?.rows
   if (!options || !details) throw new Error('Expected the DRB Site Financial Detail Report and Options tabs.')
@@ -272,7 +286,7 @@ export function parseDailyDrb(sheets) {
   const required = ['Report Category', 'Site', 'Terminal', 'Shift', 'Item Name', 'Count', 'Quantity', 'Amount']
   if (required.some(name => header.filter(value => value === name).length !== 1)) throw new Error('Missing or ambiguous DRB report columns.')
   const grouped = new Map()
-  for (const row of details.slice(1)) {
+  for (const [index, row] of details.slice(1).entries()) {
     const get = key => text(row[header.indexOf(key)])
     if (!row.some(value => text(value))) continue
     const site = get('Site'), type = norm(get('Report Category'))
@@ -281,8 +295,17 @@ export function parseDailyDrb(sheets) {
     if (!grouped.has(site)) grouped.set(site, [])
     if (!drbSites.has(norm(site))) continue
     if (get('Terminal') || get('Shift')) throw new Error('Use DRB totals by site without Terminal or Shift breakdown.')
-    grouped.get(site).push({ category: type, sourceCategory: get('Report Category'), label: get('Item Name'), amount: cents(get('Amount')),
-      quantity: quantity(get('Quantity')), count: quantity(get('Count')) })
+    const sourceCategory = get('Report Category'), label = get('Item Name')
+    const read = (field, parse) => {
+      const value = get(field)
+      try { return parse(value) } catch (error) {
+        const rejected = value ? JSON.stringify(value.slice(0, 120)) : '(blank)'
+        throw new Error(`${error.message} Workbook ${workbookName}, Site Financial Detail Report row ${index + 2}, ` +
+          `site ${site}, category ${sourceCategory}, item ${label || '(blank)'}, ${field} ${rejected}.`)
+      }
+    }
+    grouped.get(site).push({ category: type, sourceCategory, label, amount: read('Amount', value => cents(value, true)),
+      quantity: read('Quantity', quantity), count: read('Count', quantity) })
   }
   if (!grouped.size) throw new Error('No eligible DRB report locations found.')
   return [...grouped].map(([sourceId, rows]) => {
@@ -332,7 +355,7 @@ export function parseDailyDrb(sheets) {
 export async function parseDailyPosFile(file) {
   if (!file || !/\.xlsx$/i.test(file.name)) throw new Error('Choose an original XLSX export.')
   const sheets = await readWorkbookSheets(await file.arrayBuffer())
-  return sheets.length === 1 ? parseMicrologic(sheets[0].rows) : parseDailyDrb(sheets)
+  return sheets.length === 1 ? parseMicrologic(sheets[0].rows) : parseDailyDrb(sheets, file.name)
 }
 
 export function matchPosLocations(report, locations) {
