@@ -21,14 +21,14 @@ const columns = [
   ['total','Total Rev','cents','Micrologic TOTAL REVENUE or DRB Total to Account For. Provisional financial figures are excluded.'],
   ['target','Revenue Target','dollars','Sum of daily TM Ops revenue targets for the entire effective period.'],
   ['comparison','vs Target (%)','percent','(Total revenue − target) ÷ target. Requires complete coverage, daily targets and reconciled financial results.'],
-  ['opportunities','Retail Washes','quantity','Conversion opportunities. DRB uses Total Washes. Micrologic subtracts redemptions and qualifying overrides. This metric does not necessarily add to Member Washes to make Total Washes.'],
+  ['opportunities','Retail Washes','quantity','Conversion opportunities. DRB subtracts Government Car and Police Wash quantities from Total Washes. Micrologic subtracts redemptions and qualifying overrides. This metric does not necessarily add to Member Washes to make Total Washes.'],
   ['retailMix','Retail P-Mix','percent','Better and Best individual wash purchases ÷ all eligible individual wash purchases.'],
   ['redemptions','Member Washes','quantity','Membership redemptions.'],
   ['redeemMix','Member Redeem P-Mix','percent','Better and Best membership redemptions ÷ all membership redemptions.'],
   ['washes','Total Washes','quantity','Imported total washes. Micrologic uses its calculated fallback when the reported count is absent and source subtotals agree.'],
   ['memberships','Memberships Sold','quantity','All new memberships, including promotional, free and unclassified sales.'],
   ['soldMix','Membership Sold P-Mix','percent','Better and Best new memberships ÷ all new memberships. Unavailable with unresolved tiers.'],
-  ['conversion','Conversion %','percent','New memberships ÷ POS-specific conversion opportunities.'],
+  ['conversion','Conversion %','percent','New memberships ÷ POS-specific conversion opportunities. The manual DRB Budget Tracking calculation still uses Total Washes.'],
   ['seller','Top Seller','text','Reserved for future Sales Reconciliation integration.'],
 ]
 

@@ -11,7 +11,7 @@ const groupB = '00000000-0000-4000-8000-000000000005'
 const day = '2026-11-23'
 const data = {
   metrics: { total: 30000, member: 20000, retail: 10000, payments: 30000, cards: 29000, house: 0, other: 0,
-    cash: 1000, reportedCash: 1000, balance: 0, washes: 45, opportunities: 45, redemptions: 30, overrides: null,
+    cash: 1000, reportedCash: 1000, balance: 0, washes: 45, governmentWashes: 2, policeWashes: 3, opportunities: 40, redemptions: 30, overrides: null,
     memberships: 5, basicSold: 2, goodSold: 0, betterSold: 1, bestSold: 2, recharges: 3, terminations: 0, premiumSold: 3, unclassifiedSold: 0, premiumRetail: 4, eligibleRetail: 6, premiumRedeemed: 15, unclassifiedRedeemed: 0 },
   sources: {}, warnings: [], financialWarnings: [], provisionalFinancial: false,
 }
@@ -53,6 +53,14 @@ test('isolated PostgreSQL enforces Admin-only atomic storage, duplicate handling
     await assert.rejects(db.query('select * from pos_import_private.revisions'), { code: '42501' })
     await assert.rejects(commit('a',[first,row(groupB,'1518-Greenwood')]), /eligible location/)
     assert.deepEqual(await report(), [])
+    for (const metrics of [{ opportunities: 45 }, { governmentWashes: -1 },
+      { governmentWashes: 44 }, { policeWashes: null }, { governmentWashes: 0.5 }]) {
+      await assert.rejects(commit('a',[row(groupA,'1518-Greenwood',{ ...data, metrics: { ...data.metrics, ...metrics } })]),
+        /wash opportunities do not reconcile|Invalid POS metric range/)
+    }
+    const allGovernment = { ...data, metrics: { ...data.metrics, governmentWashes: 45, policeWashes: 0, opportunities: 0 } }
+    assert.equal((await commit('e',[row(groupA,'1518-Greenwood',allGovernment)],'2026-11-21')).imported,1)
+
     assert.equal((await commit('a',[first, second])).imported, 2)
     assert.equal((await commit('a',[first, second])).fileDuplicate, true)
     assert.equal((await commit('b',[first])).duplicates, 1)
@@ -61,7 +69,7 @@ test('isolated PostgreSQL enforces Admin-only atomic storage, duplicate handling
     const corrected = { ...data, metrics: { ...data.metrics, total: 30100, payments: 30100, cards: 29100, retail: 10100 } }
     await assert.rejects(commit('d',[row(groupA,'1518-Greenwood',corrected)]), /approval or current revision/)
     await assert.rejects(commit('d',[row(groupA,'1518-Greenwood',corrected,7,'Approved')]), /approval or current revision/)
-    const incomplete = { ...corrected, metrics: { ...corrected.metrics, washes: null, opportunities: null } }
+    const incomplete = { ...corrected, metrics: { ...corrected.metrics, premiumRedeemed: null } }
     await assert.rejects(commit('d',[row(groupA,'1518-Greenwood',incomplete,1,'Approved')]), /Incomplete correction/)
     const invalid = { ...corrected, metrics: { ...corrected.metrics, retail: 10101 } }
     await assert.rejects(commit('d',[row(groupA,'1518-Greenwood',invalid,1,'Approved')]), /must reconcile/)
@@ -71,7 +79,7 @@ test('isolated PostgreSQL enforces Admin-only atomic storage, duplicate handling
     assert.equal((await report()).length, 2)
     await db.exec('reset role')
     assert.deepEqual((await db.query('select amount::text from public.budget_daily_entries')).rows, [{ amount: '123.45' }])
-    assert.equal((await db.query('select count(*)::int as n from pos_import_private.batches')).rows[0].n, 3)
+    assert.equal((await db.query('select count(*)::int as n from pos_import_private.batches')).rows[0].n, 4)
 
     await db.exec('truncate pos_import_private.current_records,pos_import_private.revisions,pos_import_private.batches')
     const fixtures = [
@@ -88,7 +96,7 @@ test('isolated PostgreSQL enforces Admin-only atomic storage, duplicate handling
         const inserted = await db.query(`insert into public.locations values(gen_random_uuid(),$1,false)
           on conflict(site_code) do update set exclude_from_reporting=false returning id`, [system === 'DRB' ? source : code])
         sources[system].push(row(inserted.rows[0].id, source, system === 'DRB' ? data : {
-          ...data, metrics: { ...data.metrics, overrides: 0, opportunities: 15 },
+          ...data, metrics: { ...data.metrics, overrides: 0, governmentWashes: null, policeWashes: null, opportunities: 15 },
         }))
       }
     }

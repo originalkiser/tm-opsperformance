@@ -12,7 +12,7 @@ export function posDocument(row) {
       total: integer(m.revenue), member: integer(p.memberRevenue), retail: integer(p.retailRevenue),
       payments: integer(m.payments), cards: integer(m.cards), house: integer(m.house), other: integer(m.other),
       cash: integer(m.cash), reportedCash: integer(m.reportedCash), balance: integer(m.reportBalance),
-      washes: quantity(m.washes), opportunities: quantity(m.opportunities), redemptions: quantity(m.redemptions),
+      washes: quantity(m.washes), governmentWashes: quantity(m.governmentWashes), policeWashes: quantity(m.policeWashes), opportunities: quantity(m.opportunities), redemptions: quantity(m.redemptions),
       overrides: quantity(m.overrides), memberships: quantity(m.memberships),
       basicSold: quantity(m.basic), goodSold: quantity(m.good), betterSold: quantity(m.better), bestSold: quantity(m.best),
       recharges: quantity(m.recharges), terminations: quantity(m.terminations),

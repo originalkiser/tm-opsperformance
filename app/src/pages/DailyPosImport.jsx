@@ -18,7 +18,7 @@ const metrics = [
   ['cards', 'Credit Card Revenue', 'money'], ['house', 'House Charges / A/R', 'money'],
   ['other', 'Other Tenders', 'money'], ['budgetOther', 'House / Other Included in Budget Tracking', 'money'],
   ['cash', 'Calculated Cash Revenue', 'money'], ['reportedCash', 'Independent POS Cash', 'money'],
-  ['reportBalance', 'Report Balance', 'money'], ['washes', 'Total Washes'], ['redemptions', 'Redemptions'],
+  ['reportBalance', 'Report Balance', 'money'], ['washes', 'Total Washes'], ['governmentWashes', 'Government Car Washes'], ['policeWashes', 'Police Washes'], ['redemptions', 'Redemptions'],
   ['rawOverrides', 'Raw Wash Override Quantity'], ['overrides', 'Qualifying Wash Overrides'],
   ['basic', 'Basic Memberships Sold'], ['good', 'Good Memberships Sold'], ['better', 'Better Memberships Sold'],
   ['best', 'Best Memberships Sold'], ['unclassified', 'Unclassified Memberships Sold'], ['memberships', 'Total Memberships Sold'], ['recharges', 'Membership Recharges'],
@@ -53,6 +53,9 @@ function Comparison({ row }) {
     </p>}
     {row.system === 'DRB' && !row.provisionalFinancial && !row.financialWarnings?.length && row.metrics.reportBalance === 0 &&
       <p className="my-2 text-sm font-medium">DRB revenue reconciled to a zero report balance and matching POS cash.</p>}
+    {row.system === 'DRB' && <p className="my-2 text-sm">
+      POS conversion excludes Government Car and Police Wash activity. The manual Budget Tracking calculation uses Total Washes.
+    </p>}
     {!saved && <p className="my-2 text-sm">{row.managerMissing
       ? 'No saved Budget Tracking entry for this site and business date.' : 'Budget Tracking comparison unavailable.'}</p>}
     {washCount && <details className="my-2 text-sm">
@@ -76,8 +79,9 @@ function Comparison({ row }) {
         </tr></thead>
         <tbody>{metrics.map(([key, label, type]) => {
           const provisional = isProvisionalPosMetric(row, key)
-          const difference = provisional || imported[key] == null || saved?.[key] == null ? null : imported[key] - saved[key]
-          const comparison = !provisional && saved && Object.hasOwn(saved, key) && key !== 'other'
+          const differentRules = row.system === 'DRB' && saved && ['opportunities', 'conversion'].includes(key)
+          const difference = differentRules || provisional || imported[key] == null || saved?.[key] == null ? null : imported[key] - saved[key]
+          const comparison = !differentRules && !provisional && saved && Object.hasOwn(saved, key) && key !== 'other'
             ? comparePosMetric(key, imported[key], saved[key]) : null
           return <tr key={key} className="border-b border-gray-100 dark:border-tm-dark-border">
             <th scope="row" className="py-1.5 text-left font-medium">{label}</th>
@@ -86,7 +90,7 @@ function Comparison({ row }) {
             <td className={'px-2 text-right tabular-nums ' + (difference ? 'font-semibold text-amber-800 dark:text-amber-300' : '')}>
               {format(difference, type)}
             </td>
-            <td className="px-2 text-right">{provisional ? 'Provisional · unreconciled' : comparisonLabels[comparison] || '—'}</td>
+            <td className="px-2 text-right">{provisional ? 'Provisional · unreconciled' : differentRules ? 'Different calculation' : comparisonLabels[comparison] || '—'}</td>
           </tr>
         })}</tbody>
       </table>

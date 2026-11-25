@@ -72,7 +72,7 @@ function memberships(rows, warnings) {
 }
 
 function ratios(metrics, system) {
-  const opportunities = metrics.washes == null || (system === 'Micrologic' && (metrics.redemptions == null || metrics.overrides == null)) ? null : system === 'DRB' ? metrics.washes : metrics.washes - metrics.redemptions - metrics.overrides
+  const opportunities = metrics.washes == null || (system === 'Micrologic' && (metrics.redemptions == null || metrics.overrides == null)) ? null : system === 'DRB' ? metrics.washes - metrics.governmentWashes - metrics.policeWashes : metrics.washes - metrics.redemptions - metrics.overrides
   return {
     ...metrics,
     opportunities: opportunities == null ? null : Math.max(0, opportunities),
@@ -313,8 +313,13 @@ export function parseDailyDrb(sheets) {
     const quantityDifferences = rows.filter(row => ['basic washes', 'arm plans sold', 'arm plans recharged',
       'arm plans redeemed', 'arm plans terminated'].includes(row.category) && row.count !== row.quantity)
       .map(({ sourceCategory, label, count, quantity }) => ({ category: sourceCategory, label, count, quantity }))
+    const basicWashes = category(rows, 'basic washes')
+    // Basic Washes is the established vehicle count source. Companion rows
+    // in other categories never add vehicles or exclusions.
+    const governmentWashes = sum(basicWashes.filter(row => norm(row.label) === 'government car'), 'quantity')
+    const policeWashes = sum(basicWashes.filter(row => norm(row.label) === 'police wash'), 'quantity')
     const metrics = ratios({ revenue: total, payments: total, cards: card, house, other, cash, reportedCash, reportBalance, overrides: null,
-        washes: sum(category(rows, 'basic washes'), 'quantity'), redemptions: sum(category(rows, 'arm plans redeemed'), 'quantity'),
+        washes: sum(basicWashes, 'quantity'), governmentWashes, policeWashes, redemptions: sum(category(rows, 'arm plans redeemed'), 'quantity'),
         recharges: sum(category(rows, 'arm plans recharged'), 'quantity'), terminations: sum(category(rows, 'arm plans terminated'), 'quantity'),
         ...memberships(category(rows, 'arm plans sold'), warnings) }, 'DRB')
     return { system: 'DRB', sourceId, siteCode, businessDate: date, warnings, financialWarnings, quantityDifferences,

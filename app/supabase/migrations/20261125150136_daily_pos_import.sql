@@ -87,17 +87,17 @@ begin
       or (p_document#>'{sources,report}') - array['member','unclassifiedRetail','unclassifiedRedemptions','packageBase'] <> '{}'::jsonb
     )) then raise exception 'Unsupported POS source detail.'; end if;
   if not (p_document->'metrics') ?& array['total','member','retail','payments','cards','house','other','cash','reportedCash','balance',
-      'washes','opportunities','redemptions','overrides','memberships','basicSold','goodSold','betterSold','bestSold','recharges','terminations','premiumSold','unclassifiedSold',
+      'washes','governmentWashes','policeWashes','opportunities','redemptions','overrides','memberships','basicSold','goodSold','betterSold','bestSold','recharges','terminations','premiumSold','unclassifiedSold',
       'premiumRetail','eligibleRetail','premiumRedeemed','unclassifiedRedeemed'] then raise exception 'Missing POS metric keys.'; end if;
   for key, item in select * from jsonb_each(p_document->'metrics') loop
     if key not in ('total','member','retail','payments','cards','house','other','cash','reportedCash','balance',
-      'washes','opportunities','redemptions','overrides','memberships','basicSold','goodSold','betterSold','bestSold','recharges','terminations','premiumSold','unclassifiedSold',
+      'washes','governmentWashes','policeWashes','opportunities','redemptions','overrides','memberships','basicSold','goodSold','betterSold','bestSold','recharges','terminations','premiumSold','unclassifiedSold',
       'premiumRetail','eligibleRetail','premiumRedeemed','unclassifiedRedeemed') then raise exception 'Unknown POS metric.'; end if;
     if item = 'null'::jsonb then continue; end if;
     if jsonb_typeof(item) <> 'number' then raise exception 'Financial amounts and quantities must be integers.'; end if;
     amount := (item #>> '{}')::numeric;
     if trunc(amount) <> amount or abs(amount)>999999999999
-      or (key in ('washes','opportunities','redemptions','overrides','memberships','basicSold','goodSold','betterSold','bestSold','recharges','terminations','premiumSold','unclassifiedSold',
+      or (key in ('washes','governmentWashes','policeWashes','opportunities','redemptions','overrides','memberships','basicSold','goodSold','betterSold','bestSold','recharges','terminations','premiumSold','unclassifiedSold',
       'premiumRetail','eligibleRetail','premiumRedeemed','unclassifiedRedeemed') and (amount<0 or amount>2147483647)) then
       raise exception 'Invalid POS metric range.';
     end if;
@@ -109,8 +109,16 @@ begin
     raise exception 'Member and retail revenue must reconcile to total revenue.';
   end if;
   m := p_document->'metrics';
-  if p_system='DRB' and (m->'total' is distinct from m->'payments' or m->'washes' is distinct from m->'opportunities') then
-    raise exception 'DRB totals do not match its reporting rules.';
+  if p_system='DRB' then
+    if m->'total' is distinct from m->'payments' then raise exception 'DRB totals do not match its reporting rules.'; end if;
+    if m->>'washes' is null or m->>'governmentWashes' is null or m->>'policeWashes' is null
+      or (m->>'governmentWashes')::numeric+(m->>'policeWashes')::numeric > (m->>'washes')::numeric
+      or (m->>'opportunities')::numeric is distinct from
+        (m->>'washes')::numeric-(m->>'governmentWashes')::numeric-(m->>'policeWashes')::numeric then
+      raise exception 'DRB wash opportunities do not reconcile.';
+    end if;
+  elsif m->>'governmentWashes' is not null or m->>'policeWashes' is not null then
+    raise exception 'Government and police exclusions apply only to DRB.';
   end if;
   if p_system='Micrologic' and m->>'washes' is not null and m->>'redemptions' is not null and m->>'overrides' is not null
     and (m->>'opportunities')::numeric is distinct from greatest(0,

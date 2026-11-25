@@ -144,3 +144,16 @@ test('file hashing is exact and save payload excludes workbook bytes and require
   assert.deepEqual(Object.keys(calls[0][1]).sort(),['p_day','p_file_name','p_parser','p_rows','p_sha','p_system'])
   assert.equal(calls[0][1].p_rows[0].reason,'Approved fixture')
 })
+
+test('network conversion uses weighted revised opportunities and treats a zero denominator as unavailable', () => {
+  const a = record('a', start, 1, { washes: 10, opportunities: 7, memberships: 2 })
+  const b = record('b', start, 2, { washes: 20, opportunities: 17, memberships: 1 })
+  const report = buildPosPerformance(locations, [a, b], goals, start, start)
+  assert.equal(report.network.washes, 30)
+  assert.equal(report.network.opportunities, 24)
+  assert.equal(report.network.conversion, 3 / 24)
+  const secondDay = record('a', end, 1, { washes: 10, opportunities: 0, memberships: 0 })
+  const period = buildPosPerformance([locations[0]], [a, secondDay], goals, start, end)
+  assert.equal(period.network.conversion, 2 / 7)
+  assert.equal(buildPosPerformance([locations[0]], [secondDay], goals, end, end).network.conversion, null)
+})

@@ -42,9 +42,9 @@ export function buildPosReportMetrics(system, rows, metrics) {
   const retailRevenue = memberRevenue == null ? null : metrics.revenue - memberRevenue
 
   const sales = mic ? lines('wash sales') : [...lines('basic washes'), ...lines('wash packages')]
-  const verifiedSales = sales.filter(r => retail.has(name(r.label)) || (!mic && r.category === 'basic washes' && specialDrb.has(name(r.label))))
+  const verifiedSales = sales.filter(r => retail.has(name(r.label)))
   const ignored = r => mic ? name(r.label).replace(/\s/g, '') === 'zbestwash'
-    : ['package wash', 'ghostwash-', 'arm membercross wash'].includes(name(r.label))
+    : specialDrb.has(name(r.label)) || ['package wash', 'ghostwash-', 'arm membercross wash'].includes(name(r.label))
   const unknownSales = sales.filter(r => !verifiedSales.includes(r) && !ignored(r) && r.quantity !== 0)
   const ambiguous = unknownSales.length > 0 || !valid(sales, 'quantity')
   const premiumRetail = sum(verifiedSales.filter(r => ['better wash', 'best wash'].includes(name(r.label))), 'quantity')
