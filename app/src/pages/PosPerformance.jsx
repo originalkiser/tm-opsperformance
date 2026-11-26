@@ -18,20 +18,26 @@ const pct = new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDi
 const columns = [
   ['retail','Retail Rev','cents','Total revenue less signed member revenue.'],
   ['member','Member Rev','cents','New and recurring membership revenue, reactivations, and applicable signed discounts and refunds.'],
-  ['total','Total Rev','cents','Micrologic TOTAL REVENUE or DRB Total to Account For. Provisional financial figures are excluded.'],
+  ['total','Total Rev','cents','Micrologic TOTAL REVENUE or DRB Total to Account For. Unsupported revenue is excluded.'],
   ['target','Revenue Target','dollars','Sum of daily TM Ops revenue targets for the entire effective period.'],
-  ['comparison','vs Target (%)','percent','(Total revenue − target) ÷ target. Requires complete coverage, daily targets and reconciled financial results.'],
-  ['opportunities','Retail Washes','quantity','Conversion opportunities. DRB subtracts Government Car and Police Wash quantities from Total Washes. Micrologic subtracts redemptions and qualifying overrides. This metric does not necessarily add to Member Washes to make Total Washes.'],
-  ['retailMix','Retail P-Mix','percent','Better and Best individual wash purchases ÷ all eligible individual wash purchases.'],
+  ['comparison','vs Target (%)','percent','(Total revenue − target) ÷ target. Requires complete coverage, daily targets and independently supported revenue.'],
+  ['opportunities','Retail Washes','quantity','Conversion opportunities. DRB subtracts Government Car, Police Wash and Employee Wash quantities from Total Washes. Micrologic subtracts redemptions and qualifying overrides. This metric does not necessarily add to Member Washes to make Total Washes.'],
+  ['retailMix','Retail P-Mix','percent','Net Better and Best individual purchases ÷ all eligible net individual purchases.'],
   ['redemptions','Member Washes','quantity','Membership redemptions.'],
-  ['redeemMix','Member Redeem P-Mix','percent','Better and Best membership redemptions ÷ all membership redemptions.'],
+  ['redeemMix','Member Redeem P-Mix','percent','Better and Best membership redemptions ÷ all tier-based membership redemptions.'],
   ['washes','Total Washes','quantity','Imported total washes. Micrologic uses its calculated fallback when the reported count is absent and source subtotals agree.'],
   ['memberships','Memberships Sold','quantity','All new memberships, including promotional, free and unclassified sales.'],
-  ['soldMix','Membership Sold P-Mix','percent','Better and Best new memberships ÷ all new memberships. Unavailable with unresolved tiers.'],
+  ['soldMix','Membership Sold P-Mix','percent','Better and Best new memberships ÷ all tier-based new memberships.'],
   ['conversion','Conversion %','percent','New memberships ÷ POS-specific conversion opportunities. The manual DRB Budget Tracking calculation still uses Total Washes.'],
   ['seller','Top Seller','text','Reserved for future Sales Reconciliation integration.'],
 ]
 
+function coverageText(coverage) {
+  if (!coverage) return 'Partial result'
+  const { usable, expected, denominator, knownDenominator, knownDenominatorDays } = coverage
+  return `Partial result. ${usable} of ${expected} location-days.` +
+    (denominator == null ? '' : ` Matched denominator ${denominator} of ${knownDenominator} known across ${knownDenominatorDays} days.`)
+}
 function format(value, type) {
   if (value == null) return '—'
   if (type === 'cents') return currency.format(value / 100)
@@ -107,9 +113,10 @@ function PerformanceReview({ locations }) {
   })
   const changeSort = key => setSort(previous => ({ key, descending: previous.key === key ? !previous.descending : key !== 'location' }))
   const direction = key => sort.key === key ? (sort.descending ? 'descending' : 'ascending') : 'none'
-  const cells = row => columns.map(([key, , type]) => <td key={key} className={'whitespace-nowrap px-2 py-2 text-right tabular-nums ' + tone(key, row[key])}>
+  const cells = row => columns.map(([key, , type]) => <td key={key} className={'whitespace-nowrap px-2 py-2 text-right tabular-nums ' + (row[key + 'Partial'] ? '' : tone(key, row[key]))}>
     {format(row[key], type)}
-    {row[key + 'Partial'] && row[key] != null && <span title="Available amounts only" aria-label="Partial"> *</span>}
+    {row[key + 'Partial'] && row[key] != null && <span tabIndex={0} title={coverageText(row.coverage[key])}
+      aria-label={coverageText(row.coverage[key])}> *</span>}
   </td>)
 
   return <div className="min-h-screen bg-tm-cream text-gray-900 dark:bg-tm-dark-bg dark:text-tm-dark-text">
@@ -143,10 +150,10 @@ function PerformanceReview({ locations }) {
       {report && !error && !empty && !current.error && <>
         <section className={panel + ' space-y-2'} aria-label="POS coverage">
           <p className="font-semibold">{report.network.imported} / {report.network.expected} location-days imported</p>
-          <p className="text-sm">{report.network.incomplete} incomplete · {report.network.financial} financial warnings · {report.network.provisional} provisional financial results · {report.network.unclassified} unclassified · {report.network.calculated} calculated wash counts</p>
+          <p className="text-sm">{report.network.incomplete} incomplete · {report.network.financial} financial warnings · {report.network.provisional} provisional tender results · {report.network.revenueProvisional} unsupported revenue results · {report.network.unclassified} unclassified · {report.network.calculated} calculated wash counts</p>
           {report.network.imported === 0 && period === 'Today' && <p className="text-sm">No POS results have been imported for today.</p>}
           {(columns.some(([key]) => report.network[key + 'Partial']) || report.network.financial > 0) &&
-            <p className="text-sm">* Partial amounts use available data. Revenue comparisons are unavailable where coverage, reconciliation or targets are incomplete.</p>}
+            <p className="text-sm">* Partial results include only supported inputs. Revenue comparisons require complete supported revenue and daily targets. Reconciliation warnings remain visible.</p>}
         </section>
         <div className="max-h-[65vh] overflow-auto rounded-lg border border-gray-200 dark:border-tm-dark-border"
           role="region" aria-label="Scrollable POS Performance results" tabIndex={0}>
@@ -184,6 +191,9 @@ function PerformanceReview({ locations }) {
                 <button className="font-semibold text-tm-blue underline dark:text-tm-teal" onClick={() => viewHistory(row.location, record.business_date)}>
                   {record.business_date} · Revision {record.revision}
                 </button> · {record.validation} · {record.financial_status}
+                {record.document.quality && ` · Revenue ${record.document.quality.revenueStatus} · Tender ${record.document.quality.tenderStatus}`}
+                {record.document.quality?.revenueStatus === 'supported' && record.document.metrics.member == null &&
+                  <p>Unallocated revenue {format(record.document.metrics.total, 'cents')}</p>}
                 {record.document.sources?.washCount?.source === 'calculated' && ' · Calculated wash count'}
                 {[...record.document.warnings, ...record.document.financialWarnings].map((warning,i) => <p key={i}>{warning}</p>)}
               </li>)}</ul>

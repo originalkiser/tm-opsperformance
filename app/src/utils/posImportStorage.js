@@ -1,13 +1,21 @@
 import { matchPosLocations, parseDailyPosFile, readPosComparisons } from './dailyPosImport.js'
 
 export const POS_START = '2026-11-01'
-export const POS_PARSER_VERSION = 'daily-pos-v2.0.0'
+export const POS_PARSER_VERSION = 'daily-pos-v3.1.0'
 const integer = value => Number.isSafeInteger(value) ? value : null
 const quantity = value => Number.isSafeInteger(value) && value >= 0 ? value : null
 
 export function posDocument(row) {
   const m = row.metrics, p = row.reportMetrics
   return {
+    quality: {
+      revenueStatus: row.revenueVerified ? 'supported' : 'provisional',
+      tenderStatus: row.provisionalTenders || row.provisionalFinancial ? 'provisional' :
+        row.financialWarnings?.length || m.reportBalance !== 0 || m.cash == null || m.cash !== m.reportedCash ? 'warning' : 'reconciled',
+      employeeWashes: quantity(m.employeeWashes),
+      nonTierSold: quantity(m.nonTier),
+      nonTierRedeemed: p.redemptionComplete ? quantity(p.redeem.nonTier) : null,
+    },
     metrics: {
       total: integer(m.revenue), member: integer(p.memberRevenue), retail: integer(p.retailRevenue),
       payments: integer(m.payments), cards: integer(m.cards), house: integer(m.house), other: integer(m.other),
@@ -78,7 +86,7 @@ export async function preparePosWorkbook(client, file, locations) {
     const current = fromStore.find(item => item.location_id === row.location.id && item.business_date === day)
     const document = posDocument(row)
     return {
-      sourceId: row.sourceId, locationId: row.location.id, name: row.location.name, document,
+      sourceId: row.sourceId, locationId: row.location.id, name: row.location.name, document, previous: current?.document,
       expectedRevision: current?.revision ?? 0,
       change: !current ? 'new' : canonical(current.document) === canonical(document) ? 'duplicate' : 'correction',
     }
@@ -109,4 +117,45 @@ export async function commitPosWorkbook(client, workbook, correctionReason) {
   })
   if (error || !data) throw new Error(error?.message || 'POS import could not be saved.')
   return data
+}
+
+const historicalInvariants = ['total','washes','memberships','redemptions','payments','cash','reportedCash','cards',
+  'house','other','balance','governmentWashes','policeWashes']
+
+export function historicalChanges(candidate) {
+  const { previous, document } = candidate
+  const metrics = { ...document.metrics, ...document.quality }
+  const prior = { ...previous?.metrics, ...previous?.quality }
+  const changes = Object.entries(metrics).filter(([key, value]) => value !== prior[key])
+    .map(([key, value]) => ({ key, previous: prior[key], proposed: value }))
+  const signed = value => {
+    const { revenueSummary: _, ...rest } = value?.sources?.signedAmounts ?? {}
+    return rest
+  }
+  const invariant = !!previous && historicalInvariants.every(key => previous.metrics[key] === document.metrics[key]) &&
+    canonical(previous.financialWarnings) === canonical(document.financialWarnings) &&
+    previous.provisionalFinancial === document.provisionalFinancial && canonical(signed(previous)) === canonical(signed(document))
+  return { changes, invariant, unresolved: [ ...document.warnings,
+    ...Object.entries(metrics).filter(([key, value]) => value == null &&
+      ['total','member','retail','washes','memberships','opportunities','eligibleRetail','premiumSold','premiumRedeemed'].includes(key))
+      .map(([key]) => key + ' unavailable') ] }
+}
+
+export async function historicalRpc(client, name, args) {
+  const { data, error } = await client.rpc('pos_reprocess_' + name, args)
+  if (error) throw new Error(error.message)
+  return data
+}
+
+export async function prepareHistoricalManifest(client, workbooks, reason) {
+  if (!reason.trim() || !workbooks.length || new Set(workbooks.map(w => w.sha)).size !== workbooks.length ||
+      workbooks.some(w => w.issues.length || w.storageError || !w.candidates.length ||
+        w.candidates.some(row => !historicalChanges(row).invariant))) {
+    throw new Error('Review all workbook invariants and enter a correction reason before locking the manifest.')
+  }
+  return historicalRpc(client, 'prepare', { p_reason: reason.trim(), p_workbooks: workbooks.map(workbook => ({
+    name: workbook.name, sha: workbook.sha, parser: POS_PARSER_VERSION, day: workbook.day, system: workbook.system,
+    rows: workbook.candidates.map(({ sourceId, locationId, expectedRevision, document }) =>
+      ({ sourceId, locationId, expectedRevision, document })),
+  })) })
 }

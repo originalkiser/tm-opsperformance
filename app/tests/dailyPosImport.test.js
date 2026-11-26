@@ -367,3 +367,33 @@ test('DRB rejects missing, malformed, and genuine fractional cents with source c
     })
   }
 })
+
+test('DRB package-only employee row excludes one opportunity without changing authoritative washes', () => {
+  const fixture = structuredClone(drb)
+  fixture[0].rows.splice(1, 2, drbRow('Basic Washes', 26, 260, 'Basic Wash'),
+    drbRow('Basic Washes', 1, 7, 'Wash & Dry'), drbRow('Basic Washes', 4, 24, 'Package Wash'),
+    drbRow('Wash Packages', 2, 28, 'Better Wash'), drbRow('Wash Packages', 1, 19, 'Best Wash'),
+    drbRow('Wash Packages', 1, 10, 'The Works'), drbRow('Wash Packages', 1, 0, 'Employee Wash 002'),
+    drbRow('ARM Plans Sold', 2, 70, 'Unl. Military Sld'), drbRow('ARM Plans Sold', 1, 15, 'Unl Police SPECIAL'),
+    drbRow('ARM Plans Terminated', 1, -12, 'Unl. Military Rfnd'))
+  const [row] = parseDailyDrb(fixture)
+  assert.equal(row.metrics.washes,31)
+  assert.equal(row.metrics.employeeWashes,1)
+  assert.equal(row.metrics.opportunities,30)
+  assert.equal(row.metrics.best,2)
+  assert.equal(row.metrics.nonTier,1)
+  assert.equal(row.metrics.pmix,1)
+  assert.equal(row.metrics.conversion,3/30)
+  assert.equal(row.reportMetrics.eligibleRetail,31)
+  assert.equal(row.reportMetrics.premiumRetail,4)
+  assert.equal(row.reportMetrics.memberRevenue,136600)
+})
+
+test('exact Micrologic Basic and Good Wash Rewash aliases qualify only in Wash Override', () => {
+  const fixture = micro.flatMap(row => row[0] === 'WASH OVERRIDE Total' ?
+    [micRow('Basic Wash Rewash',1,'$0.00'),micRow('Good Wash Rewash',1,'$0.00'),micRow(row[0],9,'($26.00)')] : [row])
+  const [row] = parseMicrologic(fixture)
+  assert.equal(row.metrics.washes,121)
+  assert.equal(row.metrics.overrides,3)
+  assert.equal(row.metrics.opportunities,13)
+})
