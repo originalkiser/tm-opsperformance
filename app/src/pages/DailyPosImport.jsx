@@ -193,7 +193,7 @@ function PosReview({ locations }) {
     <NavBar />
     <main className="mx-auto max-w-screen-xl space-y-4 p-4 sm:p-6">
       <header>
-        <Link to="/reports" className="text-sm font-semibold text-tm-blue dark:text-tm-teal">Back to Reports</Link>
+        <Link to="/pos-performance" className="text-sm font-semibold text-tm-blue dark:text-tm-teal">Back to POS Performance</Link>
         <h1 className="mt-2 font-brand text-2xl font-bold">Daily POS Import</h1>
         <p className="text-sm">Preview daily Micrologic and DRB workbooks, compare manager entries, and save verified source results. Only parsed metrics and audit details are saved.</p>
       </header>
