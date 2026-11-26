@@ -1,3 +1,4 @@
+import PosMembershipImport from '../components/PosMembershipImport'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import NavBar from '../components/NavBar'
@@ -78,8 +79,10 @@ export default function SalesReconciliation() {
   if(state && loadedRange)try{siteRows=reconciliationComparison(state.sales,logs,sites,loadedRange,aliases);employeeRows=employeeReconciliation(state.sales,logs,sites,loadedRange,aliases)}catch{calculationError='Comparison unavailable: historical mappings or Daily Log attribution could not be verified.'}
   const filtered=state?.sales.filter(s=>filter==='all'||saleBucket(s)===filter)||[]
   return <div className="min-h-screen bg-tm-cream text-tm-navy dark:bg-tm-dark-bg dark:text-tm-dark-text"><NavBar/><main className="mx-auto max-w-7xl p-4 space-y-5">
-    <Link to="/reports" state={{ report: 'team' }} className="text-sm font-semibold text-tm-blue dark:text-tm-teal">Back to Team Sales</Link><h1 className="text-2xl font-bold">DRB Sales Reconciliation</h1>
+    <Link to="/reports" state={{ report: 'team' }} className="text-sm font-semibold text-tm-blue dark:text-tm-teal">Back to Team Sales</Link><h1 className="text-2xl font-bold">POS Sales Import &amp; Reconciliation</h1>
     {access==='loading'?<p role="status">Checking reviewer access…</p>:access!=='allowed'?<p role="alert">This report requires separately authorized sales reviewer access.</p>:<fieldset disabled={busy} className="space-y-5 min-w-0">
+      <PosMembershipImport />
+      <h2 className="font-bold">Legacy DRB reconciliation history</h2>
       <p>Compare manager entries with imported membership transactions and reviewed commission evidence. Imported sales do not affect rankings.</p>
       <div className="flex flex-wrap items-end gap-3"><label>Start <input aria-label="Start" type="date" className={input} value={range.start} onChange={e=>{setRange(r=>({...r,start:e.target.value}));setPreview(null);setState(null)}}/></label><label>End <input aria-label="End" type="date" className={input} value={range.end} onChange={e=>{setRange(r=>({...r,end:e.target.value}));setPreview(null);setState(null)}}/></label><button disabled={busy} className={button} onClick={()=>run(load)}>Load comparison</button></div>
       <section className="rounded border p-4 space-y-3 dark:border-tm-dark-border"><h2 className="font-bold">Import DRB transactions</h2>

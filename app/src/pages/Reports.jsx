@@ -418,7 +418,7 @@ export default function Reports() {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 {report.id === 'team' && profile?.role === 'admin' && profile.is_active === true && !profile.deleted_at && !managerPreview && (
-                  <Link to="/sales-reconciliation" className="inline-flex min-h-11 max-w-full items-center rounded-md border border-tm-teal px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tm-teal">DRB Sales Reconciliation</Link>
+                  <Link to="/sales-reconciliation" className="inline-flex min-h-11 max-w-full items-center rounded-md border border-tm-teal px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tm-teal">POS Sales Import &amp; Reconciliation</Link>
                 )}
                 {/* Single-shop picker (Snapshot / Monthly) */}
                 {report.filterNeeds.shops === 'single' && report.id === 'snapshot' && (

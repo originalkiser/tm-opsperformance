@@ -1,3 +1,5 @@
+import { membershipCoverage, usePosMembershipReport } from '../components/PosMembershipComparison'
+import { topMembershipSeller } from '../utils/posMembership'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import NavBar from '../components/NavBar'
@@ -29,7 +31,7 @@ const columns = [
   ['memberships','Memberships Sold','quantity','All new memberships, including promotional, free and unclassified sales.'],
   ['soldMix','Membership Sold P-Mix','percent','Better and Best new memberships ÷ all tier-based new memberships.'],
   ['conversion','Conversion %','percent','New memberships ÷ POS-specific conversion opportunities. The manual DRB Budget Tracking calculation still uses Total Washes.'],
-  ['seller','Top Seller','text','Reserved for future Sales Reconciliation integration.'],
+  ['seller','Top Seller','text','Verified employee-attributed new memberships. Provisional when source coverage or attribution remains incomplete.'],
 ]
 
 function coverageText(coverage) {
@@ -77,6 +79,7 @@ function PerformanceReview({ locations }) {
   const inMarket = eligible.filter(location => !market || location.market === market)
   const visible = inMarket.filter(location => !locationId || location.id === locationId)
   const { start, end, empty, error } = posPeriod(period, today, customStart, customEnd)
+  const membership = usePosMembershipReport(visible, start, end)
   const scope = start + ':' + end
 
   useEffect(() => {
@@ -113,11 +116,26 @@ function PerformanceReview({ locations }) {
   })
   const changeSort = key => setSort(previous => ({ key, descending: previous.key === key ? !previous.descending : key !== 'location' }))
   const direction = key => sort.key === key ? (sort.descending ? 'descending' : 'ascending') : 'none'
-  const cells = row => columns.map(([key, , type]) => <td key={key} className={'whitespace-nowrap px-2 py-2 text-right tabular-nums ' + (row[key + 'Partial'] ? '' : tone(key, row[key]))}>
+  function seller(row) {
+    if (!row.location || !membership?.result) return null
+    const leader = topMembershipSeller(membership.result.people.filter(p => p.location_id === row.location.id))
+    if (!leader) return null
+    const coverage = membershipCoverage(membership.result.coverage.filter(d => d.loc === row.location.id))
+    return { ...leader, ...coverage }
+  }
+  const cells = row => columns.map(([key, , type]) => {
+    if (key === 'seller') {
+      const top = seller(row)
+      return <td key={key} className="min-w-40 px-2 py-2 text-right">{top ? <details>
+        <summary>{top.names.join(' / ')} · {top.count}{top.provisional && ' · Provisional'}</summary>
+        <p>{top.names.length > 1 && 'Co-leaders · '}{top.verified}/{top.expected} GSR-matched days · {top.unresolved} unresolved attributions</p>
+      </details> : '—'}</td>
+    }
+    return <td key={key} className={'whitespace-nowrap px-2 py-2 text-right tabular-nums ' + (row[key + 'Partial'] ? '' : tone(key, row[key]))}>
     {format(row[key], type)}
     {row[key + 'Partial'] && row[key] != null && <span tabIndex={0} title={coverageText(row.coverage[key])}
       aria-label={coverageText(row.coverage[key])}> *</span>}
-  </td>)
+  </td>})
 
   return <div className="min-h-screen bg-tm-cream text-gray-900 dark:bg-tm-dark-bg dark:text-tm-dark-text">
     <NavBar />

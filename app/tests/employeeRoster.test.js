@@ -42,7 +42,7 @@ test('revoked roster access never starts broad table reads; server duplicate err
 function harness(extra = {}, isAdmin = true) {
   const actions = []
   const h = locationHelpHarness('pages/Employees', { useSearchParams: () => [new URLSearchParams()],
-    supabase: {}, filterRoster, validateDuplicateReview, rosterError,
+    supabase: {}, PosEmployeeAliases: () => null, filterRoster, validateDuplicateReview, rosterError,
     loadRoster: async () => rows,
     addRosterEmployee: async (...args) => actions.push(['add', ...args]),
     updateRosterEmployee: async (...args) => actions.push(['update', ...args]),

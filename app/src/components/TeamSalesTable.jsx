@@ -1,3 +1,4 @@
+import PosMembershipComparison from './PosMembershipComparison'
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { readMappings } from '../utils/historicalEmployeeMappings.js'
@@ -55,7 +56,8 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
   if (mappingState.error) return <div role="alert">Historical mappings could not be verified: {mappingState.error} <button onClick={() => setMappingReload(n => n + 1)}>Reload mappings</button></div>
   if (mappingState.key !== mappingKey) return <p role="status">Loading approved employee mappings…</p>
   if (!dataComplete) return <p role="alert" className="text-sm text-red-600">Team Sales data is incomplete or still loading. Reload the report before scoring.</p>
-  if (!data.length) return <div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div>
+  const comparison = <PosMembershipComparison data={data} locations={locations} dateRange={dateRange} mappings={mappingState.rows} dataComplete={dataComplete} />
+  if (!data.length) return <>{comparison}<div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div></>
 
   let performance
   try { performance = buildEmployeePerformance(data, locations, dateRange, mappingState.rows) }
@@ -101,6 +103,7 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
   }
 
   return <div>
+    {comparison}
     <p className="text-xs mb-2">Approved historical mappings affect attribution only. Unmapped names retain existing reporting rules. <button className="underline" onClick={() => setMappingReload(n => n + 1)}>Refresh mappings</button></p>
     <p className="text-xs mb-2 text-gray-600 dark:text-gray-300">Total Points = Total Sales + Conversion % + P-Mix %. Every employee with complete, valid data and positive opportunities qualifies; there is no sales or opportunity volume cutoff.</p>
     <p className="text-xs mb-3 text-gray-600 dark:text-gray-300">{population} employee/site identities. Same names at different sites remain separate.</p>

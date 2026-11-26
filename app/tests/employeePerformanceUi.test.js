@@ -23,7 +23,7 @@ async function table(data=fixture(),dataComplete=true,locs=locations,overrides={
   const h=locationHelpHarness('components/TeamSalesTable',{
     supabase:{},readMappings:async()=>[],...overrides,
     ...scoring,...colors,thCls,fmtNum,EmployeeScoreDetails:mod.exports.default,
-    ExportMenu:Export,fmtDateRange:()=> 'October',exportCsv:value=>{spec=value},exportXlsx:value=>{spec=value},exportPdf:value=>{spec=value},
+    PosMembershipComparison:()=>null,ExportMenu:Export,fmtDateRange:()=> 'October',exportCsv:value=>{spec=value},exportXlsx:value=>{spec=value},exportPdf:value=>{spec=value},
   },{data,locations:locs,dateRange,dataComplete})
   h.csv=()=>{h.find(n=>n.type===Export).props.items[2].run();return spec}
   h.html=()=>renderToStaticMarkup(h.render())
