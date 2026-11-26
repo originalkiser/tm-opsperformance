@@ -16,6 +16,12 @@ create table membership_private.aliases (
  check(ends is null or ends>=starts)
 );
 create index membership_alias_lookup on membership_private.aliases(location_id,kind,identifier,starts);
+-- Update an actual row while holding the advisory lock so transactions using
+-- an older repeatable-read snapshot cannot insert overlapping aliases.
+create table membership_private.alias_write_locks (
+ location_id uuid primary key references public.locations(id),
+ generation bigint not null default 1
+);
 create table membership_private.batches (
  id uuid primary key default gen_random_uuid(),
  system text not null check(system in ('DRB','Micrologic')),
@@ -69,6 +75,7 @@ create table membership_private.alias_audit (
  happened_at timestamptz not null default now(), details jsonb not null
 );
 alter table membership_private.aliases enable row level security;
+alter table membership_private.alias_write_locks enable row level security;
 alter table membership_private.batches enable row level security;
 alter table membership_private.events enable row level security;
 alter table membership_private.revisions enable row level security;
@@ -96,22 +103,40 @@ language sql immutable set search_path='' as $$
     else substring(lower(btrim(product)) from '^(basic|good|better|best)(?: wash unlimited(?: sign up(?: -promo)?)?| - rinsed - 50% off 3 months updated)$') end
   end;
 $$;
+create function membership_private.drb_activity(identifier text) returns text
+language sql immutable set search_path='' as $$
+ select case when length(identifier)<=32 and identifier ~ '^(?:[0-9]+|\([0-9]{2,4}\)[ .-]*[0-9]+)(?:[ .-]+[0-9]+)*$'
+  then case length(regexp_replace(identifier,'[^0-9]','','g'))
+    when 9 then 'new' when 10 then 'new' when 4 then 'regular' else 'unresolved' end
+  else 'unresolved' end;
+$$;
+-- Reused for attribution and report-time credit. Commission and client eligibility are absent.
+create function membership_private.credit_block(system text,item jsonb) returns text
+language sql immutable set search_path='' as $$
+ select case
+  when item->>'activity' is distinct from 'new' then 'no-credit'
+  when system='DRB' then case when membership_private.drb_activity(item->>'identifier')<>'new' then 'no-credit'
+    when membership_private.name_key(item->>'legalName')='' then 'name-conflict' end
+  when system='Micrologic' then case
+    when lower(btrim(item->>'product')) ~ '^employee([^[:alnum:]_]|$)' then 'employee-plan'
+    when coalesce(btrim(item->>'greeter'),'')='' then 'blank'
+    when lower(btrim(item->>'greeter')) ~ '^kiosk[123]?$' then 'kiosk' end
+  else 'no-credit' end;
+$$;
 create function membership_private.resolve(system text, loc uuid, day_date date, item jsonb)
 returns table(employee uuid, employee_name text, alias bigint, status text)
 language plpgsql stable set search_path='' as $$
 declare ident text; kind_key text; matches int; exact_match boolean;
 begin
-  if item->>'activity'<>'new' then status:='no-credit';
-  elsif system='Micrologic' then
-    ident:=lower(btrim(coalesce(item->>'greeter','')));
+  status:=membership_private.credit_block(system,item);
+  if status is not null then return next; return; end if;
+  if system='Micrologic' then
+    ident:=lower(btrim(item->>'greeter'));
     kind_key:='username';
-    if ident='' then status:='blank'; elsif ident ~ '^kiosk[123]?$' then status:='kiosk';
-    elsif lower(btrim(item->>'product')) ~ '^employee([^[:alnum:]_]|$)' then status:='employee-plan'; end if;
   else
-    ident:=regexp_replace(coalesce(item->>'identifier',''),'[^0-9]','','g');
+    ident:=regexp_replace(item->>'identifier','[^0-9]','','g');
     kind_key:='adp';
   end if;
-  if status is not null then return next; return; end if;
   exact_match:=exists(select 1 from membership_private.aliases a where a.location_id=loc and a.kind=kind_key and
     a.identifier=ident and a.starts<=day_date and (a.ends is null or a.ends>=day_date));
   select count(*) into matches from membership_private.aliases a
@@ -135,17 +160,26 @@ create function public.pos_membership_aliases(p_location uuid,p_action text,p_pa
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare is_admin boolean; kind_key text; ident text; legal text; emp uuid; begin_date date; end_date date; entry membership_private.aliases;
 begin
- if not public.can_propose_employee_mapping(p_location) then raise exception 'Location access required' using errcode='42501'; end if;
- select role='admin' into is_admin from public.user_profiles where id=auth.uid();
+ if public.can_propose_employee_mapping(p_location) is distinct from true then raise exception 'Location access required' using errcode='42501'; end if;
+ select role='admin' and is_active is true and deleted_at is null into is_admin from public.user_profiles where id=auth.uid();
  if p_action='read' then
   return (select coalesce(jsonb_agg(to_jsonb(a) - 'actor' order by a.starts desc,a.id desc),'[]') from membership_private.aliases a
    where a.location_id=p_location and (a.kind='username' or is_admin));
  end if;
  perform pg_advisory_xact_lock(761241,1);
+ -- Pin the profile and any delegated assignment, then recheck under the write lock.
+ select role='admin' and is_active is true and deleted_at is null into is_admin
+   from public.user_profiles where id=auth.uid() for share;
+ perform 1 from public.manager_locations where manager_id=auth.uid() and location_id=p_location for share;
+ if public.can_propose_employee_mapping(p_location) is distinct from true then
+   raise exception 'Location access required' using errcode='42501'; end if;
+ if p_action not in ('add','close') or p_action is null then raise exception 'Invalid alias action';end if;
+ insert into membership_private.alias_write_locks as l(location_id) values(p_location)
+ on conflict(location_id) do update set generation=l.generation+1;
  if p_action='close' then
   end_date:=(p_payload->>'ends')::date;
   select * into strict entry from membership_private.aliases where location_id=p_location and id=(p_payload->>'id')::bigint for update;
-  if (entry.kind='adp' and not is_admin) or entry.ends is not null or end_date is null or end_date<entry.starts
+  if (entry.kind='adp' and is_admin is distinct from true) or entry.ends is not null or end_date is null or end_date<entry.starts
    or exists(select 1 from membership_private.revisions where alias_id=entry.id and business_date>end_date)
    or nullif(btrim(p_payload->>'reason'),'') is null then raise exception 'Alias end date or permission is invalid.'; end if;
   update membership_private.aliases set ends=end_date where id=entry.id;
@@ -153,15 +187,16 @@ begin
    values(entry.id,auth.uid(),'close',p_payload->>'reason',jsonb_build_object('end',end_date));
   return jsonb_build_object('id',entry.id);
  end if;
- if p_action is distinct from 'add' then raise exception 'Invalid alias action'; end if;
  kind_key:=p_payload->>'kind'; ident:=lower(btrim(p_payload->>'identifier')); legal:=nullif(btrim(p_payload->>'legalName'),'');
  emp:=(p_payload->>'employee')::uuid; begin_date:=(p_payload->>'starts')::date; end_date:=(p_payload->>'ends')::date;
  if kind_key is null or kind_key not in ('username','adp') or begin_date is null or (end_date is not null and end_date<begin_date)
-  or (kind_key='adp' and (not is_admin or coalesce(ident,'') !~ '^[0-9]{9,10}$' or legal is null or length(legal)>150))
+  or (kind_key='adp' and (is_admin is distinct from true or coalesce(ident,'') !~ '^[0-9]{9,10}$' or legal is null or length(legal)>150))
   or (kind_key='username' and (coalesce(ident,'') !~ '^[[:alnum:]][[:alnum:]_. @-]{0,79}$' or ident ~ '^kiosk[123]?$'))
   or nullif(btrim(p_payload->>'reason'),'') is null
   or not exists(select 1 from public.employees where id=emp and location_id=p_location)
  then raise exception 'Invalid employee alias or location permissions.'; end if;
+ perform 1 from public.employees where id=emp and location_id=p_location for share;
+ if not found then raise exception 'Employee location changed. Reload the roster.';end if;
  if exists(select 1 from membership_private.aliases where location_id=p_location and kind=kind_key
    and (identifier=ident or kind_key='adp' and ltrim(identifier,'0')=ltrim(ident,'0'))
    and daterange(starts,ends,'[]') && daterange(begin_date,end_date,'[]'))
@@ -190,7 +225,7 @@ begin
     order by r.business_date desc,e.id limit 250
   ) q);
  end if;
- if p_action not in ('preview','commit') then raise exception 'Invalid import action';end if;
+ if coalesce(p_action,'') not in ('preview','commit') then raise exception 'Invalid import action';end if;
  if p_action='commit' then
    perform 1 from public.user_profiles where id=auth.uid() for share;
    perform 1 from reconciliation_private.reviewers where user_id=auth.uid() for share;
@@ -218,22 +253,26 @@ begin
  end if;
  for item in select value from jsonb_array_elements(p_payload->'events') loop
   loc:=membership_private.site(system_code,item->>'site');day_date:=(item->>'date')::date;
-  if loc is null or day_date is null or day_date not between first_day and last_day or coalesce(item->>'ticket','') !~ '^[A-Za-z0-9-]{1,30}$'
+  if jsonb_typeof(item) is distinct from 'object' or not item ?& array['site','date','ticket','product','tier','activity']
+   or exists(select 1 from jsonb_each(item) f where f.key in ('site','date','ticket','product','tier','activity','greeter','cashier','identifier','legalName')
+     and jsonb_typeof(f.value) not in ('string','null'))
+   or loc is null or day_date is null or day_date not between first_day and last_day or coalesce(item->>'ticket','') !~ '^[A-Za-z0-9-]{1,30}$'
    or (system_code='DRB' and item->>'ticket' !~ '^[0-9]{1,30}$')
    or coalesce(length(item->>'product'),0) not between 1 and 150
-   or coalesce(length(item->>'legalName'),0)>150 or coalesce(length(item->>'cashier'),0)>80 or coalesce(length(item->>'greeter'),0)>80
+   or coalesce(length(item->>'legalName'),0)>150 or (item->>'cashier' is not null and btrim(item->>'cashier') !~ '^[[:alnum:]_. @-]{0,80}$')
+   or (item->>'greeter' is not null and btrim(item->>'greeter') !~ '^[[:alnum:]_. @-]{0,80}$')
    or item - array['site','date','ticket','product','tier','activity','identifier','legalName','commission','greeter','cashier','eligible','expectedRevision'] <> '{}'::jsonb
    or (item->>'commission' is not null and (jsonb_typeof(item->'commission') <> 'number'
      or item->>'commission' !~ '^-?[0-9]{1,12}$'))
+   or membership_private.tier(system_code,item->>'product') is null
    or item->>'tier' is distinct from membership_private.tier(system_code,item->>'product')
    or (system_code='Micrologic' and (coalesce(item->>'activity','') not in ('new','regular','grace') or item->>'identifier' is not null
      or item->>'legalName' is not null or item->>'commission' is not null))
    or (system_code='DRB' and (item->>'greeter' is not null or item->>'cashier' is not null or
      (item->>'identifier' is not null and (length(item->>'identifier')>32 or
        item->>'identifier' !~ '^(?:[0-9]+|\([0-9]{2,4}\)[ .-]*[0-9]+)(?:[ .-]+[0-9]+)*$'))
-     or item->>'activity' is distinct from (case
-       when regexp_replace(coalesce(item->>'identifier',''),'[^0-9]','','g')~'^[0-9]{9,10}$' then 'new'
-       when regexp_replace(coalesce(item->>'identifier',''),'[^0-9]','','g')~'^[0-9]{4}$' then 'regular' else 'unresolved' end)))
+     or item->>'activity' is distinct from membership_private.drb_activity(item->>'identifier')
+     or (item->>'activity'<>'new' and item->>'legalName' is not null)))
    then raise exception 'Invalid sanitized membership event';end if;
   fact:=item-array['expectedRevision','eligible'];
   select id into event from membership_private.events where system=system_code and location_id=loc and ticket=item->>'ticket';
@@ -260,6 +299,10 @@ begin
   loc:=membership_private.site(system_code,snapshot->>'site');day_date:=(snapshot->>'date')::date;
   if system_code<>'Micrologic' or loc is null or day_date is null or day_date not between first_day and last_day
     or coalesce(snapshot->>'activity','') not in ('cancel','decline') or coalesce(length(snapshot->>'product'),0) not between 1 and 150
+    or (membership_private.tier('Micrologic',snapshot->>'product') is null and lower(btrim(snapshot->>'product')) not in (
+       'best - rinsed - 25% off 3 months','best wash unlimited - mo','better - rinsed - 25% off 3 months',
+       'better wash 50% off unlimited - rinsed','fam better wash unlimited 22','military & veteran',
+       'zbest unlimited','zbest unlimited promo','zbetter blue vet unlimited'))
     or coalesce(snapshot->>'count','') !~ '^[1-9][0-9]{0,5}$'
     or snapshot-array['site','date','activity','product','count','expectedBatch'] <> '{}'::jsonb
     then raise exception 'Invalid membership activity snapshot'; end if;
@@ -300,14 +343,23 @@ begin
    count(*) filter(where source->>'tier' in ('better','best')) premium,
    count(*) filter(where source->>'tier' in ('basic','good','better','best')) tiered,
    count(*) filter(where source->>'tier' is null) unknown
-  from latest where employee_id is not null and source->>'activity'='new' group by location_id,employee_id
+  from latest v
+  where v.employee_id is not null and v.attribution='matched'
+    and membership_private.credit_block(v.system,v.source) is null
+    and exists(select 1 from membership_private.aliases a where a.id=v.alias_id and a.employee_id=v.employee_id
+      and a.location_id=v.location_id and v.business_date between a.starts and coalesce(a.ends,'infinity'::date)
+      and (v.system='Micrologic' and a.kind='username' and a.identifier=lower(btrim(v.source->>'greeter'))
+        or v.system='DRB' and a.kind='adp' and membership_private.name_key(a.legal_name)=membership_private.name_key(v.source->>'legalName')
+          and ltrim(a.identifier,'0')=ltrim(regexp_replace(v.source->>'identifier','[^0-9]','','g'),'0')
+          and exists(select 1 from membership_private.batches b where b.id=v.batch_id and b.externally_validated)))
+  group by location_id,employee_id
  ), dates as (
   select distinct loc, p_start+i as day_date from unnest(p_sites) loc cross join generate_series(0,p_end-p_start) i
  ), comparison as (
   select d.loc,d.day_date,
    (r.document#>>'{metrics,memberships}')::int gsr,
    (select count(*) from latest e where e.location_id=d.loc and e.business_date=d.day_date
-    and (e.system='DRB' or e.source->>'activity'='new')) observed,
+    and e.source->>'activity'='new') observed,
    (select count(*) from latest e where e.location_id=d.loc and e.business_date=d.day_date
     and (e.attribution in ('unmatched','ambiguous','name-conflict') or e.source->>'activity'='unresolved')) unresolved,
    exists(select 1 from membership_private.batches b where d.day_date between b.starts and b.ends and exists(

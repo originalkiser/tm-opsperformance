@@ -1,5 +1,5 @@
-import { membershipCoverage, usePosMembershipReport } from '../components/PosMembershipComparison'
-import { topMembershipSeller } from '../utils/posMembership'
+import { usePosMembershipReport } from '../components/PosMembershipComparison'
+import { membershipCoverage, topMembershipSeller } from '../utils/posMembership'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import NavBar from '../components/NavBar'

@@ -121,6 +121,11 @@ export function membershipTotals(events,snapshots=[]){
   for(const row of snapshots)totals[row.activity]+=row.count
   return totals
 }
+export function membershipCoverage(days){
+ const verified=days.filter(d=>d.imported&&d.gsr!=null&&d.gsr===d.observed).length
+ const unresolved=days.reduce((n,d)=>n+d.unresolved,0)
+ return {verified,expected:days.length,unresolved,provisional:verified!==days.length||unresolved>0}
+}
 export function topMembershipSeller(rows){
   const eligible=rows.filter(x=>x.credited>0)
   if(!eligible.length)return null

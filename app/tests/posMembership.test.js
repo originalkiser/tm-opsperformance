@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { classifyDrbIdentifier, membershipTotals, parseMembershipSheet, topMembershipSeller } from '../src/utils/posMembership.js'
+import { classifyDrbIdentifier, membershipCoverage, membershipTotals, parseMembershipSheet, topMembershipSeller } from '../src/utils/posMembership.js'
 
 const drb=['SITENUMBER','LOGDATE','SALEID','ITEM_NAME','CUST_NAME','CUST_MAINPHONE','CUST_ALTPHONE','COMMISSION','Legal Name']
 const row=(id,identifier)=>['1508','2026-11-01',id,'Unl. Better Sld','Customer example','5555555555',identifier,'$0.58','Employee example']
@@ -41,4 +41,12 @@ test('Micrologic attribution uses only Greeter, excludes employee plans and keep
 test('Top Seller shows ties and is unavailable without credited new sales',()=>{
  assert.deepEqual(topMembershipSeller([{name:'B',credited:2},{name:'A',credited:2},{name:'C',credited:1}]),{names:['A','B'],count:2})
  assert.equal(topMembershipSeller([{name:'Nobody',credited:0}]),null)
+})
+
+test('leaders remain provisional when verified new sales do not cover GSR or attribution is unresolved',()=>{
+ const covered={imported:true,gsr:8,observed:8,unresolved:0}
+ assert.equal(membershipCoverage([covered]).provisional,false)
+ assert.equal(membershipCoverage([{...covered,observed:4}]).provisional,true)
+ assert.equal(membershipCoverage([{...covered,unresolved:1}]).provisional,true)
+ assert.equal(membershipCoverage([{...covered,imported:false}]).provisional,true)
 })

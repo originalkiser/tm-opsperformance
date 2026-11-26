@@ -44,7 +44,7 @@ export default function PosMembershipImport(){
  if(gsr){
   for(const row of parsed.events){
    const key=row.site+'/'+row.date, x=impact.get(key)??{site:row.site,date:row.date,observed:0}
-   if(parsed.system==='DRB'||row.activity==='new')x.observed++
+   if(row.activity==='new')x.observed++
    impact.set(key,x)
   }
   for(const row of gsr.filter(r=>r.system===parsed.system)){
@@ -75,7 +75,7 @@ export default function PosMembershipImport(){
    <p>{parsed.events.length} transaction records · {review.rows.filter(r=>r.attribution==='matched').length} employee-attributed · {review.rows.filter(r=>r.action==='duplicate').length} duplicates · {review.rows.filter(r=>['unmatched','ambiguous','name-conflict'].includes(r.attribution)).length} unresolved mappings</p>
    <details><summary>Location and business-date coverage against GSR</summary>
     <ul className="text-sm">{[...impact.values()].sort((a,b)=>a.site.localeCompare(b.site)||a.date.localeCompare(b.date)).map(r=><li key={r.site+r.date}>
-      {r.site} · {r.date} · {r.observed} source / {r.gsr??'unavailable'} GSR
+      {r.site} · {r.date} · {r.observed} verified new / {r.gsr??'unavailable'} GSR
       {r.gsr!==r.observed&&' · Coverage difference'}
       {r.site==='1512'&&r.gsr>r.observed&&' · Check source coverage for promotional memberships'}
     </li>)}</ul>

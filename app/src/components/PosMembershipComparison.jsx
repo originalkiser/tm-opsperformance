@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { membershipRpc } from '../utils/posMembership'
+import { membershipCoverage, membershipRpc } from '../utils/posMembership'
 import { mappingCovers, isApprovedMapping } from '../utils/employeeMappingAttribution'
 import { buildEmployeePerformance } from '../utils/employeePerformance'
 
@@ -17,11 +17,6 @@ export function usePosMembershipReport(locations,start,end){
   return()=>{active=false}
  },[key,start,end,scope])
  return state?.scope===scope?state:null
-}
-export function membershipCoverage(days){
- const verified=days.filter(d=>d.imported&&d.gsr!=null&&d.gsr===d.observed).length
- const unresolved=days.reduce((n,d)=>n+d.unresolved,0)
- return {verified,expected:days.length,unresolved,provisional:verified!==days.length||unresolved>0}
 }
 export default function PosMembershipComparison({data,locations,dateRange,mappings,dataComplete}){
  const [open,setOpen]=useState(false)
