@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { toDateStr } from '../utils/budgetMath'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { membershipRpc, membershipTotals, parseMembershipFile } from '../utils/posMembership'
+import { membershipEventKey, membershipRpc, membershipTotals, parseMembershipFile } from '../utils/posMembership'
 import { readStoredPos } from '../utils/posImportStorage'
 
 const control='rounded border px-3 py-2 text-sm dark:border-tm-dark-border dark:bg-tm-dark-card'
@@ -25,14 +25,14 @@ export default function PosMembershipImport(){
   setPreview(null)
   const parsed=await parseMembershipFile(file,start,end)
   if(parsed.comparison){setPreview({parsed});return}
-  const {outside:_,...source}=parsed
+  const {outside:_,overlaps:__,...source}=parsed
   const request={...source,externallyValidated:parsed.system==='DRB'&&external}
   const [review,gsr]=await Promise.all([call('preview',request),readStoredPos(supabase,start,end)])
   setPreview({parsed,request,review,gsr})
  }
  async function save(){
-  const revisions=new Map(preview.review.rows.map(r=>[r.site+'/'+r.ticket,r.expectedRevision]))
-  const events=preview.request.events.map(r=>({...r,expectedRevision:revisions.get(r.site+'/'+r.ticket)}))
+  const revisions=new Map(preview.review.rows.map(r=>[membershipEventKey(preview.request.system,r),r.expectedRevision]))
+  const events=preview.request.events.map(r=>({...r,expectedRevision:revisions.get(membershipEventKey(preview.request.system,r))}))
   const snapshots=preview.request.snapshots.map((row,i)=>({...row,expectedBatch:preview.review.snapshots[i].expectedBatch}))
   const outcome=await call('commit',{...preview.request,events,snapshots,reason})
   setNotice(outcome.repeat?'Workbook already imported.':'Reviewed membership observations saved.')
@@ -69,6 +69,9 @@ export default function PosMembershipImport(){
   {parsed?.comparison&&<p>Comparison only · {parsed.comparison.quantity} reported units · source commission {parsed.comparison.commission==null?'Unavailable':(parsed.comparison.commission/100).toLocaleString('en-US',{style:'currency',currency:'USD'})}</p>}
   {review&&<>
    <p className="break-all">{parsed.system} · SHA-256 {parsed.sha} · {parsed.outside} out-of-scope rows</p>
+   {!!parsed.overlaps?.length&&<details><summary>{parsed.overlaps.length} repeated source rows counted once</summary>
+    <ul>{parsed.overlaps.map((row,i)=><li key={i}>{row.site} · {row.date} · ticket {row.ticket} · {activityLabels[row.activity]}</li>)}</ul>
+   </details>}
    <ul className="grid gap-1 sm:grid-cols-2">{Object.entries(membershipTotals(parsed.events,parsed.snapshots)).map(([k,v])=><li key={k}>
     {activityLabels[k]??'New membership tiers'} · {typeof v==='number'?v:Object.entries(v).map(([tier,n])=>tier+' '+n).join(', ')}
    </li>)}</ul>
@@ -84,6 +87,12 @@ export default function PosMembershipImport(){
    {review.snapshots.some(r=>r.expectedBatch)&&<details><summary>Previously observed snapshot groups</summary>
     <ul className="text-sm">{review.snapshots.filter(r=>r.expectedBatch).map(r=><li key={JSON.stringify([r.site,r.date,r.activity,r.product])}>
       {r.site} · {r.date} · {activityLabels[r.activity]} · {r.product} · {r.previousQuantity} → {r.quantity}{r.correction?' · Correction':''}
+    </li>)}</ul>
+   </details>}
+   {review.rows.some(r=>r.previousActivity && r.activity!==r.previousActivity)&&<details>
+    <summary>Activity classification corrections</summary>
+    <ul>{review.rows.filter(r=>r.previousActivity && r.activity!==r.previousActivity).map(r=><li key={membershipEventKey(parsed.system,r)}>
+      {r.site} · {r.date} · ticket {r.ticket} · {activityLabels[r.previousActivity]} → {activityLabels[r.activity]}
     </li>)}</ul>
    </details>}
    <label>Correction reason <input className={control} value={reason} onChange={e=>setReason(e.target.value)} maxLength={500}/></label>
