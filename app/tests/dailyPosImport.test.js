@@ -290,11 +290,20 @@ test('review groups location results by business date even when the same site ap
     [['2026-11-23', 2], ['2026-11-22', 1]])
 })
 
-test('Reports link requires active, nondeleted Admin while the route retains its guards', () => {
-  const reports = readFileSync(new URL('../src/pages/Reports.jsx', import.meta.url), 'utf8')
-  assert.match(reports, /\{profile\?\.role === 'admin' && profile\.is_active === true && !profile\.deleted_at && <Link to="\/daily-pos-import"/)
-  const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
+test('POS workflow shortcuts live in Admin report headers and retain guarded routes and Back links', () => {
+  const source = path => readFileSync(new URL('../src/' + path, import.meta.url), 'utf8')
+  const reports = source('pages/Reports.jsx')
+  const sidebar = reports.slice(reports.indexOf('<aside'), reports.indexOf('</aside>'))
+  assert.doesNotMatch(sidebar, /to="\/(daily-pos-import|sales-reconciliation)"/)
+  assert.match(reports, /report.id === 'team' && profile\?\.role === 'admin' && profile\.is_active === true && !profile\.deleted_at && !managerPreview && \(\s*<Link to="\/sales-reconciliation"/)
+  const performance = source('pages/PosPerformance.jsx')
+  assert.match(performance, /if \(profile\?\.role !== 'admin' \|\| profile\.is_active !== true \|\| profile\.deleted_at\)/)
+  assert.match(performance, /<header>[\s\S]*<Link to="\/daily-pos-import"[\s\S]*<\/header>/)
+  assert.match(source('pages/DailyPosImport.jsx'), /to="\/pos-performance"[^>]*>Back to POS Performance/)
+  assert.match(source('pages/SalesReconciliation.jsx'), /to="\/reports" state=\{\{ report: 'team' \}\}/)
+  const app = source('App.jsx')
   assert.match(app, /path="\/daily-pos-import" element=\{<ProtectedRoute><ManagerRoute><DailyPosImport/)
+  assert.match(app, /path="\/sales-reconciliation" element=\{<ProtectedRoute><ManagerRoute><SalesReconciliation/)
 })
 
 test('DRB government and police washes count once in total washes and never enter retail opportunities or mix', async () => {

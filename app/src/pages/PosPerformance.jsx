@@ -124,8 +124,13 @@ function PerformanceReview({ locations }) {
     <main className="mx-auto max-w-screen-2xl space-y-4 p-4 sm:p-6">
       <header>
         <Link to="/reports" className="text-sm font-semibold text-tm-blue dark:text-tm-teal">Back to Reports</Link>
-        <h1 className="mt-2 font-brand text-2xl font-bold">POS Performance</h1>
-        {!error && !empty && <p className="text-sm">{period} · Business dates {start} through {end}{['WTD','MTD'].includes(period) && ' · completed days'}</p>}
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="font-brand text-2xl font-bold">POS Performance</h1>
+            {!error && !empty && <p className="text-sm">{period} · Business dates {start} through {end}{['WTD','MTD'].includes(period) && ' · completed days'}</p>}
+          </div>
+          <Link to="/daily-pos-import" className="inline-flex min-h-11 max-w-full items-center rounded-md border border-tm-blue px-3 py-2 text-sm font-semibold text-tm-blue hover:bg-tm-sky/30 dark:border-tm-teal dark:text-tm-teal dark:hover:bg-tm-dark-card">Daily POS Import</Link>
+        </div>
       </header>
       <div className={panel + ' flex flex-wrap items-end gap-3'}>
         <label className="grid gap-1 text-sm">Period<select className={controls} value={period} onChange={event => setPeriod(event.target.value)}>

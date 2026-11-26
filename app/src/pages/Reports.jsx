@@ -203,7 +203,7 @@ function SingleShopSelect({ locations, value, onChange }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Reports() {
-  const { locations: allLocations, profile } = useAuth()
+  const { locations: allLocations, profile, managerPreview } = useAuth()
   const locations = useMemo(
     () => allLocations.filter(l => !l.exclude_from_reporting),
     [allLocations],
@@ -397,8 +397,6 @@ export default function Reports() {
               </button>
             ))}
             {profile?.role === 'admin' && profile.is_active === true && !profile.deleted_at && <Link to="/pos-performance" title="POS Performance" className="tm-reports-nav-item flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-tm-blue hover:bg-gray-50 dark:text-tm-teal dark:hover:bg-tm-dark-card">POS Performance</Link>}
-            {profile?.role === 'admin' && profile.is_active === true && !profile.deleted_at && <Link to="/daily-pos-import" title="Daily POS Import" className="tm-reports-nav-item flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-tm-blue hover:bg-gray-50 dark:text-tm-teal dark:hover:bg-tm-dark-card">Daily POS Import</Link>}
-            <Link to="/sales-reconciliation" className="tm-reports-nav-item flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-tm-blue hover:bg-gray-50 dark:text-tm-teal dark:hover:bg-tm-dark-card">DRB Sales Reconciliation</Link>
             <Link to="/checklist-compliance" title="Checklist Compliance" className="tm-reports-nav-item flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-tm-blue hover:bg-gray-50 dark:text-tm-teal dark:hover:bg-tm-dark-card">
               <span aria-hidden="true">✓</span>{sidebarOpen && <span className="text-xs">Checklist Compliance</span>}
             </Link>
@@ -419,6 +417,9 @@ export default function Reports() {
                 </h2>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {report.id === 'team' && profile?.role === 'admin' && profile.is_active === true && !profile.deleted_at && !managerPreview && (
+                  <Link to="/sales-reconciliation" className="inline-flex min-h-11 max-w-full items-center rounded-md border border-tm-teal px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tm-teal">DRB Sales Reconciliation</Link>
+                )}
                 {/* Single-shop picker (Snapshot / Monthly) */}
                 {report.filterNeeds.shops === 'single' && report.id === 'snapshot' && (
                   <SingleShopSelect
