@@ -20,7 +20,7 @@ revoke all on pos_import_private.reprocess_manifests from public, anon, authenti
 
 create or replace function pos_import_private.validate_document(p_document jsonb, p_system text) returns void
 language plpgsql immutable set search_path = '' as $$
-declare key text; item jsonb; amount numeric; quality jsonb; employee numeric := 0; non_tier numeric; member numeric; retail numeric; total numeric; m jsonb;
+declare key text; item jsonb; amount numeric; quality jsonb; employee numeric; non_tier numeric; member numeric; retail numeric; total numeric; m jsonb;
 begin
   if jsonb_typeof(p_document) is distinct from 'object' or octet_length(p_document::text)>100000
     or not p_document ?& array['metrics','sources','warnings','financialWarnings','provisionalFinancial']
@@ -64,7 +64,10 @@ begin
   end if;
   m := p_document->'metrics';
   quality := p_document->'quality';
-  if quality is not null then
+  if quality is null then
+    -- Legacy documents use the original government/police-only formula.
+    employee := 0;
+  else
     if jsonb_typeof(quality) is distinct from 'object'
       or not quality ?& array['revenueStatus','tenderStatus','employeeWashes','nonTierSold','nonTierRedeemed']
       or quality - array['revenueStatus','tenderStatus','employeeWashes','nonTierSold','nonTierRedeemed'] <> '{}'::jsonb

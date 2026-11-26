@@ -20,6 +20,7 @@ declare
     "sources":{"signedAmounts":{"basic washes":10000}},"warnings":[],"financialWarnings":[],"provisionalFinancial":false}';
   updated jsonb;
   old_row jsonb;
+  invalid jsonb;
   new_row jsonb;
   book jsonb;
   manifest jsonb;
@@ -35,9 +36,34 @@ begin
   old_row := jsonb_build_object('sourceId','1508-Mesquite','locationId',loc,'expectedRevision',0,'document',doc);
   result := public.pos_daily_commit('original.xlsx',hash,'daily-pos-v2.0.0','DRB',day,jsonb_build_array(old_row));
   if result->>'imported' <> '1' then raise exception 'Baseline import failed.'; end if;
+  -- Both migrations are installed before this fixture runs. A fresh hash exercises
+  -- validation rather than the duplicate fast path.
+  result := public.pos_daily_commit('legacy-after-migration.xlsx',repeat('b',64),'daily-pos-v2.0.0','DRB',
+    day+1,jsonb_build_array(old_row));
+  if result->>'imported' is distinct from '1' then raise exception 'Valid legacy DRB import failed.'; end if;
   updated := jsonb_set(doc,'{metrics}',doc->'metrics' ||
     '{"member":2500,"retail":7500,"opportunities":36,"unclassifiedSold":0,"unclassifiedRedeemed":0}'::jsonb)
     || '{"quality":{"revenueStatus":"supported","tenderStatus":"reconciled","employeeWashes":1,"nonTierSold":1,"nonTierRedeemed":1}}'::jsonb;
+  foreach invalid in array array[
+    updated #- '{quality,employeeWashes}',
+    jsonb_set(updated,'{quality,employeeWashes}','null'),
+    jsonb_set(updated,'{quality,employeeWashes}','-1'),
+    jsonb_set(updated,'{quality,employeeWashes}','1.5'),
+    jsonb_set(updated,'{quality,employeeWashes}','"1"'),
+    jsonb_set(updated,'{metrics,opportunities}','37')
+  ] loop
+    begin
+      perform public.pos_daily_commit('invalid.xlsx',repeat('c',64),'daily-pos-v3.1.0','DRB',
+        day+2,jsonb_build_array(old_row || jsonb_build_object('document',invalid)));
+      raise exception 'Invalid V3.1 employee exclusion accepted.';
+    exception when raise_exception then
+      if sqlerrm not in ('Invalid independent revenue verification.', 'Employee wash exclusions apply only to DRB.',
+        'Invalid POS exclusion quantity.', 'DRB wash opportunities do not reconcile.') then raise; end if;
+    end;
+  end loop;
+  result := public.pos_daily_commit('v31.xlsx',repeat('d',64),'daily-pos-v3.1.0','DRB',
+    day+2,jsonb_build_array(old_row || jsonb_build_object('document',updated)));
+  if result->>'imported' is distinct from '1' then raise exception 'Valid V3.1 DRB import failed.'; end if;
   new_row := old_row || jsonb_build_object('expectedRevision',1,'document',updated);
   if (public.pos_daily_commit('original.xlsx',hash,'daily-pos-v3.1.0','DRB',day,jsonb_build_array(new_row)))->>'fileDuplicate'
     is distinct from 'true' then raise exception 'Normal cross-version duplicate protection failed.'; end if;
@@ -83,12 +109,12 @@ begin
   if result->>'status' <> 'completed' or result->>'replaced' <> '1' then raise exception 'Reprocessing failed: %',result; end if;
   if public.pos_reprocess_workbook(id,hash) is distinct from result then raise exception 'Retry was not idempotent.'; end if;
   if (public.pos_reprocess_status(id)#>>'{workbooks,0,outcome,status}') <> 'completed' then raise exception 'Resume status missing.'; end if;
-  if (select count(*) from pos_import_private.revisions) <> 2 or
-    (select document from pos_import_private.revisions where revision=1) <> doc then raise exception 'Revision history changed.'; end if;
+  if (select count(*) from pos_import_private.revisions where business_date=day) <> 2 or
+    (select document from pos_import_private.revisions where revision=1 and business_date=day) <> doc then raise exception 'Revision history changed.'; end if;
   result := public.pos_reprocess_rollback(id,hash,'Restore prior fixture');
-  if result->>'rollbackCount' <> '1' or (select count(*) from pos_import_private.revisions) <> 3 or
-    (select revision from pos_import_private.current_records) <> 3 or
-    (select document from pos_import_private.revisions where revision=3) <> doc then raise exception 'Rollback failed: %', result; end if;
+  if result->>'rollbackCount' <> '1' or (select count(*) from pos_import_private.revisions where business_date=day) <> 3 or
+    (select revision from pos_import_private.current_records where business_date=day) <> 3 or
+    (select document from pos_import_private.revisions where revision=3 and business_date=day) <> doc then raise exception 'Rollback failed: %', result; end if;
   if public.pos_reprocess_rollback(id,hash,'Retry') is distinct from result then raise exception 'Rollback retry changed history.'; end if;
 end;
 $$;
