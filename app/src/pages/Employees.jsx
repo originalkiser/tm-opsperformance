@@ -1,3 +1,4 @@
+import PosEmployeeAliases from '../components/PosEmployeeAliases'
 import PreviewReadOnly from '../components/PreviewReadOnly'
 import '../styles/operationsColors.css'
 import { useEffect, useRef, useState } from 'react'
@@ -102,6 +103,7 @@ export function Roster({ locationId, isAdmin }) {
       </li>)}
       {!filterRoster(rows, filter).length && <li>No employees match this filter.</li>}
     </ul>}
+    {verified && <PosEmployeeAliases locationId={locationId} isAdmin={isAdmin} employees={rows} />}
     {editing && !review && <form aria-label="Edit employee name" className="border rounded p-3 space-y-3" onSubmit={e => {
       e.preventDefault()
       if (window.confirm(`Change “${editing.name}” to “${editName.trim()}”? Historical sales retain their originally recorded names and may appear separately in Team Member Sales. No Daily Logs will be renamed.`))
