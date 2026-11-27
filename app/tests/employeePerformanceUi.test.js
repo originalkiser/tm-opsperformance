@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
+import * as posSales from '../src/utils/teamSalesPos.js'
 import * as scoring from '../src/utils/employeePerformance.js'
 import * as colors from '../src/utils/metricColors.js'
 import { thCls } from '../src/utils/insightsHelpers.js'
@@ -21,9 +22,9 @@ const walk=n=>!n||typeof n!=='object'?[]:[n,...React.Children.toArray(n.props?.c
 async function table(data=fixture(),dataComplete=true,locs=locations,overrides={}) {
   let spec
   const h=locationHelpHarness('components/TeamSalesTable',{
-    supabase:{},readMappings:async()=>[],...overrides,
-    ...scoring,...colors,thCls,fmtNum,EmployeeScoreDetails:mod.exports.default,
-    PosMembershipComparison:()=>null,ExportMenu:Export,fmtDateRange:()=> 'October',exportCsv:value=>{spec=value},exportXlsx:value=>{spec=value},exportPdf:value=>{spec=value},
+    supabase:{},readMappings:async()=>[],usePosMembershipReport:()=>null,...overrides,
+    ...scoring,...posSales,...colors,thCls,fmtNum,EmployeeScoreDetails:mod.exports.default,
+    ExportMenu:Export,fmtDateRange:()=> 'October',exportCsv:value=>{spec=value},exportXlsx:value=>{spec=value},exportPdf:value=>{spec=value},
   },{data,locations:locs,dateRange,dataComplete})
   h.csv=()=>{h.find(n=>n.type===Export).props.items[2].run();return spec}
   h.html=()=>renderToStaticMarkup(h.render())
@@ -38,7 +39,7 @@ async function table(data=fixture(),dataComplete=true,locs=locations,overrides={
 
 test('unified leaderboard shows requested columns, visible points arithmetic, accessible sorting and themes',async()=>{
   const h=await table(),html=h.html()
-  for(const label of ['Rank','Employee','Site','Total Sales','Total Opportunities','Conversion %','P-Mix %','Total Points'])assert.ok(html.includes(label))
+  for(const label of ['Rank','Employee','Site','TM Ops Sales','POS Verified Sales','Difference','Total Opportunities','Conversion %','P-Mix %','Total Points'])assert.ok(html.includes(label))
   assert.match(html,/130\.0/);assert.match(html,/20 \+ 10\.0 \+ 100\.0/)
   assert.doesNotMatch(html,/Simple #|Detailed #|33\.33|Score details|Google Reviews/)
   assert.match(html,/scope="col"/);assert.match(html,/aria-sort="ascending"/);assert.match(html,/dark:/);assert.match(html,/overflow-x-auto/)
@@ -53,15 +54,15 @@ test('By Site is a presentation change, retaining unified rank/qualification and
   h.find(n=>n.type==='button'&&n.props.children==='By Site').props.onClick()
   const html=h.html();assert.match(html,/Detailed/);assert.doesNotMatch(html,/Simple #|Detailed #/)
   assert.deepEqual(h.csv().rows,before.rows)
-  assert.equal(before.columns.length,9);assert.ok(before.rows.every(r=>r.length===9));assert.equal(before.totalsRow.length,9)
-  assert.deepEqual(before.columns.map(c=>c.label),['Rank','Employee','Site','Total Sales','Total Opportunities','Conversion %','P-Mix %','Total Points','Data status'])
+  assert.equal(before.columns.length,11);assert.ok(before.rows.every(r=>r.length===11));assert.equal(before.totalsRow.length,11)
+  assert.deepEqual(before.columns.map(c=>c.label),['Rank','Employee','Site','TM Ops Sales','POS Verified Sales','Difference','Total Opportunities','Conversion %','P-Mix %','Total Points','Data status'])
   h.unmount()
 })
 
 test('low-volume employees receive their computed points and official rank',async()=>{
   const h=await table([row('A','08:00:00',200,20),row('B','09:00:00',400,40),row('Low','10:00:00',410,41)])
   assert.doesNotMatch(h.html(),/Not Qualified|Top 50%|cutoff ties|Top 2 cutoff/)
-  const low=h.csv().rows.find(r=>r[1]==='Low');assert.equal(low[0],'3');assert.equal(low[7],111)
+  const low=h.csv().rows.find(r=>r[1]==='Low');assert.equal(low[0],'3');assert.equal(low[9],111)
   h.sort('Rank');assert.equal(h.csv().rows[0][0],'3')
   h.unmount()
 })
@@ -70,23 +71,23 @@ test('missing opportunities retain known sales, missing indicators and incomplet
   const h=await table([row('Alex','08:00:00',null,20)]),html=h.html(),spec=h.csv()
   assert.match(html,/Unranked · Incomplete or invalid data/);assert.match(html,/Missing cumulative/)
   assert.match(html,/Known attributed subtotal/);assert.doesNotMatch(html,/NaN|Infinity/)
-  assert.equal(spec.rows[0][3],20);assert.equal(spec.rows[0][4],'');assert.equal(spec.rows[0][5],'—');assert.equal(spec.rows[0][7],'')
-  assert.equal(spec.totalsRow[5],'—');assert.equal(spec.totalsRow[6],'100.0%')
+  assert.equal(spec.rows[0][3],20);assert.equal(spec.rows[0][6],'');assert.equal(spec.rows[0][7],'—');assert.equal(spec.rows[0][9],'')
+  assert.equal(spec.totalsRow[7],'—');assert.equal(spec.totalsRow[8],'100.0%')
   h.unmount()
 })
 
 test('zero sales and positive opportunities are visible zero rates, points and rank',async()=>{
   const h=await table([row('Zero','08:00:00',1,0)]),html=h.html(),r=h.csv().rows[0]
-  assert.deepEqual(r.slice(0,8),['1','Zero','Site',0,1,'0.0%','0.0%',0])
+  assert.deepEqual(r.slice(0,10),['1','Zero','Site',0,'','',1,'0.0%','0.0%',0])
   assert.match(html,/0\.0%/);assert.doesNotMatch(html,/NaN|Infinity|Not Qualified|Incomplete data/)
-  assert.equal(h.csv().totalsRow[5],'0.0%');h.unmount()
+  assert.equal(h.csv().totalsRow[7],'0.0%');h.unmount()
 })
 
 test('correction ambiguity does not fabricate totals or rank and unaffected employees retain raw points',async()=>{
   const h=await table([row('Alex','08:00:00',200,20),row('Corrector','09:00:00',180,18),row('Blair','10:00:00',200,20)])
   const spec=h.csv();assert.match(h.html(),/Cumulative counts decreased/)
-  assert.equal(spec.rows.find(r=>r[1]==='Alex')[7],'')
-  assert.equal(spec.rows.find(r=>r[1]==='Blair')[7],112)
+  assert.equal(spec.rows.find(r=>r[1]==='Alex')[9],'')
+  assert.equal(spec.rows.find(r=>r[1]==='Blair')[9],112)
   assert.equal(spec.totalsRow[1],'Known attributed subtotal')
   h.unmount()
 })
@@ -171,9 +172,65 @@ test('zero and negative opportunities show unranked reasons and missing conversi
   const data=total===0?[row('Invalid','08:00:00',0,0)]:[{...row('Invalid','08:00:00',1,0),member_washes:2}]
   const h=await table(data),spec=h.csv(),html=h.html()
   assert.match(html,/Unranked/);assert.match(html,/Opportunities must be positive/)
-  assert.equal(spec.rows[0][5],'—');assert.equal(spec.rows[0][7],'')
-  assert.match(spec.rows[0][8],/Opportunities must be positive/)
-  assert.equal(spec.totalsRow[5],'—');assert.doesNotMatch(html,/NaN|Infinity/)
+  assert.equal(spec.rows[0][7],'—');assert.equal(spec.rows[0][9],'')
+  assert.match(spec.rows[0][10],/Opportunities must be positive/)
+  assert.equal(spec.totalsRow[7],'—');assert.doesNotMatch(html,/NaN|Infinity/)
   h.unmount()
  }
+})
+
+test('POS columns join by verified site and employee, sort numerically, and preserve legacy rank and metrics',async()=>{
+  const locs=[...locations,{id:'d',name:'Other site',opportunities_formula:'simple'}]
+  const data=fixture().map((r,i)=>({...r,employee_id:['alex','blair','casey'][i]}))
+  const report={
+    people:[{location_id:'s',employee_id:'alex',name:'Canonical Alex',credited:25},{location_id:'s',employee_id:'new',name:'POS Only',credited:4},
+      {location_id:'outside',employee_id:'casey',name:'Outside',credited:100}],
+    coverage:[{loc:'s',imported:true,gsr:29,observed:29,unresolved:0},{loc:'d',imported:false,gsr:0,observed:0,unresolved:0}],
+  }
+  const baseline=await table(data,true,locs)
+  const h=await table(data,true,locs,{usePosMembershipReport:(sites,start,end)=>{
+    assert.deepEqual(sites,locs);assert.deepEqual({start,end},dateRange);return {result:report}
+  }})
+  const rows=h.csv().rows
+  for(const r of baseline.csv().rows)assert.deepEqual(rows.find(j=>j[1]===r[1]).filter((_,i)=>[0,1,2,3,6,7,8,9].includes(i)),r.filter((_,i)=>[0,1,2,3,6,7,8,9].includes(i)))
+  assert.deepEqual(rows.find(r=>r[1]==='Alex').slice(3,6),[20,25,-5])
+  assert.deepEqual(rows.find(r=>r[1]==='Blair').slice(4,6),[0,20])
+  assert.deepEqual(rows.find(r=>r[1]==='POS Only').slice(0,6),['—','POS Only','Site','',4,''])
+  assert.ok(!rows.some(r=>r[1]==='Outside'))
+  h.sort('POS Verified Sales');assert.equal(h.csv().rows[0][1],'Alex')
+  h.sort('POS Verified Sales');assert.equal(h.csv().rows[0][1],'Blair')
+  h.sort('Difference');assert.equal(h.csv().rows[0][1],'Blair')
+  h.sort('Difference');assert.equal(h.csv().rows[0][1],'Alex')
+  h.find(n=>n.type==='button'&&n.props.children==='By Site').props.onClick()
+  assert.match(h.html(),/POS Only/)
+  assert.deepEqual(h.export(0),h.export(1))
+  baseline.unmount();h.unmount()
+})
+
+test('partial POS credits remain visible; unavailable counts and unverified identities stay blank in exports',async()=>{
+  const data=[{...row('Alex','08:00:00',200,20),employee_id:'alex'},row('Unverified','09:00:00',250,22),
+    {...row('Without credits','10:00:00',300,25),employee_id:'zero'}]
+  const report={people:[{location_id:'s',employee_id:'alex',name:'Alex',credited:4}],
+    coverage:[{loc:'s',imported:true,gsr:9,observed:7,unresolved:1}]}
+  const h=await table(data,true,locations,{usePosMembershipReport:()=>({result:report})})
+  assert.deepEqual(h.csv().rows.find(r=>r[1]==='Alex').slice(3,6),[20,4,16])
+  assert.match(h.html(),/4 · Partial/)
+  assert.match(h.csv().rows.find(r=>r[1]==='Alex')[10],/POS: Partial/)
+  assert.deepEqual(h.csv().rows.find(r=>r[1]==='Without credits').slice(4,6),['',''])
+  assert.match(h.csv().rows.find(r=>r[1]==='Unverified')[10],/identity unverified/)
+  h.unmount()
+})
+
+test('approved historical aliases join to POS while identical names in other locations stay independent',async()=>{
+  const locs=[...locations,{id:'d',name:'Other site',opportunities_formula:'simple'}]
+  const logs=[row('Alex','08:00:00',100,7),{...row('Alex','08:00:00',100,3),location_id:'d',employee_id:'other'}]
+  const report={people:[{location_id:'s',employee_id:'alex',name:'Alex',credited:5},{location_id:'d',employee_id:'other',name:'Alex',credited:1}],
+    coverage:locs.map(({id})=>({loc:id,imported:true,gsr:5,observed:5,unresolved:0}))}
+  const mappings=[{id:'mapping',original_name:'Alex',location_id:'s',employee_id:'alex',employee_name:'Alex',status:'approved',start_date:'2026-10-20',end_date:'2026-10-20'}]
+  const h=await table(logs,true,locs,{readMappings:async()=>mappings,usePosMembershipReport:()=>({result:report})})
+  assert.deepEqual(h.csv().rows.find(r=>r[2]==='Site').slice(3,6),[7,5,2])
+  assert.deepEqual(h.csv().rows.find(r=>r[2]==='Other site').slice(3,6),[3,1,2])
+  const posOnly=await table([],true,locs,{usePosMembershipReport:()=>({result:report})})
+  assert.deepEqual(posOnly.csv().rows.map(r=>r.slice(3,6)).sort(),[['',1,''],['',5,'']])
+  h.unmount();posOnly.unmount()
 })

@@ -1,4 +1,4 @@
-import { usePosMembershipReport } from '../components/PosMembershipComparison'
+import { usePosMembershipReport } from '../hooks/usePosMembershipReport'
 import { membershipCoverage, topMembershipSeller } from '../utils/posMembership'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'

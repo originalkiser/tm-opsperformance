@@ -21,7 +21,7 @@ export function mappedEmployeeLogs(data, mappings = []) {
     const key = `${row.location_id}::${token}`
     if (!labels.has(key)) labels.set(key, mapping ? mapping.employee_name : row.employee_name.trim())
     if (mapping && !mapping.employee_name) throw new Error('Mapped roster employee is unavailable. Reload before reporting.')
-    return { ...row, employee_name: token, _mappingOriginalName: row.employee_name }
+    return { ...row, employee_name: token, _mappingOriginalName: row.employee_name, _mappingEmployeeId: mapping?.employee_id }
   })
   return { data: rows, labels }
 }
