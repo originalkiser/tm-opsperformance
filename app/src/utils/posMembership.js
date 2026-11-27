@@ -36,16 +36,35 @@ export function classifyDrbIdentifier(value) {
   const digits = raw.length<=32 && safe ? raw.replace(/[^0-9]/g,'') : ''
   return { raw, digits, activity: /^[0-9]{9,10}$/.test(digits) ? 'new' : /^[0-9]{4}$/.test(digits) ? 'regular' : 'unresolved' }
 }
+const genericMicrologicTicket = (system, ticket) => system === 'Micrologic' && ticket.toLowerCase() === 'wasignup'
+export function membershipEventKey(system, { site, date, ticket }) {
+  return JSON.stringify(genericMicrologicTicket(system,ticket) ? [site,ticket.toLowerCase(),date] : [site,ticket])
+}
+const describeEvent = (event,row) => `${event.site} · ${event.date} · ticket ${event.ticket} · ${event.activity}` +
+  (row ? ` · Excel row ${row}` : '')
 export function parseMembershipSheet(rows, start, end) {
   if (date(start) !== start || date(end) !== end || start > end) throw new Error('Choose a valid business-date range.')
-  const events=[], snapshot=new Map(), found=new Set()
+  const events=[], snapshot=new Map(), found=new Map(), overlaps=[]
   let comparison=null,outside=0
-  const record = item => {
-    if (!item.date || !item.site || !item.ticket || !item.product) throw new Error('A transaction is missing a valid site, business date, ticket or product.')
+  const record = (system,item,source) => {
+    if (!item.date || !item.site || !item.ticket || (!item.product && !(system==='Micrologic' && item.activity==='regular'))) throw new Error('A transaction is missing a valid site, business date, ticket or product.')
     if (item.date<start || item.date>end) { outside++; return }
-    const key=item.site+'/'+item.ticket
-    if (found.has(key)) throw new Error('Duplicate location and ticket in this workbook. Review the source before saving.')
-    found.add(key)
+    const key=membershipEventKey(system,item), prior=found.get(key)
+    if (prior) {
+      // Raw fields, including customer columns, are compared only here in memory.
+      // Do not place them in the preview, error, or persistence payload.
+      const sameRow = source && prior.source && source.fields === prior.source.fields
+      const signupAndGrace = [prior.activity,item.activity].includes('new') && [prior.activity,item.activity].includes('grace')
+      if (system !== 'Micrologic' || !sameRow || (!signupAndGrace && prior.activity !== item.activity)) {
+        throw new Error(`Duplicate location and ticket conflict: ${describeEvent(prior,prior.source?.row)} and ${describeEvent(item,source?.row)}. Review the source before saving.`)
+      }
+      const selected = prior.activity === 'grace' ? events[prior.index] : item
+      events[prior.index]=selected
+      found.set(key,{...selected,source,index:prior.index})
+      overlaps.push({site:item.site,date:item.date,ticket:item.ticket,activity:selected.activity})
+      return
+    }
+    found.set(key,{...item,source,index:events.length})
     events.push(item)
   }
   if (rows[0]?.[0]==='SITENUMBER') {
@@ -58,7 +77,7 @@ export function parseMembershipSheet(rows, start, end) {
       const site=get('SITENUMBER'),ticket=get('SALEID'),product=get('ITEM_NAME')
       if(!/^\d{4}$/.test(site)||!/^\d{1,30}$/.test(ticket))throw new Error('Unexpected DRB location or sale ID.')
       const id=classifyDrbIdentifier(get('CUST_ALTPHONE'))
-      record({site,date:date(get('LOGDATE')),ticket,product,tier:memberTier('DRB',product),activity:id.activity,
+      record('DRB',{site,date:date(get('LOGDATE')),ticket,product,tier:memberTier('DRB',product),activity:id.activity,
         identifier:id.digits?id.raw:null,legalName:id.activity==='new'?get('Legal Name')||null:null,
         commission:cents(get('COMMISSION')),greeter:null,cashier:null,eligible:id.activity==='new'})
     }
@@ -74,12 +93,12 @@ export function parseMembershipSheet(rows, start, end) {
   }
   if(rows[1]?.[0]!=='Unlimited Detailed Report')throw new Error('Unsupported membership workbook.')
   let activity,header
-  for(const row of rows){
+  for(const [index,row] of rows.entries()){
     const section=/^(.*?) — \d+ records$/.exec(clean(row[0]))
     if(section){activity=sections[section[1]];header=null;continue}
     if(!activity)continue
     if(row[0]==='Date'){
-      const required=['Date','Store Number','Plan Type',...(activity==='cancel'||activity==='decline'?[]:['Ticket Number','Cashier','Greeter'])]
+      const required=['Date','Store Number','Plan Type',...(activity==='cancel'||activity==='decline'?[]:['Ticket Number','Cashier','Greeter','Barcode','Name'])]
       if(required.some(key=>row.filter(value=>value===key).length!==1))throw new Error('Micrologic activity columns are missing or ambiguous.')
       header=row;continue
     }
@@ -87,7 +106,7 @@ export function parseMembershipSheet(rows, start, end) {
     if(!header)throw new Error('Micrologic activity columns are missing.')
     const get=k=>clean(row[header.indexOf(k)])
     const day=date(get('Date')),site=micSites[get('Store Number').toUpperCase()],product=get('Plan Type')
-    if(!day||!site||!product)throw new Error('Unknown Micrologic location, date or product.')
+    if(!day||!site||(!product&&activity!=='regular'))throw new Error('Unknown Micrologic location, date or product.')
     if(day<start||day>end){outside++;continue}
     if(activity==='cancel'||activity==='decline'){
       const key=JSON.stringify([site,day,activity,product])
@@ -96,12 +115,14 @@ export function parseMembershipSheet(rows, start, end) {
       snapshot.set(key,entry)
     }else{
       const greeter=get('Greeter')||null
-      record({site,date:day,activity,product,tier:memberTier('Micrologic',product),ticket:get('Ticket Number'),
+      record('Micrologic',{site,date:day,activity,product,tier:memberTier('Micrologic',product),ticket:get('Ticket Number'),
         greeter,cashier:get('Cashier')||null,identifier:null,legalName:null,commission:null,
-        eligible:activity==='new'&&!!greeter&&!kioskUsername(greeter)&&!/^employee\b/.test(posUsername(product))})
+        eligible:activity==='new'&&!!greeter&&!kioskUsername(greeter)&&!/^employee\b/.test(posUsername(product))},{
+          row:index+1, fields:JSON.stringify(['Date','Barcode','Store Number','Name','Plan Type','Ticket Number','Cashier','Greeter'].map(get)),
+        })
     }
   }
-  return {system:'Micrologic',events,snapshots:[...snapshot.values()],outside}
+  return {system:'Micrologic',events,snapshots:[...snapshot.values()],outside,overlaps}
 }
 export async function parseMembershipFile(file,start,end){
   if(!file||!/\.xlsx$/i.test(file.name)||file.size>10_000_000)throw new Error('Choose an original XLSX workbook up to 10 MB.')
