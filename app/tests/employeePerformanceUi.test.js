@@ -83,12 +83,13 @@ test('zero sales and positive opportunities are visible zero rates, points and r
   assert.equal(h.csv().totalsRow[7],'0.0%');h.unmount()
 })
 
-test('correction ambiguity does not fabricate totals or rank and unaffected employees retain raw points',async()=>{
+test('a correction with a sole prior contributor updates that owner without charging the entering employee',async()=>{
   const h=await table([row('Alex','08:00:00',200,20),row('Corrector','09:00:00',180,18),row('Blair','10:00:00',200,20)])
-  const spec=h.csv();assert.match(h.html(),/Cumulative counts decreased/)
-  assert.equal(spec.rows.find(r=>r[1]==='Alex')[9],'')
+  const spec=h.csv();assert.doesNotMatch(h.html(),/Cumulative counts decreased/)
+  assert.equal(spec.rows.find(r=>r[1]==='Alex')[3],18)
+  assert.equal(spec.rows.find(r=>r[1]==='Alex')[9],128)
   assert.equal(spec.rows.find(r=>r[1]==='Blair')[9],112)
-  assert.equal(spec.totalsRow[1],'Known attributed subtotal')
+  assert.equal(spec.totalsRow[1],'Totals')
   h.unmount()
 })
 
@@ -241,7 +242,7 @@ test('approved historical aliases join to POS while identical names in other loc
   h.unmount();posOnly.unmount()
 })
 
-test('verified roster names resolve name-only logs without guessing between active names or duplicating split rows',async()=>{
+test('verified roster names merge split identities without guessing between active names',async()=>{
   const data=[row('Kaden','08:00:00',100,7),row('Dasia','09:00:00',200,10),
     row('Ambiguous','10:00:00',300,12),row('Rylan','11:00:00',400,14),
     {...row('Rylan','12:00:00',100,3),log_date:'2026-10-21'},row('Old name','13:00:00',500,16)]
@@ -258,11 +259,11 @@ test('verified roster names resolve name-only logs without guessing between acti
   const rows=h.csv().rows
   assert.deepEqual(rows.find(r=>r[1]==='Kaden').slice(3,6),[7,6,1])
   assert.equal(rows.find(r=>r[1]==='Dasia')[4],2)
-  assert.equal(rows.find(r=>r[1]==='Old name')[4],1)
+  assert.equal(rows.find(r=>r[1]==='Retained')[4],1)
   assert.equal(rows.find(r=>r[1]==='Ambiguous'&&r[3]!=='')[4],'')
   assert.equal(rows.find(r=>r[1]==='Ambiguous'&&r[3]==='')[4],3)
-  assert.deepEqual(rows.filter(r=>r[1]==='Rylan').map(r=>[r[4],r[5]]),[['',''],[4,'']])
-  assert.match(h.html(),/TM Ops sales span multiple rows/)
+  assert.deepEqual(rows.filter(r=>r[1]==='Rylan').map(r=>r.slice(3,6)),[[5,4,1]])
+  assert.doesNotMatch(h.html(),/TM Ops sales span multiple rows|POS shown on another TM Ops row/)
   h.unmount()
 })
 
@@ -281,5 +282,16 @@ test('a verified zero is green and missing imports are unavailable, including in
   assert.match(rows.find(r=>r[1]==='No import')[10],/No membership import/)
   assert.match(h.html(),/text-green-700[^>]*>0/)
   assert.match(h.csv().subtitle,/1\/2 site-days/)
+  h.unmount()
+})
+
+test('Dasia’s historical and roster rows score as one and display the POS credits once',async()=>{
+  const data=[row('Dasia','08:00:00',100,60),{...row('Dasia','08:00:00',100,1),log_date:'2026-10-21'}]
+  const mappings=[{id:'one',location_id:'s',original_name:'Dasia',employee_name:'Dasia',employee_id:'d',status:'approved',end_date:'2026-10-20'}]
+  const report={people:[{location_id:'s',employee_id:'d',name:'Dasia',credited:47}],
+    coverage:[{loc:'s',imported:true,gsr:61,observed:47,unresolved:0}]}
+  const h=await table(data,true,locations,{readMappings:async()=>mappings,usePosMembershipReport:()=>({result:report}),
+    useTeamSalesIdentities:()=>({sites:[{id:'s',roster:[{id:'d',name:'Dasia',is_active:true}],audits:[]}]})})
+  assert.deepEqual(h.csv().rows.map(r=>r.slice(0,10)),[['1','Dasia','Site',61,47,14,200,'30.5%','100.0%',191.5]])
   h.unmount()
 })
