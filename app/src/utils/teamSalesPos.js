@@ -71,14 +71,8 @@ export function joinTeamSalesPos(managerRows, report, locations, identitySites =
     }
     const person = people.get(key)
     people.delete(key)
-    let issue = ''
-    if (!person) {
-      if (!report) issue = 'POS report unavailable'
-      else if (!source.imported) issue = 'No membership import for this site and period'
-      else if (source.imported < source.expected) issue = 'Missing membership import days'
-      else if (source.verified < source.expected) issue = 'Source totals incomplete or differ from GSR'
-      else if (source.unresolved) issue = 'Unresolved POS sales at this site'
-    }
+    const issue = person || source.imported ? '' :
+      report ? 'No membership import for this site and period' : 'POS report unavailable'
     const result = withPos(row, person?.credited ?? (issue ? null : 0), issue, person)
     return matches.length > 1
       ? { ...result, difference: null, differenceIssue: 'TM Ops sales span multiple rows' }
