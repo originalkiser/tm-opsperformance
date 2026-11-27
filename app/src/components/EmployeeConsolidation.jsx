@@ -139,10 +139,12 @@ export default function EmployeeConsolidation({ locationId, roster, initialNames
   </Dialog>
 }
 
-export function EmployeeConsolidationHistory({ locationId, onReversed }) {
-  const [runs,setRuns]=useState(null),[selected,setSelected]=useState(null)
+export function EmployeeConsolidationHistory({ locationId, onReversed, rosterRuns }) {
+  const [history,setRuns]=useState(null),[selected,setSelected]=useState(null)
+  const runs = rosterRuns ?? history
   const [error,setError]=useState(''),[reason,setReason]=useState(''),[busy,setBusy]=useState(false)
   async function load(){
+    if (rosterRuns) return
     try {setRuns(await employeeConsolidation(supabase,locationId,'list'))}
     catch(error){setError(error.message)}
   }

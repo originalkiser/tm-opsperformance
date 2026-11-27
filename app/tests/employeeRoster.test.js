@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { filterRoster, validateDuplicateReview, addRosterEmployee, updateRosterEmployee, reviewRosterDuplicates, rosterError, loadRoster } from '../src/utils/employeeRoster.js'
+import { consolidatedRosterIds, filterRoster, validateDuplicateReview, addRosterEmployee, updateRosterEmployee, reviewRosterDuplicates, rosterError, loadRoster } from '../src/utils/employeeRoster.js'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 const rows = [{ id: 'a', name: 'Cam', location_id: 'site', is_active: true }, { id: 'b', name: ' CAM ', location_id: 'site', is_active: false }, { id: 'c', name: 'Other', location_id: 'site', is_active: null }]
 test('filters include legacy unknown status in Inactive and never lose original names', () => {
@@ -42,8 +42,8 @@ test('revoked roster access never starts broad table reads; server duplicate err
 function harness(extra = {}, isAdmin = true) {
   const actions = []
   const h = locationHelpHarness('pages/Employees', { useSearchParams: () => [new URLSearchParams()],
-    supabase: {}, PosEmployeeAliases: () => null, filterRoster, validateDuplicateReview, rosterError,
-    loadRoster: async () => rows,
+    supabase: {}, PosEmployeeAliases: () => null, EmployeeConsolidationHistory: () => null, consolidatedRosterIds, filterRoster, validateDuplicateReview, rosterError,
+    loadRoster: async () => rows, loadConsolidatedRoster: async () => [],
     addRosterEmployee: async (...args) => actions.push(['add', ...args]),
     updateRosterEmployee: async (...args) => actions.push(['update', ...args]),
     reviewRosterDuplicates: async (...args) => actions.push(['review', ...args]),
@@ -59,6 +59,26 @@ test('roster initializes from existing rows, filters statuses and offers duplica
   const filter = h.find(n => n.type === 'select'); filter.props.onChange({ target: { value: 'all' } })
   assert.equal(h.all(n => n.type === 'li').length, 3)
   assert.equal(h.all(n => n.type === 'input' && n.props.type === 'checkbox').length, 3)
+})
+test('unreversed audited duplicates are kept out of All and Inactive until the last consolidation is reversed', async () => {
+  const run = { retained_id: 'a', roster_before: rows.slice(0, 2) }
+  let runs = [run, { ...run, reversed_at: '2026-11-26' }]
+  const { h } = harness({ loadConsolidatedRoster: async () => runs }, false); await h.flush()
+  const choose = value => h.find(n => n.type === 'select').props.onChange({ target: { value } })
+  const listed = () => h.all(n => n.type === 'li').map(row => textOf(row.props.children[1]).trim())
+  choose('all')
+  assert.deepEqual(listed(), ['Cam Active', 'Other Inactive'])
+  choose('inactive')
+  assert.deepEqual(listed(), ['Other Inactive'])
+  choose('consolidated')
+  assert.match(listed()[0], /CAM +Consolidated/)
+  assert.equal(h.find(button('Activate')), undefined)
+  const history = h.find(n => n.props?.rosterRuns === runs)
+  assert.ok(history)
+  runs = runs.map(row => ({ ...row, reversed_at: '2026-11-26' }))
+  await history.props.onReversed(); await h.flush()
+  choose('inactive')
+  assert.equal(listed().length, 2)
 })
 test('rename cancellation never writes; accepted confirmation explains retained historical sales', async () => {
   let confirmation = ''

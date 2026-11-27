@@ -20,7 +20,7 @@ export function managerViewState(user, profile, locations, preference) {
   const site = locations.some(l => l.id === preference.site) ? preference.site : locations[0]?.id || ''
   return { allowed, active, site }
 }
-const readRpcs = new Set(['dashboard_mtd_performance','dashboard_membership_snapshots','get_checklist_compliance','approved_employee_name_mappings','can_maintain_employee_roster','can_propose_employee_mapping','weekly_labor_planner'])
+const readRpcs = new Set(['dashboard_mtd_performance','dashboard_membership_snapshots','get_checklist_compliance','approved_employee_name_mappings','can_maintain_employee_roster','employee_consolidated_roster','can_propose_employee_mapping','weekly_labor_planner'])
 export async function isViewReadRequest(input, init = {}) {
   const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url, 'https://local.invalid')
   const method = (init.method || input?.method || 'GET').toUpperCase()
