@@ -22,7 +22,7 @@ const walk=n=>!n||typeof n!=='object'?[]:[n,...React.Children.toArray(n.props?.c
 async function table(data=fixture(),dataComplete=true,locs=locations,overrides={}) {
   let spec
   const h=locationHelpHarness('components/TeamSalesTable',{
-    supabase:{},readMappings:async()=>[],usePosMembershipReport:()=>null,...overrides,
+    supabase:{},readMappings:async()=>[],usePosMembershipReport:()=>null,useTeamSalesIdentities:()=>null,...overrides,
     ...scoring,...posSales,...colors,thCls,fmtNum,EmployeeScoreDetails:mod.exports.default,
     ExportMenu:Export,fmtDateRange:()=> 'October',exportCsv:value=>{spec=value},exportXlsx:value=>{spec=value},exportPdf:value=>{spec=value},
   },{data,locations:locs,dateRange,dataComplete})
@@ -233,4 +233,29 @@ test('approved historical aliases join to POS while identical names in other loc
   const posOnly=await table([],true,locs,{usePosMembershipReport:()=>({result:report})})
   assert.deepEqual(posOnly.csv().rows.map(r=>r.slice(3,6)).sort(),[['',1,''],['',5,'']])
   h.unmount();posOnly.unmount()
+})
+
+test('verified roster names resolve name-only logs without guessing between active names or duplicating split rows',async()=>{
+  const data=[row('Kaden','08:00:00',100,7),row('Dasia','09:00:00',200,10),
+    row('Ambiguous','10:00:00',300,12),row('Rylan','11:00:00',400,14),
+    {...row('Rylan','12:00:00',100,3),log_date:'2026-10-21'},row('Old name','13:00:00',500,16)]
+  const roster=[['k','Kaden',true],['d','Dasia',true],['di','Dasia',false],
+    ['a','Ambiguous',true],['a2','Ambiguous',true],['r','Rylan',true],['old','Old name',false],['kept','Retained',true]]
+    .map(([id,name,is_active])=>({id,name,is_active,location_id:'s'}))
+  const audits=[{location_id:'s',retained_id:'kept',roster_before:[{id:'old'},{id:'kept'}]}]
+  const report={people:[['k','Kaden',6],['d','Dasia',2],['a','Ambiguous',3],['r','Rylan',4],['kept','Retained',1]]
+    .map(([employee_id,name,credited])=>({location_id:'s',employee_id,name,credited})),
+    coverage:[{loc:'s',imported:true,gsr:16,observed:15,unresolved:0}]}
+  const mappings=[{id:'one',location_id:'s',original_name:'Rylan',employee_name:'Rylan',employee_id:'r',status:'approved',end_date:'2026-10-20'}]
+  const h=await table(data,true,locations,{readMappings:async()=>mappings,usePosMembershipReport:()=>({result:report}),
+    useTeamSalesIdentities:()=>({sites:[{id:'s',roster,audits}]})})
+  const rows=h.csv().rows
+  assert.deepEqual(rows.find(r=>r[1]==='Kaden').slice(3,6),[7,6,1])
+  assert.equal(rows.find(r=>r[1]==='Dasia')[4],2)
+  assert.equal(rows.find(r=>r[1]==='Old name')[4],1)
+  assert.equal(rows.find(r=>r[1]==='Ambiguous'&&r[3]!=='')[4],'')
+  assert.equal(rows.find(r=>r[1]==='Ambiguous'&&r[3]==='')[4],3)
+  assert.deepEqual(rows.filter(r=>r[1]==='Rylan').map(r=>[r[4],r[5]]),[['',''],[4,'']])
+  assert.match(h.html(),/TM Ops sales span multiple rows/)
+  h.unmount()
 })

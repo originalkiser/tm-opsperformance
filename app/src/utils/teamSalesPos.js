@@ -1,8 +1,10 @@
+import { indexTeamSalesIdentities, resolveTeamSalesIdentity } from './teamSalesIdentities.js'
 import { membershipCoverage } from './posMembership.js'
 
 const identity = (location, employee) => JSON.stringify([location, employee])
 
-export function joinTeamSalesPos(managerRows, report, locations) {
+export function joinTeamSalesPos(managerRows, report, locations, identitySites = []) {
+  const identities = indexTeamSalesIdentities(identitySites)
   const sites = new Map(locations.map(site => [site.id, site]))
   const days = new Map()
   for (const day of report?.coverage ?? []) {
@@ -16,20 +18,36 @@ export function joinTeamSalesPos(managerRows, report, locations) {
     return [id, { ...source, status }]
   }))
   const people = new Map()
+  const credited = new Map()
   for (const person of report?.people ?? []) {
-    if (sites.has(person.location_id) && person.employee_id && Number.isSafeInteger(person.credited) && person.credited > 0) {
-      people.set(identity(person.location_id, person.employee_id), person)
-    }
+    if (!sites.has(person.location_id) || !person.employee_id || !Number.isSafeInteger(person.credited) || person.credited <= 0) continue
+    const site = identities.get(person.location_id)
+    const employee = site?.canonical(person.employee_id) ?? person.employee_id
+    const key = identity(person.location_id, employee)
+    const current = people.get(key)
+    people.set(key, current ? {
+      ...current,
+      credited: current.credited + person.credited,
+      tiered: current.tiered + person.tiered,
+      premium: current.premium + person.premium,
+      unknown: current.unknown + person.unknown,
+    } : person)
+    if (!credited.has(person.location_id)) credited.set(person.location_id, new Set())
+    credited.get(person.location_id).add(employee)
   }
-  const owners = new Map()
+  const owners = new Map(), resolved = new Map()
   for (const row of managerRows) {
-    for (const employee of row.employeeIds) {
-      if (employee) {
-        const key = identity(row.locationId, employee)
-        owners.set(key, (owners.get(key) ?? 0) + 1)
-      }
-    }
+    const match = resolveTeamSalesIdentity(row, identities.get(row.locationId), credited.get(row.locationId) ?? new Set())
+    if (!match) continue
+    const key = identity(row.locationId, match.employee)
+    resolved.set(row.key, key)
+    if (!owners.has(key)) owners.set(key, [])
+    owners.get(key).push({ row: row.key, explicit: match.explicit })
   }
+  const ownersByKey = new Map([...owners].map(([key, matches]) => {
+    const explicit = matches.filter(match => match.explicit)
+    return [key, matches.length === 1 ? matches[0].row : explicit.length === 1 ? explicit[0].row : null]
+  }))
   const withPos = (row, posSales, status, person) => ({
     ...row,
     posSales,
@@ -39,16 +57,20 @@ export function joinTeamSalesPos(managerRows, report, locations) {
     difference: row.ms == null || posSales == null ? null : row.ms - posSales,
   })
   const joined = managerRows.map(row => {
-    const [employee] = row.employeeIds
-    const key = identity(row.locationId, employee)
+    const key = resolved.get(row.key)
     const source = coverage.get(row.locationId)
-    if (!employee || row.employeeIds.size !== 1 || owners.get(key) !== 1) {
-      return withPos(row, null, 'TM Ops identity unverified')
+    if (!key) return withPos(row, null, 'TM Ops identity unverified')
+    const matches = owners.get(key)
+    if (ownersByKey.get(key) !== row.key) {
+      return withPos(row, null, ownersByKey.get(key) ? 'POS shown on another TM Ops row' : 'TM Ops identity unverified')
     }
     const person = people.get(key)
     people.delete(key)
     const status = source.status === 'Unavailable' && person ? 'Partial' : source.status
-    return withPos(row, person?.credited ?? (status === 'Complete' ? 0 : null), status, person)
+    const result = withPos(row, person?.credited ?? (status === 'Complete' ? 0 : null), status, person)
+    return matches.length > 1
+      ? { ...result, difference: null, issues: [...result.issues, 'TM Ops sales span multiple rows'] }
+      : result
   })
   for (const [key, person] of people) {
     const source = coverage.get(person.location_id)
