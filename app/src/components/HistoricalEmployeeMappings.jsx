@@ -1,3 +1,4 @@
+import EmployeeConsolidation, { EmployeeConsolidationHistory } from './EmployeeConsolidation'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { loadRoster } from '../utils/employeeRoster.js'
@@ -9,11 +10,12 @@ export default function HistoricalEmployeeMappings({ locationId, isAdmin }) {
   const [state, setState] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [edit, setEdit] = useState(null), [employeeId, setEmployeeId] = useState('')
   const [startDate, setStartDate] = useState(''), [endDate, setEndDate] = useState(''), [note, setNote] = useState(''), [confirmed, setConfirmed] = useState(false)
+  const [selectedNames, setSelectedNames] = useState([]), [consolidating, setConsolidating] = useState(false)
   const [audit, setAudit] = useState(null)
   const alive = useRef(true), saving = useRef(false), request = useRef(0)
   async function reload() {
     const version = ++request.current
-    setState(null); setError(''); setEdit(null); setAudit(null)
+    setState(null); setError(''); setEdit(null); setAudit(null); setSelectedNames([])
     try {
       const [history, roster] = await Promise.all([loadMappingHistory(supabase, locationId), loadRoster(supabase, locationId)])
       if (alive.current && version === request.current) setState({ ...history, roster, aliases: historicalUsage(history.logs, locationId).aliases })
@@ -47,17 +49,26 @@ export default function HistoricalEmployeeMappings({ locationId, isAdmin }) {
   const selectedEmployee = state?.roster.find(row => row.id === employeeId)
   return <section aria-label="Historical employee name mapping" className="space-y-3 border-t pt-4">
     <h2 className="text-xl font-bold">Historical name mapping</h2>
-    <p>Original Daily Logs are preserved. Propose only verified identities. Admin approval combines aliases in Team Member Sales; other dashboards and entry behavior do not change. Each spelling, including the official roster name if present in history, needs explicit approval; matching spelling alone never assigns identity.</p>
+    <p>Select every recorded name you have verified belongs to the same person. Consolidation updates Team Sales attribution and preserves original Daily Logs.</p>
     <p className="text-sm">Sales below use the existing cumulative checkpoint differences, not a sum of running totals. Exact recorded spellings are separate. Blank names remain unresolved. Dates cannot distinguish two people using the same name on the same day: leave that activity unmapped.</p>
     <button className={control} onClick={reload} disabled={busy}>Reload history and mappings</button>
     {error && <p role="alert" className="text-red-700 dark:text-red-400">{error}</p>}
     {!state && !error && <p role="status">Loading complete location history…</p>}
     {state && <>
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded border bg-white p-2 dark:bg-tm-dark-surface">
+        <button className={control} disabled={busy || !selectedNames.length} onClick={()=>setConsolidating(true)}>These are the same person</button>
+        <span aria-live="polite">{selectedNames.length} names selected</span>
+      </div>
+      {consolidating&&<EmployeeConsolidation locationId={locationId} roster={state.roster} initialNames={selectedNames}
+        history={state.logs} onClose={()=>setConsolidating(false)} onSaved={()=>{setConsolidating(false);reload()}}/>}
       <div className="overflow-x-auto"><table className="w-full text-sm text-left"><caption className="sr-only">Historical recorded names at this location</caption>
-        <thead><tr>{['Original recorded name', 'Log appearances', 'Membership sales', 'Most recent date', 'Mapping status / dates', 'Action'].map(title => <th key={title} className="p-2">{title}</th>)}</tr></thead>
+        <thead><tr>{['Select', 'Original recorded name', 'Log appearances', 'Membership sales', 'Most recent date', 'Mapping status / dates', 'Action'].map(title => <th key={title} className="p-2">{title}</th>)}</tr></thead>
         <tbody>{state.aliases.map(alias => {
           const mappings = state.mappings.filter(row => row.original_name === alias.original_name)
           return <tr key={alias.original_name} className="border-t align-top">
+            <td className="p-2"><input type="checkbox" aria-label={'Select historical name '+alias.original_name}
+              checked={selectedNames.includes(alias.original_name)} disabled={busy}
+              onChange={e=>setSelectedNames(current=>e.target.checked?[...current,alias.original_name]:current.filter(name=>name!==alias.original_name))}/></td>
             <td className="p-2 whitespace-pre-wrap">{JSON.stringify(alias.original_name)}</td><td className="p-2">{alias.appearances}</td><td className="p-2">{total(alias.memberships)}</td><td className="p-2">{alias.last_date}</td>
             <td className="p-2">{!mappings.length ? 'Unmapped' : mappings.map(mapping => <div key={mapping.id} className="mb-3">
               <strong>{mapping.status}</strong> → {mapping.employee_name || 'Unavailable roster record'}<br />
@@ -79,6 +90,7 @@ export default function HistoricalEmployeeMappings({ locationId, isAdmin }) {
       </table></div>
       {!state.aliases.length && <p>No named historical activity at this location.</p>}
     </>}
+    {state && <EmployeeConsolidationHistory locationId={locationId} onReversed={reload}/>}
     {edit && state && <form aria-label="Mapping decision" onSubmit={save} className="border-2 border-tm-teal rounded p-4 space-y-3">
       <h3 className="font-bold">{edit.action} mapping for {JSON.stringify(edit.originalName)}</h3>
       <label className="block">Official roster employee <select className={control} value={employeeId} required disabled={busy || !['propose', 'correct'].includes(edit.action)} onChange={e => setEmployeeId(e.target.value)}>

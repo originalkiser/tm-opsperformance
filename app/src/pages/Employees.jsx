@@ -1,3 +1,4 @@
+import EmployeeConsolidation from '../components/EmployeeConsolidation'
 import PosEmployeeAliases from '../components/PosEmployeeAliases'
 import PreviewReadOnly from '../components/PreviewReadOnly'
 import '../styles/operationsColors.css'
@@ -46,6 +47,7 @@ export function Roster({ locationId, isAdmin }) {
   const [rows, setRows] = useState([]), [filter, setFilter] = useState('active')
   const [name, setName] = useState(''), [editing, setEditing] = useState(null), [editName, setEditName] = useState('')
   const [selected, setSelected] = useState([]), [review, setReview] = useState(false), [primary, setPrimary] = useState(''), [confirmed, setConfirmed] = useState(false)
+  const [consolidating,setConsolidating] = useState(false)
   const [verified, setVerified] = useState(false)
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(''), [message, setMessage] = useState('')
   const alive = useRef(true), request = useRef(0), saving = useRef(false)
@@ -86,10 +88,14 @@ export function Roster({ locationId, isAdmin }) {
         <option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option>
       </select></label>
       <button className={control} disabled={busy || loading || review} onClick={reload}>Reload roster</button>
+      <button className={control} disabled={disabled || review || selected.length < 2} onClick={()=>setConsolidating(true)}>These are the same person</button>
       <button className={control} disabled={disabled || review || selected.length < 2} onClick={startReview}>Review selected duplicates ({selected.length})</button>
     </div>
+    {consolidating&&<EmployeeConsolidation locationId={locationId} roster={rows} initialRecords={selected}
+      onClose={()=>setConsolidating(false)} onSaved={()=>{setConsolidating(false);setMessage('Employee identity consolidation saved. Reverse it from Historical name mapping if needed.');reload()}}/>}
     {error && <p role="alert" className="text-red-700 dark:text-red-400">{error}</p>}
     {message && <p role="status">{message}</p>}
+
     {loading ? <p role="status">Loading roster…</p> : <ul className="space-y-2">
       {filterRoster(rows, filter).map(row => <li key={row.id} data-active={row.is_active === true} className="tm-employee-row border border-gray-200 dark:border-tm-dark-border rounded p-3 flex flex-wrap gap-3 items-center">
         <input type="checkbox" aria-label={`Select ${row.name} (${row.id})`} checked={selected.includes(row.id)} disabled={disabled || review}
@@ -114,6 +120,7 @@ export function Roster({ locationId, isAdmin }) {
       <button className={control} disabled={disabled || !editName.trim() || editName === editing.name}>Confirm name change</button>
       <button type="button" className={control} disabled={busy} onClick={() => setEditing(null)}>Cancel</button>
     </form>}
+
     {review && <section aria-label="Duplicate review" className="border-2 border-tm-teal rounded p-4 space-y-3">
       <h2 className="font-bold">Review duplicate records</h2>
       <p>Choose the record to keep active. All other selected records will be deactivated together. Every ID, name and historical Daily Log is retained. This does not merge historical sales.</p>
