@@ -21,6 +21,22 @@ alter table employee_identity_private.consolidations enable row level security;
 revoke all on employee_identity_private.consolidations from public,anon,authenticated,service_role;
 create index employee_consolidations_location on employee_identity_private.consolidations(location_id,created_at desc);
 
+create function employee_identity_private.checkpoint_digest(loc_id uuid, aliases jsonb)
+returns text language sql stable set search_path='' as $$
+ with days as (
+  select distinct d.log_date from public.daily_logs d
+  join jsonb_array_elements(aliases) a on d.employee_name=a->>'name' and d.log_date between (a->>'start')::date and (a->>'end')::date
+  where d.location_id=loc_id
+ ), checkpoints as (
+  select d.id,to_jsonb(d) j from public.daily_logs d join days using(log_date) where d.location_id=loc_id
+ )
+ select encode(sha256(convert_to(coalesce(jsonb_agg(to_jsonb(array[
+  j->>'id',j->>'log_date',j->>'time_slot',j->>'split_index',j->>'employee_id',j->>'employee_name',
+  j->>'total_washes',j->>'member_washes',j->>'basic',j->>'good',j->>'better',j->>'best',j->>'google_reviews'
+ ]) order by id),'[]')::text,'UTF8')),'hex') from checkpoints;
+$$;
+revoke all on function employee_identity_private.checkpoint_digest(uuid,jsonb) from public,anon,authenticated,service_role;
+
 create function public.employee_identity_consolidation(loc_id uuid, action text, payload jsonb default '{}'::jsonb)
 returns jsonb language plpgsql volatile security definer set search_path='' as $$
 declare
@@ -92,6 +108,19 @@ begin
  if before_rows is distinct from (select coalesce(jsonb_agg(r order by (r->>'id')::uuid),'[]') from jsonb_array_elements(payload->'roster') r)
   or (reviewed_count>0 and not coalesce(retained=any(roster_ids),false)) then
   raise exception 'Roster changed or selected records span locations. Reload and review.' using errcode='PT409';end if;
+ if jsonb_array_length(payload->'aliases')=0 then
+  if payload->'rosterOnlyConfirmed' is distinct from 'true'::jsonb then
+   raise exception 'Confirm that roster deactivation will leave historical sales separate.';end if;
+ else
+  -- Lock the existing checkpoints for all reviewed days before validating sales.
+  perform 1 from public.daily_logs d where d.location_id=loc_id and d.log_date in (
+   select matched.log_date from public.daily_logs matched join jsonb_array_elements(payload->'aliases') a
+    on matched.employee_name=a->>'name' and matched.log_date between (a->>'start')::date and (a->>'end')::date
+   where matched.location_id=loc_id
+  ) order by d.id for share of d;
+  if employee_identity_private.checkpoint_digest(loc_id,payload->'aliases') is distinct from payload->>'checkpointDigest' then
+   raise exception 'Historical sales or checkpoints changed. Reload history and review the preview again.' using errcode='PT409';end if;
+ end if;
  from_day:=(payload->>'from')::date; through_day:=(payload->>'through')::date;
  if from_day>through_day then raise exception 'Invalid date interval.';end if;
  if exists(select 1 from jsonb_array_elements(payload->'aliases') r group by r->>'name' having count(*)>1) then

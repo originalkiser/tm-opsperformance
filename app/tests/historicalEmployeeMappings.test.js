@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildEmployeePerformance } from '../src/utils/employeePerformance.js'
 import { mappedEmployeeLogs } from '../src/utils/employeeMappingAttribution.js'
-import { consolidationPreview, historicalUsage, rosterHistoricalUsage, readMappings, loadMappingHistory, changeMapping } from '../src/utils/historicalEmployeeMappings.js'
+import { consolidationCheckpointDigest, consolidationPreview, consolidationSuggestions, historicalUsage, rosterHistoricalUsage, readMappings, loadMappingHistory, changeMapping } from '../src/utils/historicalEmployeeMappings.js'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 const range = { start: '2026-01-01', end: '2026-12-31' }
 const sites = [{ id: 'a', name: 'A', opportunities_formula: 'detailed' }, { id: 'b', name: 'B', opportunities_formula: 'simple' }]
@@ -182,4 +182,28 @@ test('consolidation previews retain zero, distinguish unknown, and derive only o
  const scoped=consolidationPreview(logs,'a',['Cam'],'2026-01-02','2026-01-31')
  assert.deepEqual(scoped.aliases.map(a=>[a.first_date,a.last_date,a.appearances]),[['2026-01-02','2026-01-02',1]])
  assert.equal(scoped.sales,2)
+})
+
+test('roster suggestions find exact normalized name-only logs for active and inactive duplicates without inferring a spelling match',()=>{
+ const roster=[{id:'a',name:'Cam',is_active:true},{id:'b',name:'Cam B',is_active:false}]
+ const logs=[
+  row('1',' CAM ',1),
+  row('2','Cam B',2),
+  row('3','Older Name',3,{employee_id:'b'}),
+  row('4','Cam Bee',4),
+  row('5','Cam',5,{employee_id:'outsider'}),
+ ]
+ const suggestions=consolidationSuggestions(logs,roster)
+ assert.deepEqual([...suggestions],[
+  [' CAM ',{linked:0,nameOnly:1}],['Cam B',{linked:0,nameOnly:1}],['Older Name',{linked:1,nameOnly:0}],
+ ])
+})
+test('checkpoint fingerprints detect same-count sales corrections by another name on the selected day',async()=>{
+ const logs=[row('1','Selected',1),row('2','Other',2,{time_slot:'09:00:00'})]
+ const aliases=[{name:'Selected',start:'2026-01-01',end:'2026-01-01'}]
+ const before=await consolidationCheckpointDigest(logs,aliases)
+ assert.match(before,/^[a-f0-9]{64}$/)
+ assert.equal(await consolidationCheckpointDigest([...logs].reverse(),aliases),before)
+ assert.notEqual(await consolidationCheckpointDigest([logs[0],{...logs[1],basic:8}],aliases),before)
+ assert.equal(await consolidationCheckpointDigest([...logs,row('3','Other',3,{log_date:'2026-01-02'})],aliases),before)
 })

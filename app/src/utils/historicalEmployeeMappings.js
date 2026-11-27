@@ -108,6 +108,39 @@ export function consolidationPreview(logs, locationId, selected, start, end) {
 
 export async function employeeConsolidation(client, locationId, action, payload = {}) {
   const { data, error } = await client.rpc('employee_identity_consolidation', { loc_id: locationId, action, payload })
-  if (error) throw new Error(error.message)
+  if (error) throw Object.assign(new Error(error.message), { code: error.code })
   return data
+}
+
+export function consolidationSuggestions(logs, roster) {
+  const ids = new Set(roster.map(row => row.id))
+  const names = new Set(roster.map(row => row.name?.trim().toLowerCase()).filter(Boolean))
+  const result = new Map()
+  for (const row of logs) {
+    const name = row.employee_name
+    if (!name?.trim()) continue
+    const linked = row.employee_id && ids.has(row.employee_id)
+    const nameOnly = !row.employee_id && names.has(name.trim().toLowerCase())
+    if (!linked && !nameOnly) continue
+    const match = result.get(name) ?? { linked: 0, nameOnly: 0 }
+    if (linked) match.linked++
+    else match.nameOnly++
+    result.set(name, match)
+  }
+  return result
+}
+
+const checkpointFields = ['id','log_date','time_slot','split_index','employee_id','employee_name',
+  'total_washes','member_washes','basic','good','better','best','google_reviews']
+
+// Every checkpoint on a selected day affects cumulative attribution, even
+// when it belongs to another name. Use the same string-array encoding as SQL.
+export async function consolidationCheckpointDigest(logs, aliases) {
+  const days = new Set(logs.filter(row => aliases.some(alias => row.employee_name === alias.name &&
+    row.log_date >= alias.start && row.log_date <= alias.end)).map(row => row.log_date))
+  const rows = logs.filter(row => days.has(row.log_date)).sort((a,b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  const encoded = '[' + rows.map(row => '[' + checkpointFields.map(key =>
+    JSON.stringify(row[key] == null ? null : String(row[key]))).join(', ') + ']').join(', ') + ']'
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encoded))
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2,'0')).join('')
 }

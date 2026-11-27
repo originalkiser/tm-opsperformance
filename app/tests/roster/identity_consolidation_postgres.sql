@@ -22,6 +22,7 @@ begin
  payload:=jsonb_build_object('retained',retained,'confirmed',true,'reason','Identity confirmed in fixture',
   'aliases','[{"name":"Alias","appearances":2,"start":"2026-01-01","end":"2026-01-02"},{"name":"Variant","appearances":1,"start":"2026-01-03","end":"2026-01-03"}]'::jsonb,
   'roster',(select jsonb_agg(to_jsonb(e)-'location_id') from public.employees e where e.location_id=site));
+ payload:=payload||jsonb_build_object('checkpointDigest',employee_identity_private.checkpoint_digest(site,payload->'aliases'));
  foreach denied_user in array array[outside_gm,inactive_gm] loop
   perform set_config('request.jwt.claim.sub',denied_user::text,true);
   begin
@@ -37,6 +38,21 @@ begin
  exception when sqlstate 'PT409' then null;
  end;
  if exists(select 1 from public.employee_name_mappings) then raise exception 'Stale action partially saved.';end if;
+ -- Same rows, names, and dates, with corrected checkpoint values.
+ update public.daily_logs set basic=4 where employee_name='Alias' and log_date='2026-01-01';
+ begin
+  perform public.employee_identity_consolidation(site,'apply',payload);
+  raise exception 'A changed checkpoint passed the old preview.';
+ exception when sqlstate 'PT409' then null;
+ end;
+ if exists(select 1 from public.employee_name_mappings) then raise exception 'Stale checkpoint partially saved.';end if;
+ update public.daily_logs set basic=2 where employee_name='Alias' and log_date='2026-01-01';
+ begin
+  perform public.employee_identity_consolidation(site,'apply',jsonb_set(payload,'{aliases}','[]'));
+  raise exception 'Roster-only operation saved without acknowledgement.';
+ exception when raise_exception then
+  if sqlerrm<>'Confirm that roster deactivation will leave historical sales separate.' then raise;end if;
+ end;
  result:=public.employee_identity_consolidation(site,'apply',payload);
  action_id:=(result->>'id')::uuid;
  if (select count(*) from public.employee_name_mappings where employee_id=retained and status='approved')<>2
@@ -49,7 +65,8 @@ begin
  -- Another target cannot capture any of the approved dates.
  begin
   perform public.employee_identity_consolidation(site,'apply',(payload-'roster')||jsonb_build_object(
-   'retained',inactive_duplicate,'roster','[]'::jsonb,'aliases',jsonb_build_array(payload#>'{aliases,0}')));
+   'retained',inactive_duplicate,'roster','[]'::jsonb,'aliases',jsonb_build_array(payload#>'{aliases,0}'),
+   'checkpointDigest',employee_identity_private.checkpoint_digest(site,jsonb_build_array(payload#>'{aliases,0}'))));
   raise exception 'Existing mapping was overwritten.';
  exception when exclusion_violation then null;
  end;

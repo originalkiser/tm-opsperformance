@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { consolidationPreview, employeeConsolidation, loadMappingHistory } from '../utils/historicalEmployeeMappings.js'
+import { consolidationCheckpointDigest, consolidationPreview, consolidationSuggestions, employeeConsolidation, loadMappingHistory } from '../utils/historicalEmployeeMappings.js'
 
 const control = 'rounded border px-3 py-2 text-sm dark:border-tm-dark-border dark:bg-tm-dark-card disabled:opacity-50'
 const panel = 'm-auto w-full max-w-2xl max-h-[85dvh] overflow-auto rounded-xl p-5 text-gray-900 dark:bg-tm-dark-surface dark:text-tm-dark-text backdrop:bg-black/40'
@@ -25,10 +25,13 @@ export default function EmployeeConsolidation({ locationId, roster, initialNames
   const [logs, setLogs] = useState(history ?? null)
   const [names, setNames] = useState(initialNames)
   const [records, setRecords] = useState(initialRecords)
+  const [nameSearch, setNameSearch] = useState('')
   const [retained, setRetained] = useState('')
   const [custom, setCustom] = useState(false)
   const [start, setStart] = useState(''), [end, setEnd] = useState('')
   const [confirmed, setConfirmed] = useState(false)
+  const [rosterOnly, setRosterOnly] = useState(false)
+  const [stale, setStale] = useState(false)
   const [reason, setReason] = useState('')
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const saving = useRef(false)
@@ -38,7 +41,7 @@ export default function EmployeeConsolidation({ locationId, roster, initialNames
     loadMappingHistory(supabase, locationId).then(data => {
       if (!active) return
       setLogs(data.logs)
-      setNames([...new Set(data.logs.filter(row => initialRecords.includes(row.employee_id) && row.employee_name?.trim()).map(row => row.employee_name))])
+
     }).catch(error => { if (active) setError(error.message) })
     return () => { active = false }
   }, [locationId, history])
@@ -46,8 +49,13 @@ export default function EmployeeConsolidation({ locationId, roster, initialNames
     [logs, locationId, names, custom, start, end])
   const availableNames = useMemo(() => [...new Set((logs ?? []).map(row => row.employee_name).filter(name => name?.trim()))].sort(), [logs])
   const chosen = roster.filter(row => records.includes(row.id))
-  const canSave = logs && retained && confirmed && reason.trim() && (names.length || chosen.length>=2)
-    && preview.aliases.length===names.length && (chosen.length===0 || chosen.length>=2 && records.includes(retained))
+  const suggestions = consolidationSuggestions(logs ?? [], chosen)
+  const suggestedNames = availableNames.filter(name => suggestions.has(name))
+  const otherNames = availableNames.filter(name => !suggestions.has(name))
+  const considered = new Set([...suggestedNames, ...names])
+  const excluded = (logs ?? []).filter(row => considered.has(row.employee_name) || records.includes(row.employee_id)).length - preview.appearances
+  const canSave = !stale && logs && retained && confirmed && reason.trim() && (names.length || chosen.length>=2)
+    && (names.length>0 || rosterOnly) && preview.aliases.length===names.length && (chosen.length===0 || chosen.length>=2 && records.includes(retained))
     && (!custom || !start || !end || start<=end)
   async function save(event) {
     event.preventDefault()
@@ -56,17 +64,20 @@ export default function EmployeeConsolidation({ locationId, roster, initialNames
     setBusy(true)
     setError('')
     try {
+      const aliases = preview.aliases.map(a => ({ name:a.original_name, appearances:a.appearances, start:a.first_date, end:a.last_date }))
       await employeeConsolidation(supabase, locationId, 'apply', {
         retained, confirmed, reason: reason.trim(), from: custom && start || null, through: custom && end || null,
-        aliases: preview.aliases.map(a => ({ name:a.original_name, appearances:a.appearances, start:a.first_date, end:a.last_date })),
+        aliases, rosterOnlyConfirmed: rosterOnly,
+        checkpointDigest: aliases.length ? await consolidationCheckpointDigest(logs, aliases) : null,
         roster: chosen.map(({ id, name, is_active }) => ({ id, name, is_active })),
       })
       onSaved()
-    } catch (error) { setError(error.message) }
+    } catch (error) { setError(error.message); if (error.code==='PT409') { setStale(true);setConfirmed(false) } }
     finally { saving.current = false; setBusy(false) }
   }
   function toggle(set, value, checked) {
     setConfirmed(false)
+    setRosterOnly(false)
     set(list => checked ? [...list, value] : list.filter(item => item !== value))
   }
   return <Dialog title="These are the same person" onClose={onClose} busy={busy}>
@@ -77,14 +88,26 @@ export default function EmployeeConsolidation({ locationId, roster, initialNames
         <option value="">Choose existing record</option>
         {roster.map(row => <option key={row.id} value={row.id}>{row.name} · {row.is_active?'Active':'Inactive'} · {row.id.slice(0,8)}</option>)}
       </select></label>
-      <details open={!initialNames.length}>
-        <summary>{names.length} selected historical names</summary>
-        <div className="max-h-32 overflow-y-auto">{availableNames.map(name => <label className="block p-1" key={name}>
-          <input type="checkbox" checked={names.includes(name)} onChange={e => toggle(setNames,name,e.target.checked)} disabled={busy}/> {name}
-        </label>)}</div>
-      </details>
+      <div className="space-y-2">
+        <p className="font-semibold">Historical sales consolidation · {names.length} names selected</p>
+        {!!suggestedNames.length&&<fieldset className="rounded border p-2">
+          <legend>Likely historical names</legend>
+          <p className="text-sm">Review and select each name you recognize. A name-only match may belong to someone else.</p>
+          {suggestedNames.map(name => <label className="block p-1" key={name}>
+            <input type="checkbox" checked={names.includes(name)} onChange={e=>toggle(setNames,name,e.target.checked)} disabled={busy}/> {name}
+            <span className="text-sm"> · {suggestions.get(name).linked} ID-linked, {suggestions.get(name).nameOnly} name-only</span>
+          </label>)}
+        </fieldset>}
+        <details open={suggestedNames.length===0}>
+          <summary>Select additional historical names</summary>
+          <label className="block">Search recorded names <input className={control} value={nameSearch} onChange={e=>setNameSearch(e.target.value)}/></label>
+          <div className="max-h-32 overflow-y-auto">{otherNames.filter(name=>name.toLowerCase().includes(nameSearch.trim().toLowerCase())).map(name => <label className="block p-1" key={name}>
+            <input type="checkbox" checked={names.includes(name)} onChange={e => toggle(setNames,name,e.target.checked)} disabled={busy}/> {name}
+          </label>)}</div>
+        </details>
+      </div>
       <details open={!!initialRecords.length}>
-        <summary>{records.length} roster records selected for status changes</summary>
+        <summary>Roster deactivation · {records.length} records selected</summary>
         <p className="text-sm">Select the retained record and every duplicate you want deactivated. Inactive records remain available.</p>
         <div className="max-h-32 overflow-y-auto">{roster.map(row => <label className="block p-1" key={row.id}>
           <input type="checkbox" checked={records.includes(row.id)} onChange={e => toggle(setRecords,row.id,e.target.checked)} disabled={busy}/> {row.name} · {row.is_active?'Active':'Inactive'} · {row.id.slice(0,8)}
@@ -96,10 +119,17 @@ export default function EmployeeConsolidation({ locationId, roster, initialNames
         <label>Through <input className={control} type="date" value={end} disabled={busy} onChange={e=>{setEnd(e.target.value);setConfirmed(false)}}/></label>
       </div>}
       <div aria-live="polite" className="rounded border p-2 text-sm">
+        <p>{preview.appearances} historical records included · {excluded} excluded</p>
+        <p>Counts cover suggested names, selected names and logs linked to the selected roster records.</p>
         <p>{preview.appearances} log appearances · {preview.sales == null ? 'Membership sales unknown' : preview.sales + ' membership sales'}</p>
         {preview.aliases.map(a=><p key={a.original_name}>{a.original_name} · {a.first_date} through {a.last_date} · {a.memberships == null ? 'Sales unknown' : a.memberships + ' sales'}</p>)}
         {preview.aliases.length!==names.length&&<p>One or more selected names have no activity in this range.</p>}
       </div>
+      {logs&&!names.length&&chosen.length>=2&&<div className="rounded border border-amber-500 p-2">
+        <p>Roster deactivation only. Historical name-only sales will stay separate.</p>
+        <label><input type="checkbox" checked={rosterOnly} disabled={busy} onChange={e=>setRosterOnly(e.target.checked)}/> Continue without consolidating historical sales</label>
+      </div>}
+      {stale&&<p>Close this dialog and reload before reviewing again.</p>}
       <p className="text-sm">This updates historical report attribution and the roster statuses you selected. Review POS aliases separately. Employee IDs, original names, and Daily Logs are preserved.</p>
       <label className="block">Reason <input className={control} maxLength={1000} required value={reason} disabled={busy} onChange={e=>setReason(e.target.value)}/></label>
       <label className="block"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e=>setConfirmed(e.target.checked)}/> I verified that all selected records belong to the retained employee.</label>
