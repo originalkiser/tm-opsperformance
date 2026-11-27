@@ -32,20 +32,22 @@ export async function readMappings(client, locationIds, approvedOnly = false) {
 
 // Each exact recorded spelling has its own inventory row. Membership sales use
 // the unchanged Team Sales cumulative-delta/correction rules, never raw sums.
-export function historicalUsage(logs, locationId) {
+export function historicalUsage(logs, locationId, range = allHistory) {
   const aliases = new Map()
   const tokenRows = logs.map(row => {
     const raw = row.employee_name
     if (typeof raw !== 'string' || !raw.trim()) return row
     if (!aliases.has(raw)) aliases.set(raw, { original_name: raw, appearances: 0, last_date: null, token: `alias${aliases.size}` })
     const entry = aliases.get(raw)
+    if (row.log_date < range.start || row.log_date > range.end) return { ...row, employee_name: entry.token }
     entry.appearances++
+    entry.first_date = !entry.first_date || row.log_date < entry.first_date ? row.log_date : entry.first_date
     entry.last_date = !entry.last_date || row.log_date > entry.last_date ? row.log_date : entry.last_date
     return { ...row, employee_name: entry.token }
   })
-  const calculated = buildEmployeePerformance(tokenRows, [{ id: locationId, name: 'Location', opportunities_formula: 'detailed' }], allHistory)
+  const calculated = buildEmployeePerformance(tokenRows, [{ id: locationId, name: 'Location', opportunities_formula: 'detailed' }], range)
   const totals = new Map(calculated.rows.map(row => [row.name, row.ms]))
-  return { aliases: [...aliases.values()].map(({ token, ...row }) => ({ ...row, memberships: totals.get(token) ?? null })).sort((a, b) => a.original_name.localeCompare(b.original_name)) }
+  return { aliases: [...aliases.values()].filter(row => row.appearances).map(({ token, ...row }) => ({ ...row, memberships: totals.get(token) ?? null })).sort((a, b) => a.original_name.localeCompare(b.original_name)) }
 }
 
 export function rosterHistoricalUsage(logs, employee) {
@@ -90,5 +92,22 @@ export async function readMappingAudit(client, mappingId) {
   const { data, error } = await client.from('employee_name_mapping_audit').select('*')
     .eq('mapping_id', mappingId).order('id', { ascending: false }).limit(100)
   if (error) throw error
+  return data
+}
+
+export function consolidationPreview(logs, locationId, selected, start, end) {
+  const aliases = historicalUsage(logs, locationId, { start: start || allHistory.start, end: end || allHistory.end })
+    .aliases.filter(alias => selected.includes(alias.original_name))
+  return {
+    aliases,
+    appearances: aliases.reduce((count, alias) => count + alias.appearances, 0),
+    sales: aliases.some(alias => alias.memberships == null) || !aliases.length
+      ? null : aliases.reduce((count, alias) => count + alias.memberships, 0),
+  }
+}
+
+export async function employeeConsolidation(client, locationId, action, payload = {}) {
+  const { data, error } = await client.rpc('employee_identity_consolidation', { loc_id: locationId, action, payload })
+  if (error) throw new Error(error.message)
   return data
 }

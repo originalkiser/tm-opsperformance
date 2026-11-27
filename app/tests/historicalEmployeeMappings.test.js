@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildEmployeePerformance } from '../src/utils/employeePerformance.js'
 import { mappedEmployeeLogs } from '../src/utils/employeeMappingAttribution.js'
-import { historicalUsage, rosterHistoricalUsage, readMappings, loadMappingHistory, changeMapping } from '../src/utils/historicalEmployeeMappings.js'
+import { consolidationPreview, historicalUsage, rosterHistoricalUsage, readMappings, loadMappingHistory, changeMapping } from '../src/utils/historicalEmployeeMappings.js'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 const range = { start: '2026-01-01', end: '2026-12-31' }
 const sites = [{ id: 'a', name: 'A', opportunities_formula: 'detailed' }, { id: 'b', name: 'B', opportunities_formula: 'simple' }]
@@ -107,6 +107,7 @@ function ui(isAdmin = false, extra = {}) {
   const actions = []
   const globals = { supabase: {}, loadMappingHistory: async () => ({ logs: data, mappings: [mapping('Cam', 'one', { id: 'm', version: 1, status: 'proposed' })] }),
     loadRoster: async () => [{ id: 'one', name: 'Official Employee', is_active: true }], historicalUsage,
+    EmployeeConsolidation: ()=>null, EmployeeConsolidationHistory: ()=>null,
     changeMapping: async (...args) => actions.push(args), readMappingAudit: async () => [], ...extra }
   const h = locationHelpHarness('components/HistoricalEmployeeMappings', globals, { locationId: 'a', isAdmin })
   h.render(); return { h, actions }
@@ -132,7 +133,7 @@ test('Admin approval requires evidence and identity acknowledgement before RPC',
   h.find(n => n.type === 'button' && textOf(n) === 'Approve').props.onClick()
   assert.equal(h.find(n => n.type === 'button' && textOf(n) === 'Confirm approve').props.disabled, true)
   h.find(n => n.type === 'textarea').props.onChange({ target: { value: 'Confirmed with manager' } })
-  h.find(n => n.type === 'input' && n.props.type === 'checkbox').props.onChange({ target: { checked: true } })
+  h.find(n => n.type === 'input' && n.props.type === 'checkbox' && !n.props['aria-label']).props.onChange({ target: { checked: true } })
   assert.equal(h.find(n => n.type === 'button' && textOf(n) === 'Confirm approve').props.disabled, false)
   await h.find(n => n.type === 'form').props.onSubmit({ preventDefault() {} })
   assert.equal(actions[0][1].action, 'approve')
@@ -161,4 +162,24 @@ test('company reports use complete approved-only RPC and reject unexpected scope
   assert.deepEqual(sent.args.location_ids, ['a'])
   await assert.rejects(readMappings({ rpc: async () => ({ data: [mapping('Cam', 'one', { location_id: 'b' })] }) }, ['a'], true), /verified/)
   await assert.rejects(readMappings({ rpc: async () => ({ data: [mapping('Cam', 'one', { status: 'proposed' })] }) }, ['a'], true), /verified/)
+})
+
+test('Store selects multiple exact names and opens the same consolidation dialog',async()=>{
+ const {h,actions}=ui();await h.flush()
+ const selectors=h.all(n=>n.type==='input'&&n.props['aria-label']?.startsWith('Select historical name'))
+ assert.equal(selectors.length,3)
+ for(const selector of selectors.slice(0,2))selector.props.onChange({target:{checked:true}})
+ h.find(n=>n.type==='button'&&textOf(n)==='These are the same person').props.onClick()
+ const dialogue=h.find(n=>n.props?.initialNames?.length===2)
+ assert.equal(dialogue.props.locationId,'a')
+ assert.equal(actions.length,0)
+})
+test('consolidation previews retain zero, distinguish unknown, and derive only observed dates',()=>{
+ const zero=[row('1','Alias',0)]
+ assert.equal(consolidationPreview(zero,'a',['Alias']).sales,0)
+ const logs=[row('1','Cam',5),row('2','Camby',2,{time_slot:'09:00:00'}),row('3','Cam',2,{log_date:'2026-01-02'})]
+ assert.equal(consolidationPreview(logs,'a',['Cam','Camby']).sales,null)
+ const scoped=consolidationPreview(logs,'a',['Cam'],'2026-01-02','2026-01-31')
+ assert.deepEqual(scoped.aliases.map(a=>[a.first_date,a.last_date,a.appearances]),[['2026-01-02','2026-01-02',1]])
+ assert.equal(scoped.sales,2)
 })
