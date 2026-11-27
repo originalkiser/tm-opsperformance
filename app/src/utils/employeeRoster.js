@@ -1,7 +1,21 @@
 import { readLocationEmployees } from './employeeIdentity.js'
 export const rosterColumns = 'id, location_id, name, is_active'
-export function filterRoster(rows, filter) {
-  return rows.filter(row => filter === 'all' || (filter === 'active' ? row.is_active === true : row.is_active !== true))
+export function consolidatedRosterIds(runs) {
+  return new Set(runs.filter(run => !run.reversed_at).flatMap(run =>
+    run.roster_before.filter(row => row.id !== run.retained_id).map(row => row.id)))
+}
+export function filterRoster(rows, filter, consolidatedIds = new Set()) {
+  if (filter === 'consolidated') return rows.filter(row => consolidatedIds.has(row.id))
+  return rows.filter(row => !consolidatedIds.has(row.id)
+    && (filter === 'all' || (filter === 'active' ? row.is_active === true : row.is_active !== true)))
+}
+export async function loadConsolidatedRoster(client, locationId) {
+  const { data, error } = await client.rpc('employee_consolidated_roster', { loc_id: locationId })
+  if (error) throw error
+  if (!Array.isArray(data) || data.some(run => run.location_id !== locationId || !Array.isArray(run.roster_before))) {
+    throw new Error('Consolidated records could not be verified. Reload the roster.')
+  }
+  return data
 }
 export function validateDuplicateReview(rows, selectedIds, primaryId) {
   const ids = new Set(selectedIds)

@@ -32,20 +32,22 @@ export async function readMappings(client, locationIds, approvedOnly = false) {
 
 // Each exact recorded spelling has its own inventory row. Membership sales use
 // the unchanged Team Sales cumulative-delta/correction rules, never raw sums.
-export function historicalUsage(logs, locationId) {
+export function historicalUsage(logs, locationId, range = allHistory) {
   const aliases = new Map()
   const tokenRows = logs.map(row => {
     const raw = row.employee_name
     if (typeof raw !== 'string' || !raw.trim()) return row
     if (!aliases.has(raw)) aliases.set(raw, { original_name: raw, appearances: 0, last_date: null, token: `alias${aliases.size}` })
     const entry = aliases.get(raw)
+    if (row.log_date < range.start || row.log_date > range.end) return { ...row, employee_name: entry.token }
     entry.appearances++
+    entry.first_date = !entry.first_date || row.log_date < entry.first_date ? row.log_date : entry.first_date
     entry.last_date = !entry.last_date || row.log_date > entry.last_date ? row.log_date : entry.last_date
     return { ...row, employee_name: entry.token }
   })
-  const calculated = buildEmployeePerformance(tokenRows, [{ id: locationId, name: 'Location', opportunities_formula: 'detailed' }], allHistory)
+  const calculated = buildEmployeePerformance(tokenRows, [{ id: locationId, name: 'Location', opportunities_formula: 'detailed' }], range)
   const totals = new Map(calculated.rows.map(row => [row.name, row.ms]))
-  return { aliases: [...aliases.values()].map(({ token, ...row }) => ({ ...row, memberships: totals.get(token) ?? null })).sort((a, b) => a.original_name.localeCompare(b.original_name)) }
+  return { aliases: [...aliases.values()].filter(row => row.appearances).map(({ token, ...row }) => ({ ...row, memberships: totals.get(token) ?? null })).sort((a, b) => a.original_name.localeCompare(b.original_name)) }
 }
 
 export function rosterHistoricalUsage(logs, employee) {
@@ -91,4 +93,54 @@ export async function readMappingAudit(client, mappingId) {
     .eq('mapping_id', mappingId).order('id', { ascending: false }).limit(100)
   if (error) throw error
   return data
+}
+
+export function consolidationPreview(logs, locationId, selected, start, end) {
+  const aliases = historicalUsage(logs, locationId, { start: start || allHistory.start, end: end || allHistory.end })
+    .aliases.filter(alias => selected.includes(alias.original_name))
+  return {
+    aliases,
+    appearances: aliases.reduce((count, alias) => count + alias.appearances, 0),
+    sales: aliases.some(alias => alias.memberships == null) || !aliases.length
+      ? null : aliases.reduce((count, alias) => count + alias.memberships, 0),
+  }
+}
+
+export async function employeeConsolidation(client, locationId, action, payload = {}) {
+  const { data, error } = await client.rpc('employee_identity_consolidation', { loc_id: locationId, action, payload })
+  if (error) throw Object.assign(new Error(error.message), { code: error.code })
+  return data
+}
+
+export function consolidationSuggestions(logs, roster) {
+  const ids = new Set(roster.map(row => row.id))
+  const names = new Set(roster.map(row => row.name?.trim().toLowerCase()).filter(Boolean))
+  const result = new Map()
+  for (const row of logs) {
+    const name = row.employee_name
+    if (!name?.trim()) continue
+    const linked = row.employee_id && ids.has(row.employee_id)
+    const nameOnly = !row.employee_id && names.has(name.trim().toLowerCase())
+    if (!linked && !nameOnly) continue
+    const match = result.get(name) ?? { linked: 0, nameOnly: 0 }
+    if (linked) match.linked++
+    else match.nameOnly++
+    result.set(name, match)
+  }
+  return result
+}
+
+const checkpointFields = ['id','log_date','time_slot','split_index','employee_id','employee_name',
+  'total_washes','member_washes','basic','good','better','best','google_reviews']
+
+// Every checkpoint on a selected day affects cumulative attribution, even
+// when it belongs to another name. Use the same string-array encoding as SQL.
+export async function consolidationCheckpointDigest(logs, aliases) {
+  const days = new Set(logs.filter(row => aliases.some(alias => row.employee_name === alias.name &&
+    row.log_date >= alias.start && row.log_date <= alias.end)).map(row => row.log_date))
+  const rows = logs.filter(row => days.has(row.log_date)).sort((a,b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  const encoded = '[' + rows.map(row => '[' + checkpointFields.map(key =>
+    JSON.stringify(row[key] == null ? null : String(row[key]))).join(', ') + ']').join(', ') + ']'
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encoded))
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2,'0')).join('')
 }
