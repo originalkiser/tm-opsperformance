@@ -26,6 +26,11 @@ begin
  foreach denied_user in array array[outside_gm,inactive_gm] loop
   perform set_config('request.jwt.claim.sub',denied_user::text,true);
   begin
+   perform public.employee_consolidated_roster(site);
+   raise exception 'An unauthorized actor could read consolidated roster records.';
+  exception when insufficient_privilege then null;
+  end;
+  begin
    perform public.employee_identity_consolidation(site,'apply',payload);
    raise exception 'An unauthorized actor consolidated another roster.';
   exception when insufficient_privilege then null;
@@ -62,6 +67,16 @@ begin
  if (audited->>'actor')::uuid<>gm or (audited->>'retained_id')::uuid<>retained
   or (audited->>'location_id')::uuid<>site or jsonb_array_length(audited->'selected_aliases')<>2
  then raise exception 'Audit did not preserve the complete review.';end if;
+ if (public.employee_consolidated_roster(site)#>>'{0,id}')::uuid is distinct from action_id
+   or jsonb_array_length(public.employee_consolidated_roster(site)#>'{0,roster_before}') is distinct from 3 then
+  raise exception 'Assigned Store did not receive the audited roster records.';
+ end if;
+ perform set_config('request.jwt.claim.sub',admin::text,true);
+ if (public.employee_consolidated_roster(site)#>>'{0,id}')::uuid is distinct from action_id
+   or has_function_privilege('anon','public.employee_consolidated_roster(uuid)','execute') then
+  raise exception 'Read access was not restricted to authorized accounts.';
+ end if;
+ perform set_config('request.jwt.claim.sub',gm::text,true);
  -- Another target cannot capture any of the approved dates.
  begin
   perform public.employee_identity_consolidation(site,'apply',(payload-'roster')||jsonb_build_object(
@@ -83,6 +98,9 @@ begin
    or (select count(*) from public.employee_name_mapping_audit where actor_id=gm)<>4
    or exists(select 1 from public.employee_name_mappings where status<>'rejected') then
    raise exception 'Reversal changed identity history or failed to restore roster statuses.';
+ end if;
+ if public.employee_consolidated_roster(site) <> '[]'::jsonb then
+  raise exception 'Reversed audit still hides roster records.';
  end if;
  if (public.employee_identity_consolidation(site,'list','{}')#>>'{0,reversed_by}')::uuid<>gm then
   raise exception 'Reversal was not audited.';

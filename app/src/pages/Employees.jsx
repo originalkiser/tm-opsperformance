@@ -1,4 +1,4 @@
-import EmployeeConsolidation from '../components/EmployeeConsolidation'
+import EmployeeConsolidation, { EmployeeConsolidationHistory } from '../components/EmployeeConsolidation'
 import PosEmployeeAliases from '../components/PosEmployeeAliases'
 import PreviewReadOnly from '../components/PreviewReadOnly'
 import '../styles/operationsColors.css'
@@ -9,7 +9,7 @@ import { supabase } from '../lib/supabase'
 import NavBar from '../components/NavBar'
 import HistoricalEmployeeMappings from '../components/HistoricalEmployeeMappings'
 import { loadMappingHistory, rosterHistoricalUsage } from '../utils/historicalEmployeeMappings.js'
-import { addRosterEmployee, filterRoster, loadRoster, reviewRosterDuplicates, rosterError, updateRosterEmployee, validateDuplicateReview } from '../utils/employeeRoster.js'
+import { addRosterEmployee, consolidatedRosterIds, filterRoster, loadConsolidatedRoster, loadRoster, reviewRosterDuplicates, rosterError, updateRosterEmployee, validateDuplicateReview } from '../utils/employeeRoster.js'
 
 const control = 'rounded border border-gray-300 dark:border-tm-dark-border bg-white dark:bg-tm-dark-card p-2 text-sm disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-tm-teal'
 export default function Employees() {
@@ -45,6 +45,7 @@ export default function Employees() {
 
 export function Roster({ locationId, isAdmin }) {
   const [rows, setRows] = useState([]), [filter, setFilter] = useState('active')
+  const [consolidations, setConsolidations] = useState([])
   const [name, setName] = useState(''), [editing, setEditing] = useState(null), [editName, setEditName] = useState('')
   const [selected, setSelected] = useState([]), [review, setReview] = useState(false), [primary, setPrimary] = useState(''), [confirmed, setConfirmed] = useState(false)
   const [consolidating,setConsolidating] = useState(false)
@@ -55,9 +56,9 @@ export function Roster({ locationId, isAdmin }) {
     const version = ++request.current
     setLoading(true); setVerified(false); setError('')
     try {
-      const data = await loadRoster(supabase, locationId)
-      if (alive.current && version === request.current) { setRows(data); setVerified(true); setSelected([]); setReview(false); setEditing(null) }
-    } catch (e) { if (alive.current && version === request.current) { setRows([]); setError(rosterError(e)) } }
+      const [data, history] = await Promise.all([loadRoster(supabase, locationId), loadConsolidatedRoster(supabase, locationId)])
+      if (alive.current && version === request.current) { setRows(data); setConsolidations(history); setVerified(true); setSelected([]); setReview(false); setEditing(null) }
+    } catch (e) { if (alive.current && version === request.current) { setRows([]); setConsolidations([]); setError(rosterError(e)) } }
     finally { if (alive.current && version === request.current) setLoading(false) }
   }
   useEffect(() => { alive.current = true; reload(); return () => { alive.current = false; request.current++ } }, [locationId])
@@ -75,6 +76,9 @@ export function Roster({ locationId, isAdmin }) {
     catch (e) { setError(e.message) }
   }
   const disabled = busy || loading || !verified
+  const consolidatedIds = consolidatedRosterIds(consolidations)
+  const visibleRows = filterRoster(rows, filter, consolidatedIds)
+  const isConsolidatedView = filter === 'consolidated'
   const reviewRows = rows.filter(row => selected.includes(row.id))
   return <section className="tm-employee-roster space-y-4" aria-label="Employee roster">
     <h2 className="tm-operations-heading font-brand font-bold">Employee roster</h2>
@@ -84,31 +88,34 @@ export function Roster({ locationId, isAdmin }) {
       <button className={control} disabled={disabled || review || !name.trim()}>Add Employee</button>
     </form>
     <div className="tm-employee-filters flex flex-wrap gap-2 items-center">
-      <label>Status <select className={control} value={filter} disabled={disabled || review} onChange={e => { setFilter(e.target.value); setSelected([]) }}>
-        <option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option>
+      <label>Status <select className={control} value={filter} disabled={disabled || review} onChange={e => { setFilter(e.target.value); setSelected([]); setEditing(null) }}>
+        <option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option><option value="consolidated">Consolidated Records</option>
       </select></label>
       <button className={control} disabled={busy || loading || review} onClick={reload}>Reload roster</button>
-      <button className={control} disabled={disabled || review || selected.length < 2} onClick={()=>setConsolidating(true)}>These are the same person</button>
-      <button className={control} disabled={disabled || review || selected.length < 2} onClick={startReview}>Review selected duplicates ({selected.length})</button>
+      <button className={control} disabled={disabled || review || isConsolidatedView || selected.length < 2} onClick={()=>setConsolidating(true)}>These are the same person</button>
+      <button className={control} disabled={disabled || review || isConsolidatedView || selected.length < 2} onClick={startReview}>Review selected duplicates ({selected.length})</button>
     </div>
-    {consolidating&&<EmployeeConsolidation locationId={locationId} roster={rows} initialRecords={selected}
-      onClose={()=>setConsolidating(false)} onSaved={()=>{setConsolidating(false);setMessage('Employee identity consolidation saved. Reverse it from Historical name mapping if needed.');reload()}}/>}
+    {consolidating&&<EmployeeConsolidation locationId={locationId} roster={filterRoster(rows, 'all', consolidatedIds)} initialRecords={selected}
+      onClose={()=>setConsolidating(false)} onSaved={()=>{setConsolidating(false);setMessage('Employee identity consolidation saved. Reverse it from Consolidated Records if needed.');reload()}}/>}
     {error && <p role="alert" className="text-red-700 dark:text-red-400">{error}</p>}
     {message && <p role="status">{message}</p>}
 
     {loading ? <p role="status">Loading roster…</p> : <ul className="space-y-2">
-      {filterRoster(rows, filter).map(row => <li key={row.id} data-active={row.is_active === true} className="tm-employee-row border border-gray-200 dark:border-tm-dark-border rounded p-3 flex flex-wrap gap-3 items-center">
-        <input type="checkbox" aria-label={`Select ${row.name} (${row.id})`} checked={selected.includes(row.id)} disabled={disabled || review}
-          onChange={e => setSelected(ids => e.target.checked ? [...ids, row.id] : ids.filter(id => id !== row.id))} />
-        <div className="flex-1 min-w-0"><strong className="break-words">{row.name}</strong><span className="ml-2 text-sm">{row.is_active === true ? 'Active' : 'Inactive'}</span>
+      {visibleRows.map(row => <li key={row.id} data-active={row.is_active === true} className="tm-employee-row border border-gray-200 dark:border-tm-dark-border rounded p-3 flex flex-wrap gap-3 items-center">
+        {!isConsolidatedView && <input type="checkbox" aria-label={`Select ${row.name} (${row.id})`} checked={selected.includes(row.id)} disabled={disabled || review}
+          onChange={e => setSelected(ids => e.target.checked ? [...ids, row.id] : ids.filter(id => id !== row.id))} />}
+        <div className="flex-1 min-w-0"><strong className="break-words">{row.name}</strong><span className="ml-2 text-sm">{isConsolidatedView ? 'Consolidated' : row.is_active === true ? 'Active' : 'Inactive'}</span>
           {isAdmin && <div className="text-xs break-all text-gray-500 dark:text-tm-dark-muted">ID: {row.id}</div>}
         </div>
-        <button className={control} disabled={disabled || review} onClick={() => { setEditing(row); setEditName(row.name) }}>Edit Name</button>
-        <button className={control} disabled={disabled || review} onClick={() => save(() => updateRosterEmployee(supabase, row, { is_active: row.is_active !== true }), 'Employee status updated.')}>
-          {row.is_active === true ? 'Deactivate' : 'Activate'}</button>
+        {!isConsolidatedView && <>
+          <button className={control} disabled={disabled || review} onClick={() => { setEditing(row); setEditName(row.name) }}>Edit Name</button>
+          <button className={control} disabled={disabled || review} onClick={() => save(() => updateRosterEmployee(supabase, row, { is_active: row.is_active !== true }), 'Employee status updated.')}>
+            {row.is_active === true ? 'Deactivate' : 'Activate'}</button>
+        </>}
       </li>)}
-      {!filterRoster(rows, filter).length && <li>No employees match this filter.</li>}
+      {!visibleRows.length && <li>No employees match this filter.</li>}
     </ul>}
+    {verified && isConsolidatedView && <EmployeeConsolidationHistory locationId={locationId} rosterRuns={consolidations} onReversed={reload} />}
     {verified && <PosEmployeeAliases locationId={locationId} isAdmin={isAdmin} employees={rows} />}
     {editing && !review && <form aria-label="Edit employee name" className="border rounded p-3 space-y-3" onSubmit={e => {
       e.preventDefault()
