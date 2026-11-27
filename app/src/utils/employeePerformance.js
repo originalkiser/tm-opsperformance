@@ -67,7 +67,7 @@ export function buildEmployeePerformance(data, locations, range, mappings = []) 
     if (!employees.has(key)) employees.set(key, { key, name: mapped.labels.get(key) || name, locationId, site: locationMap.get(locationId).name,
       formula: locationMap.get(locationId).opportunities_formula ?? 'detailed',
       total_washes: 0, member_washes: 0, google_reviews: 0, basic: 0, good: 0, better: 0, best: 0,
-      uncertain: new Set(), issues: [] })
+      uncertain: new Set(), issues: [], employeeIds: new Set() })
     return employees.get(key)
   }
   for (const row of data) {
@@ -75,14 +75,17 @@ export function buildEmployeePerformance(data, locations, range, mappings = []) 
     if (row.id && seenIds.has(row.id)) {
       // Repeated identical read rows are not additional activity.
       const prior = seenIds.get(row.id)
-      if (['location_id', 'log_date', 'time_slot', 'split_index', 'employee_name', '_mappingOriginalName', ...COUNTS].every(k => prior[k] === row[k])) continue
+      if (['location_id', 'log_date', 'time_slot', 'split_index', 'employee_name', '_mappingOriginalName', ...COUNTS].every(k => prior[k] === row[k])) {
+        ensure(row.location_id, row.employee_name)?.employeeIds.add(row._mappingEmployeeId ?? row.employee_id ?? null)
+        continue
+      }
       // Keep conflicting copies so both affected days are withheld below.
       ambiguousIds.add(row.id)
     } else if (row.id) seenIds.set(row.id, row)
     const key = `${row.location_id}:${row.log_date}`
     if (!days.has(key)) days.set(key, [])
     days.get(key).push(row)
-    ensure(row.location_id, row.employee_name)
+    ensure(row.location_id, row.employee_name)?.employeeIds.add(row._mappingEmployeeId ?? row.employee_id ?? null)
   }
   for (const day of days.values()) {
     const locationId = day[0].location_id, date = day[0].log_date

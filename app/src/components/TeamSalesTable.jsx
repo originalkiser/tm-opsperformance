@@ -1,4 +1,5 @@
-import PosMembershipComparison from './PosMembershipComparison'
+import { usePosMembershipReport } from '../hooks/usePosMembershipReport'
+import { joinTeamSalesPos, teamSalesPosTotals } from '../utils/teamSalesPos.js'
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { readMappings } from '../utils/historicalEmployeeMappings.js'
@@ -15,7 +16,9 @@ const COLS = [
   { key: 'rank', label: 'Rank', type: 'text' },
   { key: 'name', label: 'Employee', type: 'text' },
   { key: 'site', label: 'Site', type: 'text' },
-  { key: 'ms', label: 'Total Sales', type: 'num' },
+  { key: 'ms', label: 'TM Ops Sales', type: 'num' },
+  { key: 'posSales', label: 'POS Verified Sales', type: 'num' },
+  { key: 'difference', label: 'Difference', type: 'num' },
   { key: 'opp', label: 'Total Opportunities', type: 'num' },
   { key: 'conversion', label: 'Conversion %', type: 'conv' },
   { key: 'p_mix', label: 'P-Mix %', type: 'pmix' },
@@ -25,17 +28,26 @@ const cell = 'border border-gray-200 dark:border-tm-dark-border px-3 py-2 dark:t
 const countLabel = value => value == null ? '—' : fmtNum(value) || '0'
 const ratioLabel = (num, den, zeroMix = false) => num == null || den == null ? '—' : den > 0 ? `${(num / den * 100).toFixed(1)}%` : zeroMix && den === 0 && num === 0 ? '0.0%' : '—'
 
-function totals(rows) {
+const rankLabel = row => row.posOnly ? '—' : employeeRankLabel(row)
+const posLabel = (value, partial) => value == null ? 'Unavailable' : countLabel(value) + (partial ? ' · Partial' : '')
+
+const posMixLabel = row => row.posMix || row.posUnknownTiers
+  ? 'POS P-Mix: ' + (row.posMix ?? 'Unavailable') + (row.posUnknownTiers ? ' · Incomplete tiers' : '') : ''
+
+function totals(rows, coverage) {
+  const pos = teamSalesPosTotals(rows, coverage)
+  rows = rows.filter(row => !row.posOnly)
   const sum = key => rows.some(r => r[key] == null) ? null : rows.reduce((n, r) => n + r[key], 0)
   const known = key => rows.reduce((n, r) => n + (r[key] ?? 0), 0)
   const ms = sum('ms'), opp = sum('opp')
   return [
     '', rows.some(r => r.ms == null || r.opp == null) ? 'Known attributed subtotal' : 'Totals', '',
-    known('ms'), known('opp'), ratioLabel(ms, opp), ratioLabel(ms == null ? null : known('better') + known('best'), ms, true), '',
+    rows.length ? known('ms') : '—', posLabel(pos.value, pos.partial), posLabel(pos.difference, pos.partial), rows.length ? known('opp') : '—', ratioLabel(ms, opp), ratioLabel(!rows.length || ms == null ? null : known('better') + known('best'), ms, true), '',
   ]
 }
 
 export default function TeamSalesTable({ data, locations, dateRange, dataComplete = true }) {
+  const pos = usePosMembershipReport(locations, dateRange.start, dateRange.end)
   const mappingKey = JSON.stringify(locations.map(row => row.id).sort())
   const [mappingState, setMappingState] = useState({ key: '', rows: [], error: '' })
   const [mappingReload, setMappingReload] = useState(0)
@@ -56,22 +68,22 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
   if (mappingState.error) return <div role="alert">Historical mappings could not be verified: {mappingState.error} <button onClick={() => setMappingReload(n => n + 1)}>Reload mappings</button></div>
   if (mappingState.key !== mappingKey) return <p role="status">Loading approved employee mappings…</p>
   if (!dataComplete) return <p role="alert" className="text-sm text-red-600">Team Sales data is incomplete or still loading. Reload the report before scoring.</p>
-  const comparison = <PosMembershipComparison data={data} locations={locations} dateRange={dateRange} mappings={mappingState.rows} dataComplete={dataComplete} />
-  if (!data.length) return <>{comparison}<div className="text-sm text-gray-400 dark:text-tm-dark-muted py-4">No data for this period.</div></>
 
   let performance
   try { performance = buildEmployeePerformance(data, locations, dateRange, mappingState.rows) }
   catch (error) { return <p role="alert">Employee mapping conflict: {error.message} Reload after Admin review.</p> }
-  const { rows: allRows, attributionNotes, population } = performance
-  if (!allRows.length) return <div role="status" className="text-sm text-gray-500 dark:text-tm-dark-muted py-4">No named employee data for this period. {attributionNotes.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.issues.join('; ')}</p>)}</div>
+  const { attributionNotes, population } = performance
+  const { rows: allRows, coverage } = joinTeamSalesPos(performance.rows, pos?.result, locations)
+  const allCoverage = [...coverage.values()]
+  if (!allRows.length) return <div role="status" className="text-sm text-gray-500 dark:text-tm-dark-muted py-4">No named employee data for this period.{!pos && locations.length > 0 && ' Loading POS membership sales…'}{pos?.error && ' ' + pos.error} {attributionNotes.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.issues.join('; ')}</p>)}</div>
 
   const exportSpec = {
     filename: `team-member-sales_${dateRange.start}_to_${dateRange.end}`,
     title: 'Team Member Sales',
     subtitle: `${fmtDateRange(dateRange.start, dateRange.end)} · All complete, valid employee data qualifies · employee/site identities`,
     columns: [...COLS, { label: 'Data status', type: 'text' }],
-    rows: sortEmployeeRows(allRows, sort).map(r => [employeeRankLabel(r), r.name, r.site, r.ms ?? '', r.opp ?? '', r.conversion, r.p_mix, r.score ?? '', r.issues.join('; ') || 'Complete recorded data']),
-    totalsRow: [...totals(allRows), ''],
+    rows: sortEmployeeRows(allRows, sort).map(r => [rankLabel(r), r.name, r.site, r.ms ?? '', r.posSales ?? '', r.difference ?? '', r.opp ?? '', r.conversion, r.p_mix, r.score ?? '', [...r.issues, 'POS: ' + r.posStatus, posMixLabel(r)].filter(Boolean).join('; ')]),
+    totalsRow: [...totals(allRows, allCoverage), ''],
   }
 
   const TableHead = ({ cols }) => <thead><tr className="bg-tm-blue dark:bg-tm-navy text-white">
@@ -80,22 +92,24 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
     </th>)}
   </tr></thead>
 
-  const Table = ({ rows, showSite }) => {
+  const Table = ({ rows, showSite, siteCoverage }) => {
     const cols = showSite ? COLS : COLS.filter(c => c.key !== 'site')
-    const total = totals(rows).filter((_, i) => showSite || i !== 2)
+    const total = totals(rows, siteCoverage).filter((_, i) => showSite || i !== 2)
     return <div className="overflow-x-auto"><table className="w-full border-collapse text-xs">
       <caption className="sr-only">Team Member Sales leaderboard, {fmtDateRange(dateRange.start, dateRange.end)}</caption>
       <TableHead cols={cols} />
       <tbody>
         {sortEmployeeRows(rows, sort).map((r, i) => <tr key={r.key} className={i % 2 === 0 ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt' : 'bg-white dark:bg-tm-dark-surface'}>
-          <td className={`${cell} whitespace-nowrap`}>{employeeRankLabel(r)}</td>
+          <td className={`${cell} whitespace-nowrap`}>{rankLabel(r)}</td>
           <td className={`${cell} font-medium font-brand`}>{r.name}</td>
           {showSite && <td className={`${cell} text-xs`}>{r.site}</td>}
           <td className={`${cell} text-center font-mono`}>{countLabel(r.ms)}</td>
+          <td className={`${cell} text-center`}>{posLabel(r.posSales, r.posStatus === 'Partial')}{r.posStatus === 'TM Ops identity unverified' && <span className="block">Identity unverified</span>}{posMixLabel(r) && <span className="block text-xs">{posMixLabel(r)}</span>}</td>
+          <td className={`${cell} text-center`}>{posLabel(r.difference, r.posStatus === 'Partial')}</td>
           <td className={`${cell} text-center font-mono`}>{countLabel(r.opp)}</td>
           <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${convCls(r.conversion)}`}>{r.conversion}</td>
           <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${pmixCls(r.p_mix)}`}>{r.p_mix}</td>
-          <td className={`${cell} text-center`}><EmployeeScoreDetails row={r} /></td>
+          <td className={`${cell} text-center`}>{r.posOnly ? '—' : <EmployeeScoreDetails row={r} />}</td>
         </tr>)}
         <tr className="bg-tm-sky/25 dark:bg-tm-teal/10 font-semibold border-t-2 border-tm-teal/50">{total.map((v, i) => <td key={i} className={`${cell} text-center`}>{v === '' ? '—' : v}</td>)}</tr>
       </tbody>
@@ -103,11 +117,13 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
   }
 
   return <div>
-    {comparison}
+    {pos?.error ? <p role="status" className="text-xs mb-2">{pos.error}</p> :
+      !pos ? <p role="status" className="text-xs mb-2">Loading POS membership sales…</p> :
+        <p className="text-xs mb-2">POS coverage: {allCoverage.reduce((n, site) => n + site.verified, 0)} of {allCoverage.reduce((n, site) => n + site.expected, 0)} site-days match saved GSRs. {allCoverage.reduce((n, site) => n + site.unresolved, 0)} unresolved sales. Partial values show known credits. Difference = TM Ops Sales − POS Verified Sales.</p>}
     <p className="text-xs mb-2">Approved historical mappings affect attribution only. Unmapped names retain existing reporting rules. <button className="underline" onClick={() => setMappingReload(n => n + 1)}>Refresh mappings</button></p>
-    <p className="text-xs mb-2 text-gray-600 dark:text-gray-300">Total Points = Total Sales + Conversion % + P-Mix %. Every employee with complete, valid data and positive opportunities qualifies; there is no sales or opportunity volume cutoff.</p>
+    <p className="text-xs mb-2 text-gray-600 dark:text-gray-300">Total Points = TM Ops Sales + Conversion % + P-Mix %. Every employee with complete, valid data and positive opportunities qualifies; there is no sales or opportunity volume cutoff.</p>
     <p className="text-xs mb-3 text-gray-600 dark:text-gray-300">{population} employee/site identities. Same names at different sites remain separate.</p>
-    {allRows.some(r => !r.qualified) && <p role="status" className="text-xs mb-3 text-amber-800 dark:text-amber-300">Incomplete or invalid data has no score or official rank. See each unranked employee’s data issue for the reason.</p>}
+    {performance.rows.some(r => !r.qualified) && <p role="status" className="text-xs mb-3 text-amber-800 dark:text-amber-300">Incomplete or invalid data has no score or official rank. See each unranked employee’s data issue for the reason.</p>}
     {attributionNotes.length > 0 && <details className="text-xs mb-3 text-amber-800 dark:text-amber-300">
       <summary className="cursor-pointer">Attribution notes · {attributionNotes.length} site-days</summary>
       {attributionNotes.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.date}: {day.issues.join('; ')}</p>)}
@@ -124,7 +140,7 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
     </div>
     {splitByShop ? <div className="space-y-5">{locations.map(loc => {
       const rows = allRows.filter(r => r.locationId === loc.id)
-      return rows.length ? <section key={loc.id} aria-label={loc.name}><h3 className="text-xs font-semibold text-tm-blue dark:text-tm-teal mb-1.5">{loc.name}</h3><Table rows={rows} showSite={false} /></section> : null
-    })}</div> : <Table rows={allRows} showSite />}
+      return rows.length ? <section key={loc.id} aria-label={loc.name}><h3 className="text-xs font-semibold text-tm-blue dark:text-tm-teal mb-1.5">{loc.name}</h3><Table rows={rows} siteCoverage={[coverage.get(loc.id)]} showSite={false} /></section> : null
+    })}</div> : <Table rows={allRows} siteCoverage={allCoverage} showSite />}
   </div>
 }
