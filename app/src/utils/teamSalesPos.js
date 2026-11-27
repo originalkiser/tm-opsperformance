@@ -41,17 +41,12 @@ export function joinTeamSalesPos(managerRows, report, locations, identitySites =
   }
   const owners = new Map(), resolved = new Map()
   for (const row of managerRows) {
-    const match = resolveTeamSalesIdentity(row, identities.get(row.locationId), credited.get(row.locationId) ?? new Set())
-    if (!match) continue
-    const key = identity(row.locationId, match.employee)
+    const employee = resolveTeamSalesIdentity(row, identities.get(row.locationId), credited.get(row.locationId) ?? new Set())
+    if (!employee) continue
+    const key = identity(row.locationId, employee)
     resolved.set(row.key, key)
-    if (!owners.has(key)) owners.set(key, [])
-    owners.get(key).push({ row: row.key, explicit: match.explicit })
+    owners.set(key, (owners.get(key) ?? 0) + 1)
   }
-  const ownersByKey = new Map([...owners].map(([key, matches]) => {
-    const explicit = matches.filter(match => match.explicit)
-    return [key, matches.length === 1 ? matches[0].row : explicit.length === 1 ? explicit[0].row : null]
-  }))
   const withPos = (row, posSales, issue = '', person) => ({
     ...row,
     posSales,
@@ -64,19 +59,12 @@ export function joinTeamSalesPos(managerRows, report, locations, identitySites =
   const joined = managerRows.map(row => {
     const key = resolved.get(row.key)
     const source = coverage.get(row.locationId)
-    if (!key) return withPos(row, null, 'TM Ops identity unverified')
-    const matches = owners.get(key)
-    if (ownersByKey.get(key) !== row.key) {
-      return withPos(row, null, ownersByKey.get(key) ? 'POS shown on another TM Ops row' : 'TM Ops identity unverified')
-    }
+    if (!key || owners.get(key) !== 1) return withPos(row, null, 'TM Ops identity unverified')
     const person = people.get(key)
     people.delete(key)
     const issue = person || source.imported ? '' :
       report ? 'No membership import for this site and period' : 'POS report unavailable'
-    const result = withPos(row, person?.credited ?? (issue ? null : 0), issue, person)
-    return matches.length > 1
-      ? { ...result, difference: null, differenceIssue: 'TM Ops sales span multiple rows' }
-      : result
+    return withPos(row, person?.credited ?? (issue ? null : 0), issue, person)
   })
   for (const [key, person] of people) {
     joined.push(withPos({

@@ -1,7 +1,9 @@
 import { employeeDeltasByDay } from './logMath.js'
+import { summarizeTeamSalesDay, teamSalesCheckpoints, teamSalesCounts } from './teamSalesCheckpoints.js'
+import { teamSalesEmployeeLogs } from './teamSalesIdentities.js'
 import { mappedEmployeeLogs } from './employeeMappingAttribution.js'
 
-const COUNTS = ['total_washes', 'member_washes', 'basic', 'good', 'better', 'best']
+const COUNTS = teamSalesCounts
 const integer = v => v !== null && v !== undefined && String(v).trim() !== '' && typeof v !== 'boolean' && Number.isSafeInteger(Number(v)) && Number(v) >= 0
 const round = v => Math.round(v * 10) / 10
 const sales = row => ['basic', 'good', 'better', 'best'].reduce((sum, key) => sum + Number(row[key]), 0)
@@ -54,12 +56,18 @@ export function inspectEmployeeDay(rows) {
   return { reliable: uncertain.size === 0, issues: [...issues], uncertain, rows: normalized }
 }
 
-export function buildEmployeePerformance(data, locations, range, mappings = []) {
-  const mapped = mappedEmployeeLogs(data, mappings)
+export function buildTeamSalesPerformance(data, locations, range, mappings, identities, people) {
+  return buildEmployeePerformance(data, locations, range, mappings, { identities, people })
+}
+
+export function buildEmployeePerformance(data, locations, range, mappings = [], teamSales) {
+  let mapped = mappedEmployeeLogs(data, mappings)
+  if (teamSales) mapped = teamSalesEmployeeLogs(mapped, teamSales.identities ?? [], teamSales.people ?? [])
   data = mapped.data
   const locationMap = new Map(locations.map(l => [l.id, l]))
   const days = new Map(), employees = new Map(), attributionNotes = []
-  const seenIds = new Map(), ambiguousIds = new Set()
+  const seenIds = new Map(), ambiguousIds = new Set(), conflictingSlots = new Set()
+  const usedTeamSalesEmployees = new Set()
   const ensure = (locationId, rawName) => {
     const name = rawName?.trim()
     if (!name) return null
@@ -75,12 +83,13 @@ export function buildEmployeePerformance(data, locations, range, mappings = []) 
     if (row.id && seenIds.has(row.id)) {
       // Repeated identical read rows are not additional activity.
       const prior = seenIds.get(row.id)
-      if (['location_id', 'log_date', 'time_slot', 'split_index', 'employee_name', '_mappingOriginalName', ...COUNTS].every(k => prior[k] === row[k])) {
+      if (['location_id', 'log_date', 'time_slot', 'split_index', 'employee_name', '_mappingOriginalName', ...COUNTS, ...(teamSales ? ['google_reviews', 'reactivations'] : [])].every(k => prior[k] === row[k])) {
         ensure(row.location_id, row.employee_name)?.employeeIds.add(row._mappingEmployeeId ?? row.employee_id ?? null)
         continue
       }
       // Keep conflicting copies so both affected days are withheld below.
       ambiguousIds.add(row.id)
+      if (['location_id', 'log_date', 'time_slot', 'split_index'].some(key => prior[key] !== row[key])) conflictingSlots.add(row.id)
     } else if (row.id) seenIds.set(row.id, row)
     const key = `${row.location_id}:${row.log_date}`
     if (!days.has(key)) days.set(key, [])
@@ -89,6 +98,25 @@ export function buildEmployeePerformance(data, locations, range, mappings = []) 
   }
   for (const day of days.values()) {
     const locationId = day[0].location_id, date = day[0].log_date
+    if (teamSales) {
+      const active = teamSalesCheckpoints(day)
+      const summary = summarizeTeamSalesDay(active, conflictingSlots)
+      if (summary.notes.length) attributionNotes.push({ locationId, site: locationMap.get(locationId).name, date, issues: summary.notes })
+      for (const [name, result] of summary.employees) {
+        const employee = ensure(locationId, name)
+        usedTeamSalesEmployees.add(employee.key)
+        for (const key of [...COUNTS, 'google_reviews']) employee[key] += result.values[key]
+        for (const { field, text } of result.issues) {
+          employee.uncertain.add(field)
+          employee.issues.push(`${date}: ${field} — ${text}`)
+        }
+        if (!result.issues.some(({ field }) => ['total_washes', 'member_washes'].includes(field))
+          && result.values.member_washes > result.values.total_washes) {
+          employee.issues.push(`${date}: Attributed member washes exceed total washes; counts are inconsistent`)
+        }
+      }
+      continue
+    }
     const check = inspectEmployeeDay(day)
     const checkpoints = new Set()
     if (day.some(row => row.id && ambiguousIds.has(row.id)) || day.some(row => {
@@ -112,7 +140,7 @@ export function buildEmployeePerformance(data, locations, range, mappings = []) 
       employee.issues.push(`${date}: Missing, correction, or invalid count leaves ${[...fields].join(', ')} attribution unresolved`)
     }
   }
-  const rows = [...employees.values()].map(e => {
+  const rows = [...employees.values()].filter(e => !teamSales || usedTeamSalesEmployees.has(e.key)).map(e => {
     // Withhold only unresolved metrics, rather than displaying clipped,
     // inflated totals or guessing which prior employee owns a correction.
     const values = Object.fromEntries(COUNTS.map(key => [key, e.uncertain.has(key) ? null : e[key]]))

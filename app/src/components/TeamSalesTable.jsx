@@ -4,7 +4,7 @@ import { joinTeamSalesPos, summarizeTeamSalesCoverage, teamSalesPosTotals } from
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { readMappings } from '../utils/historicalEmployeeMappings.js'
-import { buildEmployeePerformance, sortEmployeeRows, employeeRankLabel } from '../utils/employeePerformance.js'
+import { buildTeamSalesPerformance, sortEmployeeRows, employeeRankLabel } from '../utils/employeePerformance.js'
 import EmployeeScoreDetails from './EmployeeScoreDetails'
 import { pmixCls, convCls } from '../utils/metricColors'
 import { fmtNum } from '../utils/format'
@@ -76,7 +76,7 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
   if (!dataComplete) return <p role="alert" className="text-sm text-red-600">Team Sales data is incomplete or still loading. Reload the report before scoring.</p>
 
   let performance
-  try { performance = buildEmployeePerformance(data, locations, dateRange, mappingState.rows) }
+  try { performance = buildTeamSalesPerformance(data, locations, dateRange, mappingState.rows, identities?.sites, pos?.result?.people) }
   catch (error) { return <p role="alert">Employee mapping conflict: {error.message} Reload after Admin review.</p> }
   const { attributionNotes, population } = performance
   const { rows: allRows, coverage } = joinTeamSalesPos(performance.rows, pos?.result, locations, identities?.sites)

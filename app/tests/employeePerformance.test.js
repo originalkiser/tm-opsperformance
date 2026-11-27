@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { employeeDeltasByDay } from '../src/utils/logMath.js'
-import { buildEmployeePerformance, inspectEmployeeDay, sortEmployeeRows, employeeRankLabel, fetchEmployeeLogs } from '../src/utils/employeePerformance.js'
+import { buildEmployeePerformance, buildTeamSalesPerformance, inspectEmployeeDay, sortEmployeeRows, employeeRankLabel, fetchEmployeeLogs } from '../src/utils/employeePerformance.js'
 
 const dateRange = { start: '2026-10-01', end: '2026-10-22' }
 const sites = [{ id: 's', name: 'Simple Site', opportunities_formula: 'simple' }, { id: 'd', name: 'Detailed Site', opportunities_formula: 'detailed' }]
@@ -241,4 +241,32 @@ test('inconsistent daily wash counts remain unranked even if detailed opportunit
  assert.equal(r.ms,21);assert.equal(r.opp,111)
  assert.equal(r.score,null);assert.equal(r.rank,null)
  assert.match(r.issues.join(' '),/counts are inconsistent/)
+})
+
+
+const team = rows => buildTeamSalesPerformance(rows, sites, dateRange)
+test('Team Sales ignores blank and persisted all-zero closing checkpoints', () => {
+ const data=[row('Sierra','08:00:00',20,3),row('Closing','19:00:00',null,null,{member_washes:null,basic:null,good:'',better:null,google_reviews:null}),
+   row('Closing','20:00:00',0,0)]
+ const report=team(data)
+ assert.deepEqual(report.rows.map(r=>[r.name,r.ms,r.opp]),[['Sierra',3,20]])
+ assert.deepEqual(report.attributionNotes,[])
+})
+test('Team Sales uses each populated counter and preserves unrelated metrics', () => {
+ const report=team([row('A','08:00:00',20,2),row('B','09:00:00',null,3),row('C','10:00:00',60,5)])
+ assert.deepEqual(report.rows.map(r=>[r.name,r.ms,r.opp]),[['A',2,20],['B',1,null],['C',2,40]])
+ assert.match(report.rows[1].issues.join(' '),/total_washes/)
+ assert.deepEqual(report.rows[2].issues,[])
+})
+test('Team Sales leaves only ambiguously corrected counters unknown and attributes later gains', () => {
+ const report=team([row('A','08:00:00',20,2),row('B','09:00:00',40,5),row('Corrector','10:00:00',60,4),row('C','11:00:00',80,6)])
+ assert.deepEqual(report.rows.map(r=>[r.name,r.ms,r.opp]),[['A',null,20],['B',null,20],['Corrector',0,20],['C',2,20]])
+ assert.match(report.rows[0].issues.join(' '),/best.*correction/)
+ assert.deepEqual(report.rows[3].issues,[])
+})
+test('Team Sales isolates disputes over a duplicate checkpoint to the affected fields', () => {
+ const report=team([row('A','08:00:00',20,2,{id:'checkpoint'}),row('A','08:00:00',20,3,{id:'checkpoint'}),
+   row('B','09:00:00',40,5),row('C','10:00:00',60,6)])
+ assert.deepEqual(report.rows.map(r=>[r.name,r.ms,r.opp]),[['A',null,20],['B',null,20],['C',1,20]])
+ assert.match(report.rows[0].issues.join(' '),/best.*Conflicting checkpoint/)
 })

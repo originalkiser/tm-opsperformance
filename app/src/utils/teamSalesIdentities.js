@@ -33,7 +33,7 @@ export function indexTeamSalesIdentities(sites) {
       add(byName, key, retained)
       if (row.is_active === true) add(activeByName, key, retained)
     }
-    return [id, { canonical, byName, activeByName }]
+    return [id, { canonical, byName, activeByName, names: new Map(roster.map(row => [row.id, row.name])) }]
   }))
 }
 
@@ -42,7 +42,7 @@ export function resolveTeamSalesIdentity(row, site, credited) {
   const ids = new Set(explicit)
   if (ids.has(null) || ids.size > 1) return null
   const [employee] = ids
-  if (employee && !row.employeeIds.has(null)) return { employee, explicit: true }
+  if (employee && !row.employeeIds.has(null)) return employee
   if (!site) return null
   const key = employeeNameKey(row.name)
   const names = site.byName.get(key)
@@ -53,5 +53,38 @@ export function resolveTeamSalesIdentity(row, site, credited) {
   const creditedNames = [...(names ?? [])].filter(id => credited.has(id))
   const unique = names?.size === 1 || (!names?.has(null) && creditedNames.length === 1 && creditedNames[0] === candidate)
   if (!candidate || !unique || (employee && employee !== candidate)) return null
-  return { employee: candidate, explicit: Boolean(employee) }
+  return candidate
+}
+
+
+export function teamSalesEmployeeLogs(mapped, identitySites, people) {
+  const sites = indexTeamSalesIdentities(identitySites)
+  const credit = new Map()
+  for (const person of people) {
+    if (!(person.credited > 0)) continue
+    const site = sites.get(person.location_id)
+    const employee = site ? site.canonical(person.employee_id) : person.employee_id
+    if (employee) add(credit, person.location_id, employee)
+  }
+  const labels = new Map(mapped.labels)
+  const data = mapped.data.map(row => {
+    const raw = row.employee_name?.trim()
+    const explicit = row._mappingEmployeeId ?? row.employee_id ?? null
+    if (!raw && !explicit) return row
+    const site = sites.get(row.location_id)
+    const name = mapped.labels.get(`${row.location_id}::${raw?.toLowerCase()}`) || raw
+    const employee = resolveTeamSalesIdentity(
+      { name, employeeIds: new Set([explicit]) }, site, credit.get(row.location_id) ?? new Set())
+    if (!raw && !employee) return row
+    // Use an internal namespace for both kinds of row so user-entered names
+    // cannot collide with UUID keys or merge distinct verified employees.
+    const token = employee ? `employee:${employee}` : `recorded:${raw.toLowerCase()}`
+    const key = `${row.location_id}::${token}`
+    if (!labels.has(key)) labels.set(key, site?.names.get(employee) || name || 'Employee')
+    return {
+      ...row, employee_name: token, _mappingOriginalName: row._mappingOriginalName ?? row.employee_name,
+      _mappingEmployeeId: employee ?? row._mappingEmployeeId,
+    }
+  })
+  return { data, labels }
 }
