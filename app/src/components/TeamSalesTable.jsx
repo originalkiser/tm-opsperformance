@@ -1,3 +1,4 @@
+import { useTeamSalesIdentities } from '../hooks/useTeamSalesIdentities'
 import { usePosMembershipReport } from '../hooks/usePosMembershipReport'
 import { joinTeamSalesPos, teamSalesPosTotals } from '../utils/teamSalesPos.js'
 import { useEffect, useState } from 'react'
@@ -51,6 +52,7 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
   const mappingKey = JSON.stringify(locations.map(row => row.id).sort())
   const [mappingState, setMappingState] = useState({ key: '', rows: [], error: '' })
   const [mappingReload, setMappingReload] = useState(0)
+  const identities = useTeamSalesIdentities(mappingKey, mappingReload)
   useEffect(() => {
     let active = true
     setMappingState({ key: '', rows: [], error: '' })
@@ -73,7 +75,7 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
   try { performance = buildEmployeePerformance(data, locations, dateRange, mappingState.rows) }
   catch (error) { return <p role="alert">Employee mapping conflict: {error.message} Reload after Admin review.</p> }
   const { attributionNotes, population } = performance
-  const { rows: allRows, coverage } = joinTeamSalesPos(performance.rows, pos?.result, locations)
+  const { rows: allRows, coverage } = joinTeamSalesPos(performance.rows, pos?.result, locations, identities?.sites)
   const allCoverage = [...coverage.values()]
   if (!allRows.length) return <div role="status" className="text-sm text-gray-500 dark:text-tm-dark-muted py-4">No named employee data for this period.{!pos && locations.length > 0 && ' Loading POS membership sales…'}{pos?.error && ' ' + pos.error} {attributionNotes.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.issues.join('; ')}</p>)}</div>
 
@@ -104,8 +106,8 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
           <td className={`${cell} font-medium font-brand`}>{r.name}</td>
           {showSite && <td className={`${cell} text-xs`}>{r.site}</td>}
           <td className={`${cell} text-center font-mono`}>{countLabel(r.ms)}</td>
-          <td className={`${cell} text-center`}>{posLabel(r.posSales, r.posStatus === 'Partial')}{r.posStatus === 'TM Ops identity unverified' && <span className="block">Identity unverified</span>}{posMixLabel(r) && <span className="block text-xs">{posMixLabel(r)}</span>}</td>
-          <td className={`${cell} text-center`}>{posLabel(r.difference, r.posStatus === 'Partial')}</td>
+          <td className={`${cell} text-center`}>{posLabel(r.posSales, r.posStatus === 'Partial')}{['TM Ops identity unverified', 'POS shown on another TM Ops row'].includes(r.posStatus) && <span className="block">{r.posStatus}</span>}{posMixLabel(r) && <span className="block text-xs">{posMixLabel(r)}</span>}</td>
+          <td className={`${cell} text-center`}>{posLabel(r.difference, r.posStatus === 'Partial')}{r.issues.includes('TM Ops sales span multiple rows') && <span className="block">TM Ops sales span multiple rows</span>}</td>
           <td className={`${cell} text-center font-mono`}>{countLabel(r.opp)}</td>
           <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${convCls(r.conversion)}`}>{r.conversion}</td>
           <td className={`border border-gray-200 dark:border-tm-dark-border px-3 py-2 text-center font-semibold ${pmixCls(r.p_mix)}`}>{r.p_mix}</td>
@@ -120,6 +122,7 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
     {pos?.error ? <p role="status" className="text-xs mb-2">{pos.error}</p> :
       !pos ? <p role="status" className="text-xs mb-2">Loading POS membership sales…</p> :
         <p className="text-xs mb-2">POS coverage: {allCoverage.reduce((n, site) => n + site.verified, 0)} of {allCoverage.reduce((n, site) => n + site.expected, 0)} site-days match saved GSRs. {allCoverage.reduce((n, site) => n + site.unresolved, 0)} unresolved sales. Partial values show known credits. Difference = TM Ops Sales − POS Verified Sales.</p>}
+    {identities?.incomplete && <p role="status" className="text-xs mb-2">Some roster identities could not be verified.</p>}
     <p className="text-xs mb-2">Approved historical mappings affect attribution only. Unmapped names retain existing reporting rules. <button className="underline" onClick={() => setMappingReload(n => n + 1)}>Refresh mappings</button></p>
     <p className="text-xs mb-2 text-gray-600 dark:text-gray-300">Total Points = TM Ops Sales + Conversion % + P-Mix %. Every employee with complete, valid data and positive opportunities qualifies; there is no sales or opportunity volume cutoff.</p>
     <p className="text-xs mb-3 text-gray-600 dark:text-gray-300">{population} employee/site identities. Same names at different sites remain separate.</p>
