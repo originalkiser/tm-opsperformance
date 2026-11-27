@@ -194,6 +194,7 @@ test('POS columns join by verified site and employee, sort numerically, and pres
   const rows=h.csv().rows
   for(const r of baseline.csv().rows)assert.deepEqual(rows.find(j=>j[1]===r[1]).filter((_,i)=>[0,1,2,3,6,7,8,9].includes(i)),r.filter((_,i)=>[0,1,2,3,6,7,8,9].includes(i)))
   assert.deepEqual(rows.find(r=>r[1]==='Alex').slice(3,6),[20,25,-5])
+  assert.match(h.html(),/text-red-700[^>]*>-5/)
   assert.deepEqual(rows.find(r=>r[1]==='Blair').slice(4,6),[0,20])
   assert.deepEqual(rows.find(r=>r[1]==='POS Only').slice(0,6),['—','POS Only','Site','',4,''])
   assert.ok(!rows.some(r=>r[1]==='Outside'))
@@ -214,9 +215,13 @@ test('partial POS credits remain visible; unavailable counts and unverified iden
     coverage:[{loc:'s',imported:true,gsr:9,observed:7,unresolved:1}]}
   const h=await table(data,true,locations,{usePosMembershipReport:()=>({result:report})})
   assert.deepEqual(h.csv().rows.find(r=>r[1]==='Alex').slice(3,6),[20,4,16])
-  assert.match(h.html(),/4 · Partial/)
-  assert.match(h.csv().rows.find(r=>r[1]==='Alex')[10],/POS: Partial/)
+  assert.doesNotMatch(h.html(),/· Partial/)
+  assert.match(h.html(),/Differences may be provisional/)
+  assert.match(h.html(),/POS imports: .*1\/1 site-days/)
+  assert.match(h.html(),/text-red-700[^>]*>\+16/)
+  assert.equal(h.csv().rows.find(r=>r[1]==='Alex')[10],'')
   assert.deepEqual(h.csv().rows.find(r=>r[1]==='Without credits').slice(4,6),['',''])
+  assert.match(h.csv().rows.find(r=>r[1]==='Without credits')[10],/Source totals incomplete or differ from GSR/)
   assert.match(h.csv().rows.find(r=>r[1]==='Unverified')[10],/identity unverified/)
   h.unmount()
 })
@@ -257,5 +262,23 @@ test('verified roster names resolve name-only logs without guessing between acti
   assert.equal(rows.find(r=>r[1]==='Ambiguous'&&r[3]==='')[4],3)
   assert.deepEqual(rows.filter(r=>r[1]==='Rylan').map(r=>[r[4],r[5]]),[['',''],[4,'']])
   assert.match(h.html(),/TM Ops sales span multiple rows/)
+  h.unmount()
+})
+
+test('a verified zero is green and missing imports are unavailable, including in exports',async()=>{
+  const locs=[...locations,{id:'d',name:'Other site',opportunities_formula:'simple'}]
+  const logs=[{...row('Zero','08:00:00',100,0),employee_id:'zero'},
+    {...row('No import','08:00:00',100,0),location_id:'d',employee_id:'missing'}]
+  const report={people:[],coverage:[
+    {loc:'s',day_date:'2026-10-20',imported:true,gsr:0,observed:0,unresolved:0},
+    {loc:'d',day_date:'2026-10-20',imported:false,gsr:0,observed:0,unresolved:0},
+  ]}
+  const h=await table(logs,true,locs,{usePosMembershipReport:()=>({result:report})})
+  const rows=h.csv().rows
+  assert.deepEqual(rows.find(r=>r[1]==='Zero').slice(3,6),[0,0,0])
+  assert.deepEqual(rows.find(r=>r[1]==='No import').slice(3,6),[0,'',''])
+  assert.match(rows.find(r=>r[1]==='No import')[10],/No membership import/)
+  assert.match(h.html(),/text-green-700[^>]*>0/)
+  assert.match(h.csv().subtitle,/1\/2 site-days/)
   h.unmount()
 })
