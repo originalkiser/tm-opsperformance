@@ -208,9 +208,9 @@ test('POS columns join by verified site and employee, sort numerically, and pres
   baseline.unmount();h.unmount()
 })
 
-test('partial POS credits remain visible; unavailable counts and unverified identities stay blank in exports',async()=>{
+test('incomplete site coverage preserves verified counts and zeroes for resolved employees only',async()=>{
   const data=[{...row('Alex','08:00:00',200,20),employee_id:'alex'},row('Unverified','09:00:00',250,22),
-    {...row('Without credits','10:00:00',300,25),employee_id:'zero'}]
+    {...row('Lindsey','10:00:00',300,70),employee_id:'zero'}]
   const report={people:[{location_id:'s',employee_id:'alex',name:'Alex',credited:4}],
     coverage:[{loc:'s',imported:true,gsr:9,observed:7,unresolved:1}]}
   const h=await table(data,true,locations,{usePosMembershipReport:()=>({result:report})})
@@ -220,8 +220,9 @@ test('partial POS credits remain visible; unavailable counts and unverified iden
   assert.match(h.html(),/POS imports: .*1\/1 site-days/)
   assert.match(h.html(),/text-red-700[^>]*>\+16/)
   assert.equal(h.csv().rows.find(r=>r[1]==='Alex')[10],'')
-  assert.deepEqual(h.csv().rows.find(r=>r[1]==='Without credits').slice(4,6),['',''])
-  assert.match(h.csv().rows.find(r=>r[1]==='Without credits')[10],/Source totals incomplete or differ from GSR/)
+  assert.deepEqual(h.csv().rows.find(r=>r[1]==='Lindsey').slice(3,6),[48,0,48])
+  assert.match(h.html(),/text-red-700[^>]*>\+48/)
+  assert.equal(h.csv().rows.find(r=>r[1]==='Lindsey')[10],'')
   assert.match(h.csv().rows.find(r=>r[1]==='Unverified')[10],/identity unverified/)
   h.unmount()
 })
