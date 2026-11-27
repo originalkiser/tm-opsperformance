@@ -2,15 +2,21 @@ import EmployeeConsolidation, { EmployeeConsolidationHistory } from './EmployeeC
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { loadRoster } from '../utils/employeeRoster.js'
-import { changeMapping, historicalUsage, loadMappingHistory, readMappingAudit } from '../utils/historicalEmployeeMappings.js'
+import { changeMapping, historicalReviewRows, loadMappingHistory, readMappingAudit } from '../utils/historicalEmployeeMappings.js'
 
 const control = 'rounded border border-gray-300 dark:border-tm-dark-border bg-white dark:bg-tm-dark-card p-2 text-sm disabled:opacity-50'
+const filters = [
+  ['review', 'Needs Review'],
+  ['approved', 'Approved'],
+  ['all', 'All'],
+]
 const total = value => value == null ? 'Unknown (attribution correction)' : String(value)
 export default function HistoricalEmployeeMappings({ locationId, isAdmin }) {
   const [state, setState] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [edit, setEdit] = useState(null), [employeeId, setEmployeeId] = useState('')
   const [startDate, setStartDate] = useState(''), [endDate, setEndDate] = useState(''), [note, setNote] = useState(''), [confirmed, setConfirmed] = useState(false)
   const [selectedNames, setSelectedNames] = useState([]), [consolidating, setConsolidating] = useState(false)
+  const [filter, setFilter] = useState('review')
   const [audit, setAudit] = useState(null)
   const alive = useRef(true), saving = useRef(false), request = useRef(0)
   async function reload() {
@@ -18,7 +24,7 @@ export default function HistoricalEmployeeMappings({ locationId, isAdmin }) {
     setState(null); setError(''); setEdit(null); setAudit(null); setSelectedNames([])
     try {
       const [history, roster] = await Promise.all([loadMappingHistory(supabase, locationId), loadRoster(supabase, locationId)])
-      if (alive.current && version === request.current) setState({ ...history, roster, aliases: historicalUsage(history.logs, locationId).aliases })
+      if (alive.current && version === request.current) setState({ ...history, roster, aliases: historicalReviewRows(history.logs, history.mappings, locationId) })
     } catch (e) { if (alive.current && version === request.current) setError(e.message || 'Could not load historical names.') }
   }
   useEffect(() => { alive.current = true; reload(); return () => { alive.current = false; request.current++ } }, [locationId])
@@ -46,6 +52,8 @@ export default function HistoricalEmployeeMappings({ locationId, isAdmin }) {
       if (alive.current && version === request.current) setAudit({ mapping, rows: data })
     } catch (e) { if (alive.current) setError(e.message) }
   }
+  const visibleAliases = state?.aliases.filter(alias =>
+    filter === 'all' || (filter === 'review' ? alias.needsReview : alias.approved.length > 0))
   const selectedEmployee = state?.roster.find(row => row.id === employeeId)
   return <section aria-label="Historical employee name mapping" className="space-y-3 border-t pt-4">
     <h2 className="text-xl font-bold">Historical name mapping</h2>
@@ -55,6 +63,12 @@ export default function HistoricalEmployeeMappings({ locationId, isAdmin }) {
     {error && <p role="alert" className="text-red-700 dark:text-red-400">{error}</p>}
     {!state && !error && <p role="status">Loading complete location history…</p>}
     {state && <>
+      <div role="group" aria-label="Historical name mapping filters" className="flex flex-wrap gap-2">
+        {filters.map(([value, label]) => <button key={value} type="button"
+          className={control + (filter === value ? ' font-bold ring-2 ring-tm-teal' : '')}
+          aria-pressed={filter === value} disabled={busy || consolidating}
+          onClick={() => { setFilter(value); setSelectedNames([]) }}>{label}</button>)}
+      </div>
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded border bg-white p-2 dark:bg-tm-dark-surface">
         <button className={control} disabled={busy || !selectedNames.length} onClick={()=>setConsolidating(true)}>These are the same person</button>
         <span aria-live="polite">{selectedNames.length} names selected</span>
@@ -63,15 +77,23 @@ export default function HistoricalEmployeeMappings({ locationId, isAdmin }) {
         history={state.logs} onClose={()=>setConsolidating(false)} onSaved={()=>{setConsolidating(false);reload()}}/>}
       <div className="overflow-x-auto"><table className="w-full text-sm text-left"><caption className="sr-only">Historical recorded names at this location</caption>
         <thead><tr>{['Select', 'Original recorded name', 'Log appearances', 'Membership sales', 'Most recent date', 'Mapping status / dates', 'Action'].map(title => <th key={title} className="p-2">{title}</th>)}</tr></thead>
-        <tbody>{state.aliases.map(alias => {
-          const mappings = state.mappings.filter(row => row.original_name === alias.original_name)
+        <tbody>{visibleAliases.map(alias => {
+          const mappings = filter === 'approved' ? alias.approved :
+            filter === 'review' && alias.appearances === alias.covered
+              ? alias.mappings.filter(mapping => mapping.status === 'proposed') : alias.mappings
           return <tr key={alias.original_name} className="border-t align-top">
             <td className="p-2"><input type="checkbox" aria-label={'Select historical name '+alias.original_name}
               checked={selectedNames.includes(alias.original_name)} disabled={busy}
               onChange={e=>setSelectedNames(current=>e.target.checked?[...current,alias.original_name]:current.filter(name=>name!==alias.original_name))}/></td>
-            <td className="p-2 whitespace-pre-wrap">{JSON.stringify(alias.original_name)}</td><td className="p-2">{alias.appearances}</td><td className="p-2">{total(alias.memberships)}</td><td className="p-2">{alias.last_date}</td>
-            <td className="p-2">{!mappings.length ? 'Unmapped' : mappings.map(mapping => <div key={mapping.id} className="mb-3">
-              <strong>{mapping.status}</strong> → {mapping.employee_name || 'Unavailable roster record'}<br />
+            <td className="p-2 whitespace-pre-wrap">{JSON.stringify(alias.original_name)}</td><td className="p-2">{alias.appearances}</td><td className="p-2">{total(alias.memberships)}</td><td className="p-2">{alias.last_date || '—'}</td>
+            <td className="p-2">
+              {alias.appearances > alias.covered && <p className="mb-2 font-medium">
+                {alias.covered ? `Partially mapped · ${alias.covered}/${alias.appearances} appearances` : 'Unmapped'}
+              </p>}
+              {mappings.map(mapping => <div key={mapping.id} className="mb-3">
+              <strong className={mapping.status === 'proposed' ? 'text-amber-800 dark:text-amber-300' : undefined}>
+                {mapping.status === 'proposed' ? 'Pending approval' : mapping.status}
+              </strong> → {mapping.employee_name || 'Unavailable roster record'}<br />
               {mapping.start_date || 'Beginning of history'} – {mapping.end_date || 'No end date'} · v{mapping.version}<br />
               <span className="text-xs">{mapping.note}</span>
               <div className="flex flex-wrap gap-1 mt-1">
@@ -88,7 +110,9 @@ export default function HistoricalEmployeeMappings({ locationId, isAdmin }) {
           </tr>
         })}</tbody>
       </table></div>
-      {!state.aliases.length && <p>No named historical activity at this location.</p>}
+      {!visibleAliases.length && <p role="status">
+        {filter === 'review' ? 'No history needs review.' : filter === 'approved' ? 'No approved mappings at this location.' : 'No named historical activity or mapping records at this location.'}
+      </p>}
     </>}
     {state && <EmployeeConsolidationHistory locationId={locationId} onReversed={reload}/>}
     {edit && state && <form aria-label="Mapping decision" onSubmit={save} className="border-2 border-tm-teal rounded p-4 space-y-3">

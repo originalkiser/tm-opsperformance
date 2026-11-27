@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildEmployeePerformance } from '../src/utils/employeePerformance.js'
 import { mappedEmployeeLogs } from '../src/utils/employeeMappingAttribution.js'
-import { consolidationCheckpointDigest, consolidationPreview, consolidationSuggestions, historicalUsage, rosterHistoricalUsage, readMappings, loadMappingHistory, changeMapping } from '../src/utils/historicalEmployeeMappings.js'
+import { consolidationCheckpointDigest, consolidationPreview, consolidationSuggestions, historicalReviewRows, historicalUsage, rosterHistoricalUsage, readMappings, loadMappingHistory, changeMapping } from '../src/utils/historicalEmployeeMappings.js'
 import { locationHelpHarness } from './helpers/locationHelpHarness.js'
 const range = { start: '2026-01-01', end: '2026-12-31' }
 const sites = [{ id: 'a', name: 'A', opportunities_formula: 'detailed' }, { id: 'b', name: 'B', opportunities_formula: 'simple' }]
@@ -106,7 +106,7 @@ const textOf = node => typeof node === 'string' ? node : Array.isArray(node) ? n
 function ui(isAdmin = false, extra = {}) {
   const actions = []
   const globals = { supabase: {}, loadMappingHistory: async () => ({ logs: data, mappings: [mapping('Cam', 'one', { id: 'm', version: 1, status: 'proposed' })] }),
-    loadRoster: async () => [{ id: 'one', name: 'Official Employee', is_active: true }], historicalUsage,
+    loadRoster: async () => [{ id: 'one', name: 'Official Employee', is_active: true }], historicalReviewRows,
     EmployeeConsolidation: ()=>null, EmployeeConsolidationHistory: ()=>null,
     changeMapping: async (...args) => actions.push(args), readMappingAudit: async () => [], ...extra }
   const h = locationHelpHarness('components/HistoricalEmployeeMappings', globals, { locationId: 'a', isAdmin })
@@ -206,4 +206,38 @@ test('checkpoint fingerprints detect same-count sales corrections by another nam
  assert.equal(await consolidationCheckpointDigest([...logs].reverse(),aliases),before)
  assert.notEqual(await consolidationCheckpointDigest([logs[0],{...logs[1],basic:8}],aliases),before)
  assert.equal(await consolidationCheckpointDigest([...logs,row('3','Other',3,{log_date:'2026-01-02'})],aliases),before)
+})
+
+test('review defaults to uncovered history or pending approval and keeps approved actions accessible', async () => {
+  const logs = [
+    row('f1', 'Fully approved', 1), row('f2', 'Fully approved', 1, { log_date: '2026-01-03' }),
+    row('p1', 'Partial', 1), row('p2', 'Partial', 1, { log_date: '2026-01-03' }),
+    row('u1', 'Unmapped', 1), row('b1', 'Both', 1),
+  ]
+  const mappings = [
+    mapping('Fully approved', 'one', { end_date: '2026-01-01' }),
+    mapping('Fully approved', 'one', { id: 'f2', status: 'locked', start_date: '2026-01-03' }),
+    mapping('Partial', 'one', { end_date: '2026-01-01' }),
+    mapping('Pending with no logs', 'one', { status: 'proposed' }),
+    mapping('Both'), mapping('Both', 'one', { id: 'b2', status: 'proposed' }),
+  ]
+  const { h, actions } = ui(true, { loadMappingHistory: async () => ({ logs, mappings }) })
+  await h.flush()
+  const button = label => h.find(n => n.type === 'button' && textOf(n) === label)
+  const names = () => h.all(n => n.type === 'input' && n.props['aria-label']?.startsWith('Select historical name '))
+    .map(n => n.props['aria-label'].slice('Select historical name '.length))
+  assert.equal(button('Needs Review').props['aria-pressed'], true)
+  assert.deepEqual(names(), ['Both', 'Partial', 'Pending with no logs', 'Unmapped'])
+  assert.match(textOf(h.render()), /Partially mapped · 1\/2 appearances/)
+  assert.match(textOf(h.render()), /Pending approval/)
+  assert.equal(h.all(n => n.type === 'button' && textOf(n) === 'Approve').length, 2)
+  button('Approved').props.onClick()
+  assert.deepEqual(names(), ['Both', 'Fully approved', 'Partial'])
+  assert.equal(button('Approve'), undefined)
+  assert.ok(button('Audit'))
+  assert.ok(button('Correct locked mapping'))
+  assert.ok(h.find(n => n.type?.name === 'EmployeeConsolidationHistory'))
+  button('All').props.onClick()
+  assert.deepEqual(names(), ['Both', 'Fully approved', 'Partial', 'Pending with no logs', 'Unmapped'])
+  assert.equal(actions.length, 0)
 })

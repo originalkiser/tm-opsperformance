@@ -1,3 +1,4 @@
+import { isApprovedMapping, mappingCovers } from './employeeMappingAttribution.js'
 import { buildEmployeePerformance, fetchEmployeeLogs } from './employeePerformance.js'
 export const allHistory = { start: '0001-01-01', end: '9999-12-31' }
 
@@ -28,6 +29,27 @@ export async function readMappings(client, locationIds, approvedOnly = false) {
     if (offset === count) return result
     if (!data.length || offset > count) throw new Error('Incomplete mapping read. Reload.')
   }
+}
+
+export function historicalReviewRows(logs, mappings, locationId) {
+  const rows = new Map(historicalUsage(logs, locationId).aliases.map(alias => [
+    alias.original_name, { ...alias, mappings: [], covered: 0 },
+  ]))
+  for (const mapping of mappings) {
+    if (mapping.location_id !== locationId) continue
+    const name = mapping.original_name
+    if (!rows.has(name)) rows.set(name, { original_name: name, appearances: 0, memberships: 0, mappings: [], covered: 0 })
+    rows.get(name).mappings.push(mapping)
+  }
+  for (const log of logs) {
+    const row = rows.get(log.employee_name)
+    if (row?.mappings.some(mapping => isApprovedMapping(mapping) && mappingCovers(mapping, log))) row.covered++
+  }
+  return [...rows.values()].map(row => ({
+    ...row,
+    approved: row.mappings.filter(isApprovedMapping),
+    needsReview: row.covered < row.appearances || row.mappings.some(mapping => mapping.status === 'proposed'),
+  })).sort((a, b) => a.original_name.localeCompare(b.original_name))
 }
 
 // Each exact recorded spelling has its own inventory row. Membership sales use
