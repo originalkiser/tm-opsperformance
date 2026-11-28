@@ -1,10 +1,10 @@
+import { hasCount, hasDailyLogCheckpoint, positiveCount, validCount } from './dailyLogCounts.js'
 import { employeeDeltasByDay } from './logMath.js'
 import { summarizeTeamSalesDay, teamSalesCheckpoints, teamSalesCounts } from './teamSalesCheckpoints.js'
 import { teamSalesEmployeeLogs } from './teamSalesIdentities.js'
 import { mappedEmployeeLogs } from './employeeMappingAttribution.js'
 
 const COUNTS = teamSalesCounts
-const integer = v => v !== null && v !== undefined && String(v).trim() !== '' && typeof v !== 'boolean' && Number.isSafeInteger(Number(v)) && Number(v) >= 0
 const round = v => Math.round(v * 10) / 10
 const sales = row => ['basic', 'good', 'better', 'best'].reduce((sum, key) => sum + Number(row[key]), 0)
 // Keep the existing ending-checkpoint attribution. Missing hours/days do not
@@ -24,24 +24,21 @@ export function inspectEmployeeDay(rows) {
   const normalized = sorted.map(row => {
     const current = { ...row }, name = row.employee_name?.trim().toLowerCase()
     for (const key of COUNTS) {
-      // An absent field is not an explicit reset to zero.
-      if (row[key] == null || String(row[key]).trim() === '') {
+      if (!hasCount(row[key]) || (validCount(row[key]) && Number(row[key]) === 0)) {
         current[key] = previous[key]
-        mark(name, key)
-        missing.add(key)
-        issues.add('Missing cumulative count; employee attribution is unknown')
+        continue
       }
-      else if (!integer(row[key])) {
+      if (!validCount(row[key])) {
         current[key] = previous[key]
         mark(name, key)
         missing.add(key)
         issues.add('Invalid cumulative count; employee attribution is unknown')
-      } else current[key] = Number(row[key])
-      const delta = current[key] - previous[key]
-      if (integer(row[key])) {
-        if (missing.has(key) && delta !== 0) mark(name, key)
-        missing.delete(key)
+        continue
       }
+      current[key] = Number(row[key])
+      const delta = current[key] - previous[key]
+      if (missing.has(key) && delta !== 0) mark(name, key)
+      missing.delete(key)
       if (delta < 0) {
         contributors[key].forEach(owner => mark(owner, key))
         issues.add('Cumulative counts decreased; earlier contributor attribution is unknown')
@@ -98,6 +95,8 @@ export function buildEmployeePerformance(data, locations, range, mappings = [], 
   }
   for (const day of days.values()) {
     const locationId = day[0].location_id, date = day[0].log_date
+    const washCountsPaired = !day.some(row => positiveCount(row.member_washes))
+      || day.every(row => positiveCount(row.total_washes) === positiveCount(row.member_washes))
     if (teamSales) {
       const active = teamSalesCheckpoints(day)
       const summary = summarizeTeamSalesDay(active, conflictingSlots)
@@ -110,7 +109,7 @@ export function buildEmployeePerformance(data, locations, range, mappings = [], 
           employee.uncertain.add(field)
           employee.issues.push(`${date}: ${field} — ${text}`)
         }
-        if (!result.issues.some(({ field }) => ['total_washes', 'member_washes'].includes(field))
+        if (washCountsPaired && !result.issues.some(({ field }) => ['total_washes', 'member_washes'].includes(field))
           && result.values.member_washes > result.values.total_washes) {
           employee.issues.push(`${date}: Attributed member washes exceed total washes; counts are inconsistent`)
         }
@@ -119,20 +118,21 @@ export function buildEmployeePerformance(data, locations, range, mappings = [], 
     }
     const check = inspectEmployeeDay(day)
     const checkpoints = new Set()
-    if (day.some(row => row.id && ambiguousIds.has(row.id)) || day.some(row => {
+    const enteredRows = day.filter(hasDailyLogCheckpoint)
+    if (enteredRows.some(row => row.id && ambiguousIds.has(row.id)) || enteredRows.some(row => {
       const key = `${row.time_slot}:${row.split_index ?? 0}`
       if (checkpoints.has(key)) return true
       checkpoints.add(key)
       return false
     })) {
       check.issues.push('Duplicate checkpoint or conflicting record identity; employee attribution is ambiguous')
-      for (const row of day) if (row.employee_name?.trim()) check.uncertain.set(row.employee_name.trim().toLowerCase(), new Set(COUNTS))
+      for (const row of enteredRows) if (row.employee_name?.trim()) check.uncertain.set(row.employee_name.trim().toLowerCase(), new Set(COUNTS))
     }
     if (check.issues.length) attributionNotes.push({ locationId, site: locationMap.get(locationId).name, date, issues: check.issues })
     for (const [name, delta] of Object.entries(employeeDeltasByDay(check.rows))) {
       const employee = ensure(locationId, name)
       for (const key of [...COUNTS, 'google_reviews']) employee[key] += delta[key]
-      if (delta.member_washes > delta.total_washes) employee.issues.push(`${date}: Attributed member washes exceed total washes; counts are inconsistent`)
+      if (washCountsPaired && delta.member_washes > delta.total_washes) employee.issues.push(`${date}: Attributed member washes exceed total washes; counts are inconsistent`)
     }
     for (const [name, fields] of check.uncertain) {
       const employee = ensure(locationId, name)

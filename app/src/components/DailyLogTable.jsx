@@ -10,6 +10,7 @@ import TmLoader from './TmLoader'
 import DowntimeModal from './DowntimeModal'
 import PlansLostInput from './PlansLostInput'
 import { plansLost, dailyNetMembers, runningNetMembers, hasLegacyNet, parsePlansLost, isLossAnchor } from '../utils/dailyMemberships'
+import { runningDailyCounts } from '../utils/dailyLogCounts'
 import { shopTotals } from '../utils/logMath'
 import { fmtNum } from '../utils/format'
 import { pmixCls, convCls, pmixTotalsCls, convTotalsCls } from '../utils/metricColors'
@@ -803,7 +804,7 @@ export default function DailyLogTable({
     displayRows.forEach(({ row }, i) => {
       const y    = BANNER_H + HEADER_H + i * ROW_H
       const alt  = i % 2 === 0
-      const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
+      const { memberships_sold, opportunities, p_mix, conversion } = compute(reportCounts.get(row) ?? row, opportunitiesFormula)
       const slotLabel = TIME_SLOTS.find(s => s.value === row.time_slot)?.label || ''
       const ordinal   = i - groupInfo[row.time_slot].first + 1
       const vals = {
@@ -910,7 +911,7 @@ export default function DailyLogTable({
         // Fallback: TSV text
         const headerRow = ['Name', 'Time', ...orderedCols.map(c => c.label.replace('\n', ' ')), 'Memberships Sold', 'Opportunities', 'P-Mix', 'Conversion']
         const dataRows = displayRows.map(({ row }, i) => {
-          const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
+          const { memberships_sold, opportunities, p_mix, conversion } = compute(reportCounts.get(row) ?? row, opportunitiesFormula)
           const slotLabel = TIME_SLOTS.find(s => s.value === row.time_slot)?.label || ''
           const ordinal   = i - groupInfo[row.time_slot].first + 1
           return [
@@ -1007,8 +1008,10 @@ export default function DailyLogTable({
     // Reactivations is only meaningful for shops using the Detailed opportunities formula
     .filter(c => c.key !== 'reactivations' || opportunitiesFormula !== 'simple')
 
-  const runningNets = runningNetMembers(rows, opportunitiesFormula)
-  const calculatedNet = dailyNetMembers(rows, opportunitiesFormula)
+  const reportRows = rows.filter((_, index) => !removedSplitIndices.has(index))
+  const reportCounts = runningDailyCounts(reportRows)
+  const runningNets = runningNetMembers(reportRows, opportunitiesFormula)
+  const calculatedNet = dailyNetMembers(reportRows, opportunitiesFormula)
   const legacyNet = hasLegacyNet(rows) && plansLost(rows) === null
   const displayNet = row => hasHourlyActivity(row)
     ? runningNets.get(row) ?? (legacyNet ? row.net_members ?? '' : '')
@@ -1033,14 +1036,14 @@ export default function DailyLogTable({
   }
   const lossInput = <PlansLostInput value={lossDraft} onChange={changeLoss} disabled={!canEdit || !logLoaded}
     status={lossStatus} error={lossError} />
-  const latestRow   = shopTotals(rows, opportunitiesFormula)
+  const latestRow   = shopTotals(reportRows, opportunitiesFormula)
   const totals      = latestRow ?? {}
   const totComputed = latestRow ? compute(latestRow, opportunitiesFormula) : {}
 
   const cardSlotIdx = Math.max(0, rows.findIndex(row => ((row.split_index ?? 0) > 0
     ? `${row.time_slot}:${row.split_index}` : row.time_slot) === cardHour))
   const cardRow     = rows[cardSlotIdx >= 0 ? cardSlotIdx : 0] ?? emptyRow(cardHour)
-  const cardComputed = compute(cardRow, opportunitiesFormula)
+  const cardComputed = compute(reportCounts.get(cardRow) ?? cardRow, opportunitiesFormula)
 
   const rowBg = (i) => i % 2 === 0
     ? 'bg-[#f0f9f8] dark:bg-tm-dark-row-alt'
@@ -1384,7 +1387,7 @@ export default function DailyLogTable({
             <tbody>
               {displayRows.map(({ row, storageIndex: i }, pos) => {
                 const slot = TIME_SLOTS.find(s => s.value === row.time_slot)
-                const { memberships_sold, opportunities, p_mix, conversion } = compute(row, opportunitiesFormula)
+                const { memberships_sold, opportunities, p_mix, conversion } = compute(reportCounts.get(row) ?? row, opportunitiesFormula)
                 const dim     = dirtySet.current.has(i) ? 'opacity-90' : ''
                 const isSplit = (row.split_index ?? 0) > 0
                 const g       = groupInfo[row.time_slot]

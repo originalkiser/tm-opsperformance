@@ -56,17 +56,17 @@ test('zero sales with positive opportunities qualifies; zero opportunities never
   assert.deepEqual(zero.contributions,{sales:0,conversion:0,pmix:0});assert.equal(zero.score,0)
 })
 
-test('genuinely missing opportunities remain missing even with known sales and qualification',()=>{
-  const report=build([row('Alex','08:00:00',null,20)])
+test('invalid opportunities remain unavailable even with known sales and qualification',()=>{
+  const report=build([row('Alex','08:00:00','invalid',20)])
   const r=report.rows[0]
   assert.equal(r.ms,20);assert.equal(r.opp,null);assert.equal(r.conversion,'—');assert.equal(r.score,null)
   assert.equal(r.qualified,false);assert.equal(r.rank,null);assert.match(employeeRankLabel(r),/Unranked/)
   assert.deepEqual(r.contributions,{sales:20,conversion:null,pmix:100})
-  assert.match(report.attributionNotes[0].issues.join(' '),/Missing cumulative/)
+  assert.match(report.attributionNotes[0].issues.join(' '),/Invalid cumulative/)
 })
 
-test('missing sales are never invented zeros and unknown values cannot establish qualification',()=>{
-  const r=build([row('Unknown','08:00:00',null,null,{member_washes:null,basic:null,good:null,better:null})]).rows[0]
+test('invalid sales stay unknown, and a blank day starts at zero',()=>{
+  const r=build([row('Unknown','08:00:00','invalid','invalid',{member_washes:null,basic:null,good:null,better:null})]).rows[0]
   assert.equal(r.ms,null);assert.equal(r.opp,null);assert.equal(r.score,null);assert.equal(r.qualified,false)
   assert.equal(r.p_mix,'—');assert.match(employeeRankLabel(r),/Unranked/)
   const zero=build([row('Zero sales','08:00:00',null,0)]).rows[0]
@@ -79,11 +79,11 @@ test('positive sales without opportunities are undefined rather than infinite or
   assert.match(r.issues.join(' '),/conversion is undefined/)
 })
 
-test('missing checkpoints withhold the spanning attribution without inflating another employee',()=>{
+test('blank checkpoints carry baselines and the next valid increase is counted only once',()=>{
   const report=build([row('A','08:00:00',20,2),row('B','09:00:00',null,null),row('C','10:00:00',60,6),row('D','11:00:00',80,8)])
   const [a,b,c,d]=report.rows
   assert.equal(a.ms,2);assert.equal(a.opp,20)
-  assert.equal(b.ms,null);assert.equal(b.opp,null);assert.equal(c.ms,null);assert.equal(c.opp,null)
+  assert.equal(b.ms,0);assert.equal(b.opp,0);assert.equal(c.ms,4);assert.equal(c.opp,40)
   assert.equal(d.ms,2);assert.equal(d.opp,20);assert.equal(d.score,112)
 })
 
@@ -153,7 +153,7 @@ test('reviews, stored opportunities and stored sales do not replace the legitima
 })
 
 test('sorting is numeric, leaves missing values last both ways, and never recomputes ranks',()=>{
-  const rows=build([...fixture(),row('Missing','08:00:00',null,3,{location_id:'d'})]).rows
+  const rows=build([...fixture(),row('Missing','08:00:00','invalid',3,{location_id:'d'})]).rows
   for(const dir of ['asc','desc'])assert.equal(sortEmployeeRows(rows,{col:'score',dir}).at(-1).name,'Missing')
   assert.equal(sortEmployeeRows(rows,{col:'opp',dir:'asc'})[0].opp,200)
   const before=rows.map(r=>r.rank);sortEmployeeRows(rows,{col:'name',dir:'desc'});assert.deepEqual(rows.map(r=>r.rank),before)
@@ -254,8 +254,8 @@ test('Team Sales ignores blank and persisted all-zero closing checkpoints', () =
 })
 test('Team Sales uses each populated counter and preserves unrelated metrics', () => {
  const report=team([row('A','08:00:00',20,2),row('B','09:00:00',null,3),row('C','10:00:00',60,5)])
- assert.deepEqual(report.rows.map(r=>[r.name,r.ms,r.opp]),[['A',2,20],['B',1,null],['C',2,40]])
- assert.match(report.rows[1].issues.join(' '),/total_washes/)
+ assert.deepEqual(report.rows.map(r=>[r.name,r.ms,r.opp]),[['A',2,20],['B',1,0],['C',2,40]])
+ assert.doesNotMatch(report.rows[1].issues.join(' '),/total_washes/)
  assert.deepEqual(report.rows[2].issues,[])
 })
 test('Team Sales leaves only ambiguously corrected counters unknown and attributes later gains', () => {

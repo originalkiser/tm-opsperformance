@@ -1,22 +1,10 @@
-import { chronoCompare } from './logMath.js'
+import { chronoCompare, enteredCount, hasDailyLogCheckpoint, validCount } from './dailyLogCounts.js'
 
 export const teamSalesCounts = ['total_washes', 'member_washes', 'basic', 'good', 'better', 'best']
 const fields = [...teamSalesCounts, 'google_reviews']
-export const populatedCount = value => value != null && String(value).trim() !== ''
-export const validCount = value => populatedCount(value) && typeof value !== 'boolean'
-  && Number.isSafeInteger(Number(value)) && Number(value) >= 0
 
 export function teamSalesCheckpoints(rows) {
-  let hasActivity = false
-  return [...rows].sort(chronoCompare).filter(row => {
-    const values = [...fields.map(field => row[field]), row.reactivations]
-    if (!values.some(populatedCount)) return false
-    // Daily Log persistence serializes empty inputs as zero. A wholly zero
-    // checkpoint after activity is a placeholder, not a reset of all counters.
-    if (hasActivity && values.every(value => !populatedCount(value) || (validCount(value) && Number(value) === 0))) return false
-    hasActivity ||= values.some(value => validCount(value) && Number(value) > 0)
-    return true
-  })
+  return [...rows].sort(chronoCompare).filter(hasDailyLogCheckpoint)
 }
 
 export function summarizeTeamSalesDay(rows, conflictingIds) {
@@ -30,7 +18,7 @@ export function summarizeTeamSalesDay(rows, conflictingIds) {
   }
   for (const field of fields) {
     let previous = 0, unresolvedCheckpoint = false
-    const balances = new Map(), observed = new Set()
+    const balances = new Map()
     const issue = (name, text) => {
       const employee = employees.get(name)
       if (employee && field !== 'google_reviews') employee.issues.push({ field, text })
@@ -41,7 +29,7 @@ export function summarizeTeamSalesDay(rows, conflictingIds) {
       balances.set(owner, [low + amount, high + amount])
     }
     for (const entries of slots.values()) {
-      const populated = entries.filter(row => populatedCount(row[field]))
+      const populated = entries.filter(row => enteredCount(row[field]))
       if (!populated.length) continue
       const valid = populated.filter(row => validCount(row[field]))
       const reading = valid[0]
@@ -63,10 +51,6 @@ export function summarizeTeamSalesDay(rows, conflictingIds) {
       }
       const value = Number(reading[field])
       const change = value - previous
-      for (const row of valid) {
-        const name = row.employee_name?.trim().toLowerCase()
-        if (name) observed.add(name)
-      }
       if (change < 0) {
         // Removing units from the day total gives exact remaining attribution
         // if the contributor was unique (or the correction removes everything).
@@ -84,7 +68,6 @@ export function summarizeTeamSalesDay(rows, conflictingIds) {
     }
     for (const [name, employee] of employees) {
       const [low, high] = balances.get(name) ?? [0, 0]
-      if (!observed.has(name) && !employee.issues.some(item => item.field === field)) issue(name, 'Missing cumulative count for this employee')
       if (low !== high) issue(name, 'Cumulative counts decreased; correction cannot be assigned to one employee')
       employee.values[field] = low
     }

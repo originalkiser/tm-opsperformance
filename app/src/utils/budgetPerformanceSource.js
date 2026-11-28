@@ -32,10 +32,13 @@ export function budgetPerformanceRow(entry, prefix, date, location) {
 }
 
 export function selectPerformanceSources(logs, entries, locations, range, today) {
-  if (!isMtdRange(range)) return { totals: toDayTotals(logs), daily: toDayTotals(logs), notes: [], active: false }
+  if (!isMtdRange(range)) {
+    const daily = toDayTotals(logs, locations)
+    return { totals: daily, daily, notes: [], active: false }
+  }
   const cutoff = completedCutoff(range, today)
   const budgetIds = new Set(locations.filter(l => l.show_budget_tracking).map(l => l.id))
-  const raw = toDayTotals(logs.filter(r => r.log_date <= cutoff && !budgetIds.has(r.location_id)))
+  const raw = toDayTotals(logs.filter(r => r.log_date <= cutoff && !budgetIds.has(r.location_id)), locations)
   const totals = [...raw], daily = [...raw], notes = []
   for (const loc of locations.filter(l => budgetIds.has(l.id))) {
     const eligible = entries.filter(e => e.location_id === loc.id && shiftDate(e.entry_date, -1) >= range.start

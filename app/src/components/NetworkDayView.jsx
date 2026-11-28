@@ -4,6 +4,7 @@ import { runningNetMembers } from '../utils/dailyMemberships'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useDisplayAuth as useAuth } from '../contexts/AuthContext'
+import { runningDailyCounts } from '../utils/dailyLogCounts'
 import { shopTotals } from '../utils/logMath'
 import { pmixTextCls, convTextCls, pmixCls, convCls } from '../utils/metricColors'
 import { fmtNum } from '../utils/format'
@@ -72,6 +73,7 @@ function shopStats(rows, formula) {
 
 function HourlyTable({ rows, thresholds, formula }) {
   const runningNets = runningNetMembers(rows, formula)
+  const countsByRow = runningDailyCounts(rows)
   const qualifying = [...rows]
     .sort((a, b) => a.time_slot.localeCompare(b.time_slot) || (a.split_index ?? 0) - (b.split_index ?? 0))
     .filter(r => r.employee_name || r.plans_lost_today != null || [
@@ -120,12 +122,13 @@ function HourlyTable({ rows, thresholds, formula }) {
         </thead>
         <tbody>
           {qualifying.map((row, i) => {
-            const basic  = toInt(row.basic)
-            const good   = toInt(row.good)
-            const better = toInt(row.better)
-            const best   = toInt(row.best)
-            const tw     = toInt(row.total_washes)
-            const mw     = toInt(row.member_washes)
+            const counts = countsByRow.get(row)
+            const basic  = counts.basic
+            const good   = counts.good
+            const better = counts.better
+            const best   = counts.best
+            const tw     = counts.total_washes
+            const mw     = counts.member_washes
             const ms     = basic + good + better + best
             const opp    = formula === 'simple'
               ? Math.max(0, tw - mw)

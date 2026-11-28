@@ -67,9 +67,9 @@ test('low-volume employees receive their computed points and official rank',asyn
   h.unmount()
 })
 
-test('missing opportunities retain known sales, missing indicators and incomplete status in UI/export',async()=>{
-  const h=await table([row('Alex','08:00:00',null,20)]),html=h.html(),spec=h.csv()
-  assert.match(html,/Unranked · Incomplete or invalid data/);assert.match(html,/Missing cumulative/)
+test('invalid opportunities retain known sales, missing indicators and incomplete status in UI/export',async()=>{
+  const h=await table([row('Alex','08:00:00','invalid',20)]),html=h.html(),spec=h.csv()
+  assert.match(html,/Unranked · Incomplete or invalid data/);assert.match(html,/Invalid cumulative/)
   assert.match(html,/Known attributed subtotal/);assert.doesNotMatch(html,/NaN|Infinity/)
   assert.equal(spec.rows[0][3],20);assert.equal(spec.rows[0][6],'');assert.equal(spec.rows[0][7],'—');assert.equal(spec.rows[0][9],'')
   assert.equal(spec.totalsRow[7],'—');assert.equal(spec.totalsRow[8],'100.0%')

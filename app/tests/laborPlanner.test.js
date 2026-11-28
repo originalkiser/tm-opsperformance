@@ -53,15 +53,16 @@ test('detects overlapping assignments across positions', () => {
   assert.equal(result.coverage.find(row => row.day === 1 && row.hour === 600).minimum, 1)
 })
 
-test('traffic consolidates split checkpoints, preserves zero, and excludes missing hours', () => {
+test('traffic consolidates splits and omits zero or missing readings', () => {
   const row = (time_slot, total_washes, split_index = 0, log_date = '2026-11-09') => ({ log_date, time_slot, split_index, total_washes })
   const traffic = summarizeTraffic([
     row('08:00:00', 0), row('09:00:00', 5), row('09:00:00', 8, 1), row('11:00:00', 20),
-    row('08:00:00', 2, 0, '2026-11-16'), row('09:00:00', 11, 0, '2026-11-16'),
+    row('08:00:00', 2, 0, '2026-11-16'), row('09:00:00', 11, 0, '2026-11-16'), row('10:00:00', 11, 0, '2026-11-16'),
     row('08:00:00', 100, 0, '2026-11-23'), row('08:00:00', 100, 0, '2026-10-19'),
   ], '2026-11-22')
-  assert.deepEqual(traffic['1:480'], { average: 1, samples: 2 })
-  assert.deepEqual(traffic['1:540'], { average: 8.5, samples: 2 })
+  assert.deepEqual(traffic['1:480'], { average: 2, samples: 1 })
+  assert.deepEqual(traffic['1:540'], { average: 9, samples: 1 })
+  assert.deepEqual(traffic['1:600'], { average: 0, samples: 1 })
   assert.equal(traffic['1:420'], undefined)
   assert.equal(traffic['1:660'], undefined)
   assert.equal(sunday('2026-11-24'), '2026-11-22')
