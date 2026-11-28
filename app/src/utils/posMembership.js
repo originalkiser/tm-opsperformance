@@ -42,6 +42,48 @@ export function membershipEventKey(system, { site, date, ticket }) {
 }
 const describeEvent = (event,row) => `${event.site} · ${event.date} · ticket ${event.ticket} · ${event.activity}` +
   (row ? ` · Excel row ${row}` : '')
+function parseCommissionDetails(rows, start, end) {
+  const [period, sourceSite] = clean(rows[2]?.[0]).split('·').map(clean)
+  const [from, through = from] = period.split(/\s+[–—-]\s+/).map(date)
+  const site = micSites[sourceSite]
+  if (!site) return null
+  if (from !== start || through !== end) throw new Error('Choose the exact date range printed on the commission report.')
+  if (!/·\s*All Goods\/Services\s*·.*·\s*Pays: All\s*$/i.test(clean(rows[3]?.[0])))
+    throw new Error('Use an unfiltered goods/services and payment export.')
+  const headerIndex = rows.findIndex(row => row[0] === 'Name' && row.includes('Qty (#)'))
+  if (headerIndex < 0) throw new Error('The commission details quantity column is missing.')
+  const qtyColumn = rows[headerIndex].indexOf('Qty (#)')
+  let username, category, signupTotal = 0, grand = false
+  const details = []
+  for (const row of rows.slice(headerIndex + 1)) {
+    const label = clean(row[0])
+    if (label.startsWith('User:')) {
+      if (category === 'UNLIMITED SIGNUP') throw new Error('A signup subtotal is missing.')
+      username = posUsername(label.slice(5)); category = null
+    } else if (label.startsWith('Category:')) {
+      if (category === 'UNLIMITED SIGNUP') throw new Error('A signup subtotal is missing.')
+      category = clean(label.slice(9)).toUpperCase(); signupTotal = 0
+    } else if (label.startsWith('Category Total')) {
+      if (category === 'UNLIMITED SIGNUP' &&
+          (!label.toUpperCase().endsWith('UNLIMITED SIGNUP') || !clean(row[qtyColumn]) || Number(row[qtyColumn]) !== signupTotal)) {
+        throw new Error('Commission signup details do not match their category subtotal.')
+      }
+      category = null
+    } else if (label.startsWith('User Total') || /^GRAND TOTALS:/i.test(label)) {
+      if (category === 'UNLIMITED SIGNUP') throw new Error('A signup subtotal is missing.')
+      if (/^GRAND TOTALS:/i.test(label)) grand = true
+      username = null
+    } else if (category === 'UNLIMITED SIGNUP' && (label || clean(row[qtyColumn]))) {
+      const quantity = Number(row[qtyColumn])
+      if (!username || !/^[0-9]+$/.test(clean(row[qtyColumn])) || !Number.isSafeInteger(quantity) || quantity < 1)
+        throw new Error('Commission signup detail has an invalid user or quantity.')
+      details.push({ username, product: label, quantity }); signupTotal += quantity
+    }
+  }
+  if (category === 'UNLIMITED SIGNUP' || !grand) throw new Error('The commission report is incomplete.')
+  return { site, activeOnly: /·\s*Active users only\s*·/i.test(clean(rows[3]?.[0])), details }
+}
+
 export function parseMembershipSheet(rows, start, end) {
   if (date(start) !== start || date(end) !== end || start > end) throw new Error('Choose a valid business-date range.')
   const events=[], snapshot=new Map(), found=new Map(), overlaps=[]
@@ -87,6 +129,10 @@ export function parseMembershipSheet(rows, start, end) {
     const header=rows.find(r=>r[0]==='Name'&&r[1]==='Qty (#)')
     const total=rows.find(r=>r[0]?.startsWith('GRAND TOTALS:'))
     if(!header||!total)throw new Error('Micrologic commission totals are missing.')
+    if (/Type: Summary w\. Details(?:\s*·|$)/i.test(clean(rows[3]?.[0]))) {
+      const commissions = parseCommissionDetails(rows, start, end)
+      if (commissions) return { system:'Micrologic', events:[], snapshots:[], commissions, outside }
+    }
     comparison={quantity:Number(total[header.indexOf('Qty (#)')]),sales:cents(total[header.indexOf('$ Sales (Total)')]),
       commission:cents(total[header.indexOf('$ Comm (Total)')])}
     return {system:'Micrologic',events,snapshots:[],comparison,outside}
@@ -143,9 +189,9 @@ export function membershipTotals(events,snapshots=[]){
   return totals
 }
 export function membershipCoverage(days){
- const verified=days.filter(d=>d.imported&&d.gsr!=null&&d.gsr===d.observed).length
+ const verified=days.filter(d=>d.imported&&d.gsr!=null&&d.gsr===(d.commission_daily_observed??d.observed)).length
  const unresolved=days.reduce((n,d)=>n+d.unresolved,0)
- return {verified,expected:days.length,unresolved,provisional:verified!==days.length||unresolved>0}
+ return {verified,expected:days.length,unresolved,provisional:verified!==days.length||unresolved>0||days.some(d=>d.commission_provisional)}
 }
 export function topMembershipSeller(rows){
   const eligible=rows.filter(x=>x.credited>0)

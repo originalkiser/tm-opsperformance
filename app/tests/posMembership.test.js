@@ -94,3 +94,33 @@ test('November 1–25 original MTD workbook totals and reviewed ticket conflicts
  assert.deepEqual(parsed.overlaps.map(x=>[x.ticket,x.activity]),[['A47169','grace'],['A49644','grace']])
  assert.deepEqual(parsed.events.filter(x=>x.site==='1531'&&x.ticket==='WASignup').map(x=>x.date),['2026-11-14','2026-11-15'])
 })
+
+test('commission detail import verifies the single-site scope and keeps only signup detail quantities', () => {
+  const rows = [
+    ['TRADEMARKCW'], ['Sales Commissions'], ['Nov 01, 2026 – Nov 26, 2026 · TCWFM'],
+    ['Generated Nov 28, 2026 · Type: Summary w. Details · All Goods/Services · Active users only · Pays: All'],
+    ['Name', 'Qty (#)', '$ Sales (Total)', '$ Comm (Total)'],
+    ['User: Kelly8'], ['Category: UNLIMITED REACTIVATION'], ['Basic Wash Unlimited ReActivation', 15],
+    ['Category Total — UNLIMITED REACTIVATION', 15],
+    ['Category: UNLIMITED SIGNUP'], ['Best Wash Unlimited Sign Up -PROMO', 54],
+    ['Basic Wash Unlimited Sign Up', 15], ['', 1], ['Category Total — UNLIMITED SIGNUP', 70],
+    ['User Total — Kelly8', 85], ['GRAND TOTALS: fixture', 85, '$0.00', '$0.00'],
+  ]
+  const parse = entries => parseMembershipSheet(entries, '2026-11-01', '2026-11-26')
+  const result = parse(rows)
+  assert.deepEqual(result.events, [])
+  assert.deepEqual(result.snapshots, [])
+  assert.deepEqual(result.commissions, {site:'1512',activeOnly:true,details:[
+    {username:'kelly8',product:'Best Wash Unlimited Sign Up -PROMO',quantity:54},
+    {username:'kelly8',product:'Basic Wash Unlimited Sign Up',quantity:15},
+    {username:'kelly8',product:'',quantity:1},
+  ]})
+  assert.throws(() => parseMembershipSheet(rows,'2026-11-02','2026-11-26'), /exact date range/)
+  assert.throws(() => parse(rows.map((r,i)=>i===13?[r[0],69]:r)),/subtotal/)
+  assert.equal(parse(rows.map((r,i)=>i===2?[r[0].replace('TCWFM','All Locations')]:r)).commissions,undefined)
+})
+
+test('aggregate scope gaps remain provisional even when existing detail matches GSR', () => {
+  assert.equal(membershipCoverage([{imported:true,gsr:5,observed:5,unresolved:0,commission_provisional:true}]).provisional,true)
+  assert.equal(membershipCoverage([{imported:true,gsr:5,observed:2,commission_daily_observed:5,unresolved:0}]).verified,1)
+})

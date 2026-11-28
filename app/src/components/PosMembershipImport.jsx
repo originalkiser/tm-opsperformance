@@ -24,6 +24,12 @@ export default function PosMembershipImport(){
  async function read(){
   setPreview(null)
   const parsed=await parseMembershipFile(file,start,end)
+  if(parsed.commissions){
+    const request={...parsed.commissions,sha:parsed.sha,start:parsed.start,end:parsed.end}
+    const review=await membershipRpc(supabase,'commissions',{p_action:'preview',p_payload:request})
+    setPreview({parsed,commissionRequest:request,commissionReview:review})
+    return
+  }
   if(parsed.comparison){setPreview({parsed});return}
   const {outside:_,overlaps:__,...source}=parsed
   const request={...source,externallyValidated:parsed.system==='DRB'&&external}
@@ -38,7 +44,12 @@ export default function PosMembershipImport(){
   setNotice(outcome.repeat?'Workbook already imported.':'Reviewed membership observations saved.')
   setPreview(null);setReason('')
  }
- const {parsed,review,gsr}=preview??{}
+ async function saveCommissions(){
+  const result=await membershipRpc(supabase,'commissions',{p_action:'commit',p_payload:preview.commissionRequest})
+  setNotice(result.repeat?'Commission report already imported.':'Verified commission report scope saved.')
+  setPreview(null)
+ }
+ const {parsed,review,gsr,commissionReview}=preview??{}
  const needsReason=review?.rows.some(r=>['correction','attribution'].includes(r.action))||review?.snapshots.some(r=>r.correction)
  const impact=new Map()
  if(gsr){
@@ -57,7 +68,7 @@ export default function PosMembershipImport(){
  }
  return <section className="rounded border p-4 space-y-4 dark:border-tm-dark-border">
   <h2 className="font-bold">Membership activity import</h2>
-  <p className="text-sm">Use DRB validated transactions or Micrologic Unlimited Detailed Report. Micrologic Sales Commissions is comparison evidence only.</p>
+  <p className="text-sm">Use DRB validated transactions, Micrologic Unlimited Detailed Report for membership activity, or a single-site Micrologic Sales Commissions Summary w. Details for employee sales and P-Mix.</p>
   <form className="flex flex-wrap items-end gap-2" onSubmit={event=>{event.preventDefault();run(read)}}>
    <label>Business date from <input className={control} type="date" disabled={busy} value={start} required onChange={e=>{setStart(e.target.value);setPreview(null)}}/></label>
    <label>Through <input className={control} type="date" disabled={busy} value={end} required onChange={e=>{setEnd(e.target.value);setPreview(null)}}/></label>
@@ -67,6 +78,19 @@ export default function PosMembershipImport(){
   </form>
   {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
   {parsed?.comparison&&<p>Comparison only · {parsed.comparison.quantity} reported units · source commission {parsed.comparison.commission==null?'Unavailable':(parsed.comparison.commission/100).toLocaleString('en-US',{style:'currency',currency:'USD'})}</p>}
+  {commissionReview&&<>
+   <p>Commission coverage · Site {parsed.commissions.site} · {parsed.start} through {parsed.end}. Quantities apply to the full period.</p>
+   {parsed.commissions.activeOnly&&<p role="status">Source includes active POS users only.</p>}
+   <p>Employee aliases must cover the entire period. Rows with incomplete identity or unknown signup products remain uncredited in this report.</p>
+   <div className="overflow-x-auto"><table className="w-full text-sm text-left">
+    <thead><tr>{['Username','Reported signups','Eligible products','Credited','Unresolved product','Excluded'].map(label=><th key={label} scope="col" className="p-2">{label}</th>)}</tr></thead>
+    <tbody>{commissionReview.users.map(user=><tr key={user.username} className="border-t">
+     {[user.username,user.reported,user.eligible,user.credited,user.unknown_product,user.excluded].map((value,i)=><td key={i} className="p-2">{value}</td>)}
+    </tr>)}</tbody>
+   </table></div>
+   {commissionReview.repeat ? <p>Commission report already imported.</p> :
+    <button className={control} type="button" disabled={busy} onClick={()=>{if(window.confirm('Save the reviewed commission report scope?'))run(saveCommissions)}}>Save reviewed commission report</button>}
+  </>}
   {review&&<>
    <p className="break-all">{parsed.system} · SHA-256 {parsed.sha} · {parsed.outside} out-of-scope rows</p>
    {!!parsed.overlaps?.length&&<details><summary>{parsed.overlaps.length} repeated source rows counted once</summary>
