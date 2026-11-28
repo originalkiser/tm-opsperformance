@@ -9,7 +9,8 @@ create table membership_private.commission_reports (
   active_only boolean not null,
   actor uuid not null references auth.users(id),
   received_at timestamptz not null default now(),
-  unique (location_id, starts, ends)
+  supersedes uuid unique references membership_private.commission_reports(id),
+  unique (location_id, sha)
 );
 
 create table membership_private.commission_signups (
@@ -42,6 +43,9 @@ returns text language sql immutable set search_path='' as $$
   select case
     when username ~ '^kiosk[123]?$' then 'kiosk'
     when lower(product) ~ '^employee([^[:alnum:]_]|$)' then 'employee-plan'
+    -- The validated signup category supplies the activity classification.
+    -- These explicit source labels carry quantity but no verified product tier.
+    when lower(btrim(product)) in ('','10 % discount sign up') then 'eligible-unknown-tier'
     when membership_private.tier('Micrologic',product) is null then 'unknown-product'
     else 'eligible' end;
 $$;
@@ -49,9 +53,9 @@ $$;
 create function public.pos_membership_commissions(p_action text, p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare loc uuid; first_day date; last_day date; checksum text; details jsonb; active_only boolean;
- existing membership_private.commission_reports; result jsonb; saved uuid;
+ existing membership_private.commission_reports; prior membership_private.commission_reports; result jsonb; saved uuid;
 begin
- if p_action is null or p_action not in ('preview','commit') or not reconciliation_private.allowed() then
+ if p_action is null or p_action not in ('preview','commit') or reconciliation_private.allowed() is distinct from true then
   raise exception 'Authorized sales reviewer required' using errcode='42501';end if;
  loc:=membership_private.site('Micrologic',p_payload->>'site');
  first_day:=(p_payload->>'start')::date; last_day:=(p_payload->>'end')::date;
@@ -59,7 +63,7 @@ begin
  if loc is null or first_day is null or last_day is null or last_day-first_day not between 0 and 366
    or coalesce(checksum,'') !~ '^[0-9a-f]{64}$' or jsonb_typeof(details) is distinct from 'array'
    or jsonb_typeof(p_payload->'activeOnly') is distinct from 'boolean'
-   or p_payload-array['site','start','end','sha','details','activeOnly']<>'{}'::jsonb
+   or p_payload-array['site','start','end','sha','details','activeOnly','expectedReport']<>'{}'::jsonb
    or pg_column_size(p_payload)>2000000
  then raise exception 'Invalid commission report scope';end if;
 
@@ -77,12 +81,20 @@ begin
   perform pg_advisory_xact_lock(761241,1);
   perform 1 from public.user_profiles where id=auth.uid() for share;
   perform 1 from reconciliation_private.reviewers where user_id=auth.uid() for share;
-  if not reconciliation_private.allowed() then raise exception 'Reviewer access changed' using errcode='42501';end if;
+  if reconciliation_private.allowed() is distinct from true then raise exception 'Reviewer access changed' using errcode='42501';end if;
  end if;
  select * into existing from membership_private.commission_reports r where r.location_id=loc
-  and daterange(r.starts,r.ends,'[]') && daterange(first_day,last_day,'[]') order by r.starts limit 1;
- if existing.id is not null and (existing.starts<>first_day or existing.ends<>last_day or existing.sha<>checksum) then
-  raise exception 'Commission scope overlaps a saved report (% through %). Use a nonoverlapping period.',existing.starts,existing.ends;
+  and r.starts=first_day and r.ends=last_day and r.sha=checksum;
+ if existing.id is null then
+  select * into prior from membership_private.commission_reports r where r.location_id=loc
+    and r.starts=first_day and r.ends<=last_day
+    and not exists(select from membership_private.commission_reports newer where newer.supersedes=r.id);
+  if exists(select from membership_private.commission_reports r where r.location_id=loc
+    and r.id is distinct from prior.id and daterange(r.starts,r.ends,'[]') && daterange(first_day,last_day,'[]')
+    and not exists(select from membership_private.commission_reports newer where newer.supersedes=r.id))
+  then raise exception 'Commission scope overlaps a saved report. Use a nonoverlapping period or extend the matching start date.';end if;
+  if p_action='commit' and (p_payload->>'expectedReport')::uuid is distinct from prior.id then
+    raise exception 'Saved commission report changed. Preview again.' using errcode='PT409';end if;
  end if;
  if existing.id is not null and (existing.active_only is distinct from active_only or
    (select coalesce(jsonb_agg(to_jsonb(d)-'report_id' order by d.username,d.product),'[]')
@@ -92,9 +104,10 @@ begin
 
  select coalesce(jsonb_agg(to_jsonb(q) order by q.username),'[]') into result from (
   select d.username,sum(d.quantity) reported,
-   coalesce(sum(d.quantity) filter(where status='eligible'),0) eligible,
-   coalesce(sum(d.quantity) filter(where status='eligible' and employee is not null),0) credited,
+   coalesce(sum(d.quantity) filter(where status in ('eligible','eligible-unknown-tier')),0) eligible,
+   coalesce(sum(d.quantity) filter(where status in ('eligible','eligible-unknown-tier') and employee is not null),0) credited,
    coalesce(sum(d.quantity) filter(where status='unknown-product'),0) unknown_product,
+   coalesce(sum(d.quantity) filter(where status='eligible-unknown-tier'),0) unknown_tier,
    coalesce(sum(d.quantity) filter(where status in ('employee-plan','kiosk')),0) excluded
   from jsonb_to_recordset(details) d(username text,product text,quantity integer)
   cross join lateral (select membership_private.commission_status(d.username,d.product) status,
@@ -103,12 +116,12 @@ begin
  ) q;
 
  if p_action='commit' and existing.id is null then
-  insert into membership_private.commission_reports(location_id,starts,ends,sha,active_only,actor)
-   values(loc,first_day,last_day,checksum,active_only,auth.uid()) returning id into saved;
+  insert into membership_private.commission_reports(location_id,starts,ends,sha,active_only,actor,supersedes)
+   values(loc,first_day,last_day,checksum,active_only,auth.uid(),prior.id) returning id into saved;
   insert into membership_private.commission_signups(report_id,username,product,quantity)
    select saved,d.* from jsonb_to_recordset(details) d(username text,product text,quantity integer);
  end if;
- return jsonb_build_object('repeat',existing.id is not null,'report',coalesce(existing.id,saved),'users',result);
+ return jsonb_build_object('repeat',existing.id is not null,'report',coalesce(existing.id,saved),'replaces',prior.id,'users',result);
 end;
 $$;
 revoke all on function membership_private.commission_employee(uuid,text,date,date),
@@ -132,6 +145,7 @@ begin
   select r.*, r.starts>=p_start and r.ends<=p_end as included
   from membership_private.commission_reports r where r.location_id=any(p_sites)
    and r.starts<=p_end and r.ends>=p_start
+   and not exists(select from membership_private.commission_reports newer where newer.supersedes=r.id)
  ), commission as (
   select r.id,r.location_id,r.starts,r.ends,r.included,d.username,d.quantity,
     membership_private.tier('Micrologic',d.product) tier,
@@ -154,16 +168,16 @@ begin
           and exists(select 1 from membership_private.batches b where b.id=v.batch_id and b.externally_validated)))
     and not exists(select from commission c where v.system='Micrologic' and c.included
       and c.location_id=v.location_id and v.business_date between c.starts and c.ends
-      and c.status='eligible' and c.employee_id is not null
+      and c.status in ('eligible','eligible-unknown-tier') and c.employee_id is not null
       and (c.employee_id=v.employee_id or c.username=lower(btrim(v.source->>'greeter'))))
   group by location_id,employee_id
  ), commission_people as (
   select c.location_id,c.employee_id,min(e.name) name,sum(quantity) credited,
     coalesce(sum(quantity) filter(where tier in ('better','best')),0) premium,
     coalesce(sum(quantity) filter(where tier in ('basic','good','better','best')),0) tiered,
-    0 unknown
+    coalesce(sum(quantity) filter(where c.status='eligible-unknown-tier'),0) unknown
   from commission c join public.employees e on e.id=c.employee_id
-  where c.included and c.status='eligible'
+  where c.included and c.status in ('eligible','eligible-unknown-tier')
   group by c.location_id,c.employee_id
  ), people as (
   select location_id,employee_id,min(name) name,sum(credited) credited,sum(premium) premium,sum(tiered) tiered,sum(unknown) unknown
@@ -178,7 +192,7 @@ begin
    from commission c where c.id=s.id) aggregate where s.location_id=d.loc and s.starts=d.day_date and s.ends=d.day_date) as commission_daily_observed,
    exists(select from scopes s where s.location_id=d.loc and d.day_date between s.starts and s.ends
       and (s.starts<>s.ends or s.active_only or exists(select from commission c where c.id=s.id
-        and (c.status='unknown-product' or (c.status='eligible' and c.employee_id is null)))))
+        and (c.status='unknown-product' or (c.status in ('eligible','eligible-unknown-tier') and c.employee_id is null)))))
       as commission_provisional,
    (select count(*) from latest e where e.location_id=d.loc and e.business_date=d.day_date
     and e.source->>'activity'='new') observed,
@@ -197,7 +211,7 @@ begin
    select s.location_id,s.starts,s.ends,s.included,s.active_only,
     (select coalesce(sum(c.quantity),0) from commission c where c.id=s.id) reported,
     (select coalesce(sum(c.quantity),0) from commission c where c.id=s.id
-      and (c.status='unknown-product' or (c.status='eligible' and c.employee_id is null))) unresolved
+      and (c.status='unknown-product' or (c.status in ('eligible','eligible-unknown-tier') and c.employee_id is null))) unresolved
    from scopes s) t),'[]')));
 end;
 $$;

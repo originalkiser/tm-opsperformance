@@ -2,7 +2,7 @@
 do $test$
 declare
  admin_id uuid := gen_random_uuid(); employee uuid := gen_random_uuid(); loc uuid := gen_random_uuid(); drb uuid := gen_random_uuid();
- report jsonb; reviewed jsonb; sales jsonb; event jsonb;
+ report jsonb; reviewed jsonb; sales jsonb; event jsonb; replacement jsonb; old_id uuid;
 begin
  insert into auth.users(id) values(admin_id);
  insert into public.locations(id,site_code,exclude_from_reporting) values(loc,'1512',false),(drb,'1508',false);
@@ -23,7 +23,7 @@ begin
  reviewed:=public.pos_membership_commissions('preview',report||'{"start":"2026-11-01"}');
  if reviewed#>>'{users,0,credited}'<>'0' then raise exception 'Alias dates were backdated';end if;
  reviewed:=public.pos_membership_commissions('preview',report);
- if reviewed#>>'{users,0,credited}'<>'60' or reviewed#>>'{users,0,unknown_product}'<>'1'
+ if reviewed#>>'{users,0,credited}'<>'61' or reviewed#>>'{users,0,unknown_tier}'<>'1'
    or reviewed#>>'{users,0,excluded}'<>'2' or reviewed#>>'{users,1,excluded}'<>'3'
  then raise exception 'Commission eligibility results differ';end if;
  event:='{"site":"1512","date":"2026-11-10","ticket":"ML123","product":"Basic Wash Unlimited Sign Up",
@@ -40,14 +40,30 @@ begin
   if sqlerrm not like 'Commission scope overlaps%' then raise;end if;
  end;
  sales:=public.pos_membership_report(array[loc],'2026-11-09','2026-11-26');
- if sales#>>'{people,0,credited}'<>'60' or sales#>>'{people,0,premium}'<>'54'
-   or sales#>>'{people,0,tiered}'<>'60' then raise exception 'Detail and aggregate overlap double counted';end if;
+ if sales#>>'{people,0,credited}'<>'61' or sales#>>'{people,0,premium}'<>'54'
+   or sales#>>'{people,0,tiered}'<>'60' or sales#>>'{people,0,unknown}'<>'1' then raise exception 'Detail and aggregate overlap double counted';end if;
  sales:=public.pos_membership_report(array[loc],'2026-11-10','2026-11-10');
  if sales#>>'{people,0,credited}'<>'1' or sales#>>'{commissionScopes,0,included}'<>'false'
  then raise exception 'Partial scope fabricated daily commission sales';end if;
- reviewed:=public.pos_membership_commissions('commit',report||jsonb_build_object('start','2026-11-27','end','2026-11-27','sha',repeat('c',64)));
+ old_id:=(public.pos_membership_commissions('preview',report)->>'report')::uuid;
+ replacement:=report||jsonb_build_object('end','2026-11-27','sha',repeat('d',64));
+ replacement:=jsonb_set(replacement,'{details,0,quantity}','55');
+ if (public.pos_membership_commissions('preview',replacement)->>'replaces')::uuid is distinct from old_id
+ then raise exception 'Replacement preview failed';end if;
+ begin
+  perform public.pos_membership_commissions('commit',replacement);
+  raise exception 'Stale replacement accepted';
+ exception when sqlstate 'PT409' then null;end;
+ perform public.pos_membership_commissions('commit',replacement||jsonb_build_object('expectedReport',old_id));
+ if public.pos_membership_commissions('commit',report)->>'repeat'<>'true'
+ or not exists(select from membership_private.commission_reports where supersedes=old_id)
+ then raise exception 'Historical snapshot was lost or reactivated';end if;
+ sales:=public.pos_membership_report(array[loc],'2026-11-09','2026-11-27');
+ if sales#>>'{people,0,credited}'<>'62' or jsonb_array_length(sales->'commissionScopes')<>1
+ then raise exception 'Replaced MTD snapshot double counted';end if;
+ reviewed:=public.pos_membership_commissions('commit',report||jsonb_build_object('start','2026-11-28','end','2026-11-28','sha',repeat('c',64)));
  if reviewed->>'repeat'<>'false' then raise exception 'Nonoverlapping daily scope failed';end if;
- sales:=public.pos_membership_report(array[loc],'2026-11-27','2026-11-27');
+ sales:=public.pos_membership_report(array[loc],'2026-11-28','2026-11-28');
  if sales#>>'{coverage,0,imported}'<>'true' or sales#>>'{coverage,0,commission_daily_observed}'<>'66'
  then raise exception 'Daily aggregate coverage mismatch';end if;
  sales:=public.pos_membership_report(array[drb],'2026-11-09','2026-11-26');

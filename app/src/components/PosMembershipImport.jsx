@@ -45,7 +45,7 @@ export default function PosMembershipImport(){
   setPreview(null);setReason('')
  }
  async function saveCommissions(){
-  const result=await membershipRpc(supabase,'commissions',{p_action:'commit',p_payload:preview.commissionRequest})
+  const result=await membershipRpc(supabase,'commissions',{p_action:'commit',p_payload:{...preview.commissionRequest,expectedReport:preview.commissionReview.replaces}})
   setNotice(result.repeat?'Commission report already imported.':'Verified commission report scope saved.')
   setPreview(null)
  }
@@ -81,15 +81,16 @@ export default function PosMembershipImport(){
   {commissionReview&&<>
    <p>Commission coverage · Site {parsed.commissions.site} · {parsed.start} through {parsed.end}. Quantities apply to the full period.</p>
    {parsed.commissions.activeOnly&&<p role="status">Source includes active POS users only.</p>}
-   <p>Employee aliases must cover the entire period. Rows with incomplete identity or unknown signup products remain uncredited in this report.</p>
+   <p>Employee aliases must cover the entire period. Counts with an unknown tier can earn sales credit and are excluded from P-Mix. Unverified products or identities remain uncredited.</p>
    <div className="overflow-x-auto"><table className="w-full text-sm text-left">
-    <thead><tr>{['Username','Reported signups','Eligible products','Credited','Unresolved product','Excluded'].map(label=><th key={label} scope="col" className="p-2">{label}</th>)}</tr></thead>
+    <thead><tr>{['Username','Reported signups','Eligible products','Credited','Unknown tier','Unresolved product','Excluded'].map(label=><th key={label} scope="col" className="p-2">{label}</th>)}</tr></thead>
     <tbody>{commissionReview.users.map(user=><tr key={user.username} className="border-t">
-     {[user.username,user.reported,user.eligible,user.credited,user.unknown_product,user.excluded].map((value,i)=><td key={i} className="p-2">{value}</td>)}
+     {[user.username,user.reported,user.eligible,user.credited,user.unknown_tier,user.unknown_product,user.excluded].map((value,i)=><td key={i} className="p-2">{value}</td>)}
     </tr>)}</tbody>
    </table></div>
+   {commissionReview.replaces&&<p role="status">Saving replaces the previous report for this start date. Prior imports remain in history.</p>}
    {commissionReview.repeat ? <p>Commission report already imported.</p> :
-    <button className={control} type="button" disabled={busy} onClick={()=>{if(window.confirm('Save the reviewed commission report scope?'))run(saveCommissions)}}>Save reviewed commission report</button>}
+    <button className={control} type="button" disabled={busy} onClick={()=>{if(window.confirm(commissionReview.replaces ? 'Replace the previous commission report with this reviewed scope?' : 'Save the reviewed commission report scope?'))run(saveCommissions)}}>Save reviewed commission report</button>}
   </>}
   {review&&<>
    <p className="break-all">{parsed.system} · SHA-256 {parsed.sha} · {parsed.outside} out-of-scope rows</p>
