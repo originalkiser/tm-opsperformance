@@ -1,16 +1,12 @@
 import { dailyNetMembers, plansLost, membershipSnapshot } from './dailyMemberships.js'
+import { runningDailyCounts } from './dailyLogCounts.js'
+export { chronoCompare } from './dailyLogCounts.js'
 const toInt = (v) => Math.max(0, parseInt(v) || 0)
 
 export const FIELDS = [
   'total_washes', 'member_washes', 'google_reviews',
   'basic', 'good', 'better', 'best', 'net_members',
 ]
-
-// Chronological order for daily_log rows: by time_slot, then by split_index
-// (a "split hour" holds more than one row for the same time_slot — e.g. one
-// employee 8:00-8:15, another 8:15-9:00 — split_index 0 first).
-export const chronoCompare = (a, b) =>
-  a.time_slot.localeCompare(b.time_slot) || (toInt(a.split_index) - toInt(b.split_index))
 
 /**
  * Returns the latest time-slot row that has any data entered for a shop day.
@@ -19,14 +15,10 @@ export const chronoCompare = (a, b) =>
  */
 export function shopTotals(rows, formula = 'detailed') {
   if (!rows || !rows.length) return null
-  // A row is only considered complete if both total_washes and member_washes are
-  // non-zero. This prevents a newly-opened time slot with zeros from shadowing
-  // earlier rows that contain real wash counts.
-  const withData = rows.filter(r => toInt(r.total_washes) > 0 && toInt(r.member_washes) > 0)
+  const latest = membershipSnapshot(rows)
   const net = dailyNetMembers(rows, formula)
-  const latest = withData.sort((a, b) => chronoCompare(b, a))[0]
   if (net === null) return latest ?? null
-  return { ...(membershipSnapshot(rows) || latest || rows[0]), net_members: net }
+  return { ...(latest || rows[0]), net_members: net }
 }
 
 /**
@@ -38,7 +30,7 @@ export function shopTotals(rows, formula = 'detailed') {
  * all accumulate into a single entry keyed by the first-seen capitalization.
  */
 export function employeeDeltasByDay(allDayRows) {
-  const sorted = [...allDayRows].sort(chronoCompare)
+  const sorted = [...runningDailyCounts(allDayRows)].map(([row, counts]) => ({ ...row, ...counts }))
   const result    = {}   // lowercase key → accumulated deltas
   const canonical = {}   // lowercase key → first-seen display name
 
@@ -73,7 +65,7 @@ export function employeeDeltasByDay(allDayRows) {
  * so this is the only correct way to get an hourly figure.
  */
 export function hourlyDeltasByDay(allDayRows) {
-  const sorted = [...allDayRows].sort(chronoCompare)
+  const sorted = [...runningDailyCounts(allDayRows)].map(([row, counts]) => ({ ...row, ...counts }))
   return sorted.map((row, idx) => {
     const prev = sorted[idx - 1]
     const delta = (f) => Math.max(0, toInt(row[f]) - (prev ? toInt(prev[f]) : 0))

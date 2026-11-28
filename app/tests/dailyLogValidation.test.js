@@ -1,7 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { cumulativeFields, cumulativeLogWarnings, confirmCumulativeLeave, canLeaveDailyLog } from '../src/utils/dailyLogValidation.js'
-import { employeeDeltasByDay, chronoCompare, shopTotals } from '../src/utils/logMath.js'
+import { employeeDeltasByDay, hourlyDeltasByDay, chronoCompare, shopTotals } from '../src/utils/logMath.js'
+import { dailyNetMembers } from '../src/utils/dailyMemberships.js'
+import { toDayTotals } from '../src/utils/insightsHelpers.js'
+
 const row=(time_slot,total_washes,member_washes,extra={})=>({location_id:'a',log_date:'2026-11-20',time_slot,split_index:0,employee_name:'Employee',total_washes,member_washes,google_reviews:0,basic:0,good:0,better:0,best:0,...extra})
 
 test('reported 11 AM/12 PM example flags both wash fields with exact previous/current values and opportunities',()=>{
@@ -12,7 +15,7 @@ test('reported 11 AM/12 PM example flags both wash fields with exact previous/cu
  assert.equal(warnings[0].index,1);assert.equal(warnings[0].previousIndex,0)
  assert.equal(JSON.stringify(data),before)
 })
-test('all seven cumulative fields flag a decrease and unchanged or increasing counts stay valid',()=>{
+test('all cumulative fields flag a decrease and unchanged or increasing counts stay valid',()=>{
  for(const key of Object.keys(cumulativeFields)) {
   const data=[row('11:00:00',45,14,{[key]:10}),row('12:00:00',57,14,{[key]:9})]
   assert.ok(cumulativeLogWarnings(data).some(w=>w.fields.includes(key)&&w.message.includes('decreased')))
@@ -33,21 +36,24 @@ test('site and business date boundaries reset baselines and explicit scope exclu
  assert.deepEqual(cumulativeLogWarnings(data),[])
  assert.deepEqual(cumulativeLogWarnings(data,{locationId:'a',date:'2026-11-20'}),[])
 })
-test('unused blank hours are ignored; saved blank-as-zero semantics are explicit, never patched',()=>{
+test('blank and zero fields carry forward independently without warnings or mutations',()=>{
  const blank={time_slot:'10:00:00',total_washes:'',member_washes:''}
  assert.deepEqual(cumulativeLogWarnings([blank,row('11:00:00',45,14)]),[])
  const data=[row('11:00:00',45,14,{basic:3}),row('12:00:00',57,20,{basic:''})],before=JSON.stringify(data)
- assert.match(cumulativeLogWarnings(data)[0].message,/previous 3.*blank \(saved as 0\)/)
+ assert.deepEqual(cumulativeLogWarnings(data),[])
+ assert.equal(shopTotals(data).basic,3)
  assert.equal(JSON.stringify(data),before)
 })
-test('earlier corrections revalidate later checkpoints, including gaps, reversals and explicit zero',()=>{
+test('earlier corrections revalidate later checkpoints, including gaps and nonzero decreases',()=>{
  const data=[row('09:00:00',10,4),row('12:00:00',30,24),row('15:00:00',40,25)]
  assert.deepEqual(cumulativeLogWarnings(data),[])
  const changed=data.map((r,i)=>i===0?{...r,member_washes:2}:r)
  assert.equal(cumulativeLogWarnings(changed)[0].index,1)
  const fixed=changed.map((r,i)=>i===1?{...r,member_washes:20}:r)
  assert.deepEqual(cumulativeLogWarnings(fixed),[])
- assert.ok(cumulativeLogWarnings([row('11:00:00',10,4),row('12:00:00',0,0)]).some(w=>w.message.includes('current 0')))
+ const gap=[row('11:00:00',10,4),row('12:00:00',0,0),row('13:00:00',9,3)]
+ assert.deepEqual(cumulativeLogWarnings(gap.slice(0,2)),[])
+ assert.ok(cumulativeLogWarnings(gap).some(w=>w.previousIndex===0&&w.message.includes('current 9')))
 })
 test('no invented resets: decreases are warnings and existing totals/deltas/formulas remain identical',()=>{
  const data=[row('11:00:00',45,14,{basic:2}),row('12:00:00',57,34,{basic:1})]
@@ -64,4 +70,26 @@ test('navigation confirmation preserves cancellation and does not prompt valid d
  const target=new EventTarget();target.addEventListener('daily-log-before-leave',e=>e.preventDefault())
  assert.equal(canLeaveDailyLog(target),false)
  assert.equal(canLeaveDailyLog(new EventTarget()),true)
+})
+
+
+test('dashboard, hourly attribution and net members carry independent fields through partial entries', () => {
+ const entries=[
+  row('08:00:00',40,15,{basic:2,best:3,reactivations:4,plans_lost_today:1,employee_name:'A'}),
+  row('09:00:00',0,'',{basic:'',better:1,best:0,reactivations:0,employee_name:'B'}),
+  row('10:00:00',50,0,{basic:0,best:4,reactivations:'',employee_name:'C'}),
+  row('11:00:00','',0,{basic:0,best:0,reactivations:0,employee_name:'Closing'}),
+ ]
+ const before=structuredClone(entries)
+ assert.deepEqual(cumulativeLogWarnings(entries),[])
+ const total=toDayTotals(entries,[{id:'a',opportunities_formula:'detailed'}])[0]
+ assert.deepEqual([total.total_washes,total.member_washes,total.memberships_sold,total.opportunities,total.reactivations],[50,15,7,42,4])
+ assert.equal(dailyNetMembers(entries),10)
+ assert.deepEqual(hourlyDeltasByDay(entries).map(r=>[r.total_washes,r.member_washes,r.best]),[[40,15,3],[0,0,0],[10,0,1],[0,0,0]])
+ const employees=employeeDeltasByDay(entries)
+ assert.equal(employees.B.better,1)
+ assert.equal(employees.C.best,1)
+ assert.equal(employees.Closing.total_washes,0)
+ assert.equal(shopTotals(entries).time_slot,'10:00:00')
+ assert.deepEqual(entries,before)
 })

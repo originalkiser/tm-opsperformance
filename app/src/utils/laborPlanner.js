@@ -1,3 +1,4 @@
+import { positiveCount } from './dailyLogCounts.js'
 import { chronoCompare, hourlyDeltasByDay } from './logMath.js'
 
 export const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -17,7 +18,7 @@ export function summarizeTraffic(rows, endExclusive) {
   const grouped = new Map()
   const startDate = addDays(endExclusive, -28)
   for (const row of rows) {
-    if (row.log_date < startDate || row.log_date >= endExclusive || row.total_washes == null) continue
+    if (row.log_date < startDate || row.log_date >= endExclusive || !positiveCount(row.total_washes)) continue
     if (!grouped.has(row.log_date)) grouped.set(row.log_date, [])
     grouped.get(row.log_date).push(row)
   }

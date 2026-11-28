@@ -1,3 +1,4 @@
+import { dailyLogCounts, membershipTiers, positiveCount, runningDailyCounts } from './dailyLogCounts.js'
 // Daily Log values are cumulative snapshots, never additive hourly sales.
 export const LOSS_SLOT = '08:00:00'
 export const isLossAnchor = row => row.time_slot === LOSS_SLOT && (row.split_index ?? 0) === 0
@@ -9,25 +10,20 @@ export function parsePlansLost(value) {
   return Number.isInteger(n) && n <= 2147483647 ? n : null
 }
 export function membershipSnapshot(rows) {
-  return [...rows].filter(r => ['basic', 'good', 'better', 'best', 'total_washes', 'member_washes'].some(k => Number(r[k]) > 0))
-    .sort((a, b) => b.time_slot.localeCompare(a.time_slot) || (b.split_index ?? 0) - (a.split_index ?? 0))[0]
+  let latest
+  for (const [row, counts] of runningDailyCounts(rows)) {
+    if (dailyLogCounts.some(field => positiveCount(row[field]))) latest = { ...row, ...counts }
+  }
+  return latest
 }
-// Carry the last reported cumulative counts into blank hours/fields.
-// Explicit zero remains zero; the daily loss is subtracted once per balance.
+// Carry each reported cumulative count through empty inputs. The daily loss
+// is a separate entry and is subtracted once from each running balance.
 export function runningNetMembers(rows, formula = 'detailed') {
   const lost = plansLost(rows)
-  const balances = new Map()
-  const counts = { basic: 0, good: 0, better: 0, best: 0, reactivations: 0 }
-  const fields = Object.keys(counts)
-  const count = value => Math.max(0, Number(value) || 0)
-  for (const row of [...rows].sort((a, b) => a.time_slot.localeCompare(b.time_slot) || (a.split_index ?? 0) - (b.split_index ?? 0))) {
-    for (const key of fields) {
-      if (row[key] != null && row[key] !== '') counts[key] = count(row[key])
-    }
-    const sales = counts.basic + counts.good + counts.better + counts.best
-    balances.set(row, lost === null ? null : sales + (formula === 'simple' ? 0 : counts.reactivations) - lost)
-  }
-  return balances
+  return new Map([...runningDailyCounts(rows, [...membershipTiers, 'reactivations'])].map(([row, counts]) => {
+    const sales = membershipTiers.reduce((sum, field) => sum + counts[field], 0)
+    return [row, lost === null ? null : sales + (formula === 'simple' ? 0 : counts.reactivations) - lost]
+  }))
 }
 export function dailyNetMembers(rows, formula = 'detailed') {
   if (plansLost(rows) === null) return null

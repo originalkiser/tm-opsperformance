@@ -1,3 +1,5 @@
+import { dailyLogCounts, hasCount, membershipTiers, positiveCount, runningDailyCounts } from './dailyLogCounts.js'
+
 export const toInt = (v) => Math.max(0, parseInt(v) || 0)
 export const pct   = (num, den) => den > 0 ? (num / den * 100).toFixed(1) + '%' : ''
 export const pctN  = (num, den) => den > 0 ? parseFloat((num / den * 100).toFixed(1)) : null
@@ -24,7 +26,8 @@ export function agg(rows) {
 // hour" (see logMath.js) can hold more than one row per time_slot, so ties
 // break on split_index — the last split of the latest hour holds the day's
 // true final cumulative totals.
-export function toDayTotals(rows) {
+export function toDayTotals(rows, locations = []) {
+  const formulas = new Map(locations.map(location => [location.id, location.opportunities_formula ?? 'detailed']))
   const map = {}
   rows.forEach(r => {
     const key = `${r.location_id}::${r.log_date}`
@@ -32,15 +35,23 @@ export function toDayTotals(rows) {
     map[key].push(r)
   })
   return Object.values(map).map(dayRows => {
-    const withData = dayRows.filter(r =>
-      toInt(r.total_washes) > 0 || toInt(r.member_washes) > 0 ||
-      toInt(r.memberships_sold) > 0 || toInt(r.opportunities) > 0 ||
-      toInt(r.google_reviews) > 0
-    )
-    const src = withData.length ? withData : dayRows
-    return src.sort((a, b) =>
-      b.time_slot.localeCompare(a.time_slot) || (toInt(b.split_index) - toInt(a.split_index))
-    )[0]
+    const fields = [...dailyLogCounts, 'memberships_sold', 'opportunities']
+    let latest, effective
+    for (const [row, counts] of runningDailyCounts(dayRows, fields)) {
+      if (!latest || fields.some(field => positiveCount(row[field]))) {
+        latest = row
+        effective = counts
+      }
+    }
+    // Old report fixtures/rows without underlying tier fields may only carry
+    // the stored derived totals. Normal Daily Logs use the cumulative inputs.
+    const hasTiers = membershipTiers.every(field => dayRows.some(row => Object.hasOwn(row, field)))
+    const hasWashes = dayRows.some(row => hasCount(row.total_washes) || hasCount(row.member_washes))
+    const sales = hasTiers ? membershipTiers.reduce((total, field) => total + effective[field], 0) : effective.memberships_sold
+    const formula = formulas.get(latest.location_id)
+    return { ...latest, ...effective, memberships_sold: sales,
+      opportunities: hasWashes && hasTiers && formula ? Math.max(0, effective.total_washes - effective.member_washes + (formula === 'simple' ? 0 : sales)) : effective.opportunities,
+    }
   })
 }
 
