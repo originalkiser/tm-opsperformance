@@ -129,12 +129,15 @@ export function parseMembershipSheet(rows, start, end) {
     const header=rows.find(r=>r[0]==='Name'&&r[1]==='Qty (#)')
     const total=rows.find(r=>r[0]?.startsWith('GRAND TOTALS:'))
     if(!header||!total)throw new Error('Micrologic commission totals are missing.')
-    if (/Type: Summary w\. Details(?:\s*·|$)/i.test(clean(rows[3]?.[0]))) {
+    const hasDetails = /Type: Summary w\. Details(?:\s*·|$)/i.test(clean(rows[3]?.[0]))
+    if (hasDetails) {
       const commissions = parseCommissionDetails(rows, start, end)
       if (commissions) return { system:'Micrologic', events:[], snapshots:[], commissions, outside }
     }
     comparison={quantity:Number(total[header.indexOf('Qty (#)')]),sales:cents(total[header.indexOf('$ Sales (Total)')]),
-      commission:cents(total[header.indexOf('$ Comm (Total)')])}
+      commission:cents(total[header.indexOf('$ Comm (Total)')]),
+      reason:hasDetails ? 'This report does not identify one supported Micrologic location for its totals.' :
+        'This export lacks the product detail needed to verify signup eligibility and membership tiers.'}
     return {system:'Micrologic',events,snapshots:[],comparison,outside}
   }
   if(rows[1]?.[0]!=='Unlimited Detailed Report')throw new Error('Unsupported membership workbook.')
