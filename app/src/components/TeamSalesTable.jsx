@@ -86,6 +86,7 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
   const coverageText = pos?.result
     ? `POS imports: ${importPeriod} (${summary.imported}/${summary.expected} site-days). ${summary.verified}/${summary.expected} site-days match saved GSRs. ${summary.unresolved} unresolved POS sales.`
     : pos?.error || 'Loading POS membership sales…'
+  const commissionScopes = pos?.result?.commissionScopes ?? []
   const provisionalText = summary.provisional ? 'Differences may be provisional where imports, GSR coverage, or attribution are incomplete.' : ''
   if (!allRows.length) return <div role="status" className="text-sm text-gray-500 dark:text-tm-dark-muted py-4">No named employee data for this period.{!pos && locations.length > 0 && ' Loading POS membership sales…'}{pos?.error && ' ' + pos.error} {attributionNotes.map(day => <p key={`${day.locationId}:${day.date}`}>{day.site} · {day.issues.join('; ')}</p>)}</div>
 
@@ -134,6 +135,14 @@ export default function TeamSalesTable({ data, locations, dateRange, dataComplet
   return <div>
     <p className="text-xs mb-1">Report period: {reportPeriod}. {coverageText}</p>
     {pos?.result && provisionalText && <p role="status" className="text-xs mb-2 text-amber-800 dark:text-amber-300">{provisionalText}</p>}
+    {commissionScopes.length > 0 && <details className="text-xs mb-2">
+      <summary className="cursor-pointer">Micrologic commission report periods</summary>
+      {commissionScopes.map(scope => <p key={scope.location_id + scope.starts}>
+        {locations.find(site => site.id === scope.location_id)?.name} · {fmtDateRange(scope.starts, scope.ends)} · {scope.reported} reported signups
+        {' · '}{scope.included ? `${scope.unresolved} unresolved in commission report` : 'Select the full period to include aggregate sales'}
+        {scope.active_only && ' · Active POS users only'}
+      </p>)}
+    </details>}
     <p className="text-xs mb-2">Difference = TM Ops Sales − POS Verified Sales.</p>
     {identities?.incomplete && <p role="status" className="text-xs mb-2">Some roster identities could not be verified.</p>}
     <p className="text-xs mb-2">Approved historical mappings affect attribution only. Unmapped names retain existing reporting rules. <button className="underline" onClick={() => setMappingReload(n => n + 1)}>Refresh mappings</button></p>
