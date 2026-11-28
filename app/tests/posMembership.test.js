@@ -117,7 +117,12 @@ test('commission detail import verifies the single-site scope and keeps only sig
   ]})
   assert.throws(() => parseMembershipSheet(rows,'2026-11-02','2026-11-26'), /exact date range/)
   assert.throws(() => parse(rows.map((r,i)=>i===13?[r[0],69]:r)),/subtotal/)
-  assert.equal(parse(rows.map((r,i)=>i===2?[r[0].replace('TCWFM','All Locations')]:r)).commissions,undefined)
+  const multiple = parse(rows.map((r,i)=>i===2?[r[0].replace('TCWFM','All Locations')]:r))
+  assert.equal(multiple.commissions,undefined)
+  assert.match(multiple.comparison.reason,/one supported Micrologic location/)
+  const summary = parse(rows.map((r,i)=>i===3?[r[0].replace('Summary w. Details','Summary')]:r))
+  assert.equal(summary.commissions,undefined)
+  assert.match(summary.comparison.reason,/lacks the product detail/)
 })
 
 test('aggregate scope gaps remain provisional even when existing detail matches GSR', () => {

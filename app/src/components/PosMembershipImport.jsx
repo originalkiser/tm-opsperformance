@@ -9,6 +9,18 @@ import { readStoredPos } from '../utils/posImportStorage'
 const control='rounded border px-3 py-2 text-sm dark:border-tm-dark-border dark:bg-tm-dark-card'
 const activityLabels={new:'Verified new',regular:'Regular / DRB reactivations',grace:'Grace reactivations',cancel:'Cancellations',decline:'Declines',unresolved:'Unresolved qualification',candidates:'Employee candidates',kiosk:'Kiosk signups',blank:'Blank Greeter signups'}
 const today=()=>toDateStr(new Date())
+const unresolvedAttribution = new Set(['unmatched', 'ambiguous', 'name-conflict'])
+
+function UnresolvedMappings({ rows, locations }) {
+ return <ul className="space-y-1 text-sm">{rows.length?rows.map(r=>{
+  const site=locations.find(l=>l.site_code?.split('-')[0]===r.site_code?.split('-')[0])
+  return <li key={JSON.stringify([r.system,r.site_code,r.business_date,r.ticket,r.greeter])}>
+   {r.site_code} · {r.business_date} · {r.greeter??r.system}
+   {r.ticket ? ` · ticket ${r.ticket}` : ` · ${r.quantity} eligible signups`} · {r.attribution}
+   {site&&<Link className="ml-2 underline" to={'/employees?site='+encodeURIComponent(site.id)}>Open roster</Link>}
+  </li>
+ }):<li>No unresolved mappings.</li>}</ul>
+}
 
 export default function PosMembershipImport(){
  const {locations}=useAuth()
@@ -51,6 +63,14 @@ export default function PosMembershipImport(){
  }
  const {parsed,review,gsr,commissionReview}=preview??{}
  const needsReason=review?.rows.some(r=>['correction','attribution'].includes(r.action))||review?.snapshots.some(r=>r.correction)
+ const scopeSites = parsed?.commissions ? [parsed.commissions.site] :
+  [...new Set([...(parsed?.events??[]),...(parsed?.snapshots??[])].map(row=>row.site))].sort()
+ const previewQueue = review ? review.rows.filter(row=>unresolvedAttribution.has(row.attribution)).map(row=>({
+  system:parsed.system,site_code:row.site,business_date:row.date,ticket:row.ticket,attribution:row.attribution,
+ })) : commissionReview?.users.filter(user=>user.eligible>user.credited).map(user=>({
+  system:parsed.system,site_code:parsed.commissions.site,business_date:`${parsed.start} through ${parsed.end}`,
+  greeter:user.username,quantity:user.eligible-user.credited,attribution:'Identity unresolved for this period',
+ }))
  const impact=new Map()
  if(gsr){
   for(const row of parsed.events){
@@ -77,7 +97,10 @@ export default function PosMembershipImport(){
    <button className={control} disabled={busy||!file}>Preview membership workbook</button>
   </form>
   {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
-  {parsed?.comparison&&<p>Comparison only · {parsed.comparison.quantity} reported units · source commission {parsed.comparison.commission==null?'Unavailable':(parsed.comparison.commission/100).toLocaleString('en-US',{style:'currency',currency:'USD'})}</p>}
+  {parsed?.comparison&&<div className="space-y-1" role="status">
+   <p><strong>Comparison only</strong> · {parsed.comparison.quantity} reported units · source commission {parsed.comparison.commission==null?'Unavailable':(parsed.comparison.commission/100).toLocaleString('en-US',{style:'currency',currency:'USD'})}</p>
+   <p>{parsed.comparison.reason} To import employee sales, export <strong>Summary w. Details</strong> for one supported location and select the dates printed on the report.</p>
+  </div>}
   {commissionReview&&<>
    <p>Commission coverage · Site {parsed.commissions.site} · {parsed.start} through {parsed.end}. Quantities apply to the full period.</p>
    {parsed.commissions.activeOnly&&<p role="status">Source includes active POS users only.</p>}
@@ -100,7 +123,7 @@ export default function PosMembershipImport(){
    <ul className="grid gap-1 sm:grid-cols-2">{Object.entries(membershipTotals(parsed.events,parsed.snapshots)).map(([k,v])=><li key={k}>
     {activityLabels[k]??'New membership tiers'} · {typeof v==='number'?v:Object.entries(v).map(([tier,n])=>tier+' '+n).join(', ')}
    </li>)}</ul>
-   <p>{parsed.events.length} transaction records · {review.rows.filter(r=>r.attribution==='matched').length} employee-attributed · {review.rows.filter(r=>r.action==='duplicate').length} duplicates · {review.rows.filter(r=>['unmatched','ambiguous','name-conflict'].includes(r.attribution)).length} unresolved mappings</p>
+   <p>{parsed.events.length} transaction records · {review.rows.filter(r=>r.attribution==='matched').length} employee-attributed · {review.rows.filter(r=>r.action==='duplicate').length} duplicates · {previewQueue.length} unresolved mappings</p>
    <details><summary>Location and business-date coverage against GSR</summary>
     <ul className="text-sm">{[...impact.values()].sort((a,b)=>a.site.localeCompare(b.site)||a.date.localeCompare(b.date)).map(r=><li key={r.site+r.date}>
       {r.site} · {r.date} · {r.observed} verified new / {r.gsr??'unavailable'} GSR
@@ -124,13 +147,17 @@ export default function PosMembershipImport(){
    <button type="button" className={control} disabled={busy||needsReason&&!reason.trim()||parsed.events.length+parsed.snapshots.length===0}
      onClick={()=>{if(window.confirm('Save the reviewed membership workbook and any requested corrections?'))run(save)}}>Save reviewed membership workbook</button>
   </>}
-  <button type="button" className={control} disabled={busy} onClick={()=>run(async()=>setQueue(await call('queue')))}>Load unresolved employee mappings</button>
-  {queue&&<p className="text-sm">Maintain verified aliases in Employees. Preview the original workbook again and enter a correction reason to append newly resolved attributions.</p>}
-  {queue&&<ul className="space-y-1 text-sm">{queue.length?queue.map(r=>{
-    const site=locations.find(l=>l.site_code===r.site_code)
-    return <li key={r.system+r.site_code+r.ticket}>{r.site_code} · {r.business_date} · {r.greeter??r.system} · ticket {r.ticket} · {r.attribution}
-      {site&&<Link className="ml-2 underline" to={'/employees?site='+encodeURIComponent(site.id)}>Open roster</Link>}
-    </li>
-  }):<li>No unresolved mappings.</li>}</ul>}
+  {previewQueue&&<section aria-label="Unresolved mappings for this workbook" className="space-y-2">
+   <h3 className="font-semibold">Unresolved mappings for this workbook</h3>
+   <p className="text-sm">{parsed.system} · {scopeSites.length ? scopeSites.join(', ') : 'No locations in range'} · {parsed.start} through {parsed.end}</p>
+   <UnresolvedMappings rows={previewQueue} locations={locations} />
+  </section>}
+  <details className="space-y-2">
+   <summary className="cursor-pointer font-semibold">All unresolved employee mappings</summary>
+   <p className="text-sm">Recent saved unresolved mappings across all POS systems, locations, and dates.</p>
+   <button type="button" className={control} disabled={busy} onClick={()=>run(async()=>setQueue(await call('queue')))}>Load all unresolved mappings</button>
+   {queue&&<UnresolvedMappings rows={queue} locations={locations} />}
+  </details>
+  {(previewQueue?.length>0||queue?.length>0)&&<p className="text-sm">Maintain verified aliases in Employees. Preview the original workbook again and enter a correction reason for newly resolved transaction attributions.</p>}
  </section>
 }
